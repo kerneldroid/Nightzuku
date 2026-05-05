@@ -24,6 +24,12 @@
     <string name="home_wireless_adb_description"><![CDATA[On Android 11 or above, you can enable Wireless debugging and start Shizuku directly from your device, without connecting to a computer.<p>Please view the step-by-step guide first.]]></string>
     <string name="home_wireless_adb_description_pre_11"><![CDATA[Before Android 11, connecting to a computer is required to enable Wireless debugging.]]></string>
     <string name="home_wireless_adb_view_guide_button">Step-by-step guide</string>
+    <string name="home_local_network_title">Local network access</string>
+    <string name="home_local_network_description">Wireless debugging needs %1$s on this Android version.</string>
+    <string name="home_local_network_granted">%1$s is granted.</string>
+    <string name="home_local_network_missing">%1$s is not granted.</string>
+    <string name="home_local_network_grant">Grant access</string>
+    <string name="home_local_network_permission_denied">Local network access is required for Wireless debugging.</string>
 
     <!-- Adb -->
     <string name="dialog_adb_discovery">Searching for wireless debugging service</string>
@@ -77,6 +83,12 @@
     <string name="home_learn_more_title">Learn Shizuku</string>
     <string name="home_learn_more_description">Learn how to develop with Shizuku</string>
 
+    <!-- Home - Diagnostics -->
+    <string name="home_refresh">Refresh</string>
+    <string name="home_diagnostics_title">Diagnostics</string>
+    <string name="home_diagnostics_copy">Copy diagnostics</string>
+    <string name="home_diagnostics_copied">Diagnostics copied.</string>
+
     <!-- Home - Adb permissions limited -->
     <string name="home_adb_is_limited_title">You need to take an extra step</string>
     <string name="home_adb_is_limited_description">Your device manufacturer has restricted adb permissions and apps using Shizuku will not work properly.\n\nUsually, this limitation can be lifted by adjusting some options in \"Developer options\". Please read the help for details on how to do this.\n\nYou may need to restart Shizuku for the operation to take effect.</string>
@@ -117,6 +129,7 @@ With %1$s, in any terminal app, you can connect to and interact with the shell r
 
     <!-- About -->
     <string name="action_about">About</string>
+    <string name="about_source_code_button">Source code</string>
     <string name="about_view_source_code"><![CDATA[View source code at %s]]></string>
 
     <!-- Stop -->

@@ -5,9 +5,9 @@ pluginManagement {
         mavenCentral()
     }
     plugins {
-        id("com.android.application") version "8.10.1"
-        id("com.android.library") version "8.10.1"
-        id("org.jetbrains.kotlin.android") version "2.1.21"
+        id("com.android.application") version "9.3.0-alpha03"
+        id("com.android.library") version "9.3.0-alpha03"
+        id("org.jetbrains.kotlin.plugin.compose") version "2.2.10"
         id("dev.rikka.tools.autoresconfig") version "1.2.2"
         id("dev.rikka.tools.materialthemebuilder") version "1.5.1"
         id("dev.rikka.tools.refine") version "4.4.0"
@@ -20,7 +20,7 @@ dependencyResolutionManagement {
         mavenLocal()
         mavenCentral()
         maven {
-            url("https://jitpack.io")
+            url = uri("https://jitpack.io")
             content {
                 includeGroup("com.github.topjohnwu.libsu")
             }
@@ -76,6 +76,3 @@ project(':provider').projectDir = file("$root${File.separator}provider")
 
 include ':server-shared'
 project(':server-shared').projectDir = file("$root${File.separator}server-shared")
-
-include ':hidden-api-stub'
-project(':hidden-api-stub').projectDir = file("$root${File.separator}hidden-api-stub")

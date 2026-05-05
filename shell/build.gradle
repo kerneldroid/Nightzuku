@@ -29,33 +29,35 @@ android {
     }
 }
 
-android.applicationVariants.all { variant ->
-    variant.outputs.all {
-        def outDir = new File(rootDir, "out")
-        def mappingPath = new File(outDir, "mapping").absolutePath
-        def dexPath = "${rootProject.rootDir.path}/manager/src/main/assets"
-        variant.assembleProvider.get().doLast {
-            if (variant.getBuildType().isMinifyEnabled()) {
-                copy {
-                    from variant.mappingFileProvider.get()
-                    into mappingPath
-                    rename { String fileName ->
-                        mappingPath + File.separator + "cmd-v${variant.versionName}.txt"
-                    }
-                }
+def registerShellDexCopyTask(String variantName) {
+    def capitalized = variantName.capitalize()
+    tasks.register("copy${capitalized}ShellDex") {
+        dependsOn("assemble${capitalized}")
+
+        def apkFiles = fileTree(layout.buildDirectory.dir("outputs/apk/${variantName}")) {
+            include '*.apk'
+        }
+        def dexPath = rootProject.layout.projectDirectory.dir("manager/build/generated/rish/${variantName}/assets")
+
+        inputs.files(apkFiles)
+        outputs.file(dexPath.file("rish_shizuku.dex"))
+
+        doLast {
+            def apk = apkFiles.files.find { it.name.endsWith(".apk") }
+            if (apk == null) {
+                throw new GradleException("Shell ${variantName} APK was not found")
             }
             copy {
-                def file = zipTree(file(outputFile)).matching { include 'classes*.dex' }.singleFile
-
-                from file
+                from zipTree(apk).matching { include 'classes*.dex' }.singleFile
                 into dexPath
-                rename { String fileName ->
-                    fileName.replace(file.getName(), "rish_shizuku.dex")
-                }
+                rename { 'rish_shizuku.dex' }
             }
         }
     }
 }
+
+registerShellDexCopyTask("debug")
+registerShellDexCopyTask("release")
 
 dependencies {
     implementation libs.hidden.compat

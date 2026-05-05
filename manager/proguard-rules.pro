@@ -42,6 +42,10 @@
     public static void main(java.lang.String[], java.lang.String, android.os.IBinder, android.os.Handler);
 }
 
+# AndroidX Window uses optional platform/OEM extension APIs through reflection.
+-dontwarn androidx.window.extensions.**
+-dontwarn androidx.window.sidecar.**
+
 -assumenosideeffects class android.util.Log {
     public static *** d(...);
 }
