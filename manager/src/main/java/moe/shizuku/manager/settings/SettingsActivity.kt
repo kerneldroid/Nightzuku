@@ -21,6 +21,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +42,7 @@ import moe.shizuku.manager.app.ThemeHelper.KEY_BLACK_NIGHT_THEME
 import moe.shizuku.manager.app.ThemeHelper.KEY_USE_SYSTEM_COLOR
 import moe.shizuku.manager.ktx.isComponentEnabled
 import moe.shizuku.manager.ktx.setComponentEnabled
+import moe.shizuku.manager.module.ModuleSettings
 import moe.shizuku.manager.receiver.BootCompleteReceiver
 import moe.shizuku.manager.ui.compose.GroupDivider
 import moe.shizuku.manager.ui.compose.SettingsGroup
@@ -53,6 +55,7 @@ import moe.shizuku.manager.utils.CustomTabsHelper
 import rikka.core.util.ResourceUtils
 import rikka.material.app.LocaleDelegate
 import rikka.shizuku.manager.ShizukuLocales
+import kotlinx.coroutines.delay
 import java.util.Locale
 
 class SettingsActivity : AppActivity() {
@@ -81,6 +84,14 @@ class SettingsActivity : AppActivity() {
             }
             var showLanguageDialog by remember { mutableStateOf(false) }
             var showNightDialog by remember { mutableStateOf(false) }
+            var showModuleModeDialog by remember { mutableStateOf(false) }
+            var moduleAccessMode by remember {
+                mutableStateOf(ModuleSettings.getAccessMode())
+            }
+            var moduleBackground by remember {
+                mutableStateOf(ModuleSettings.allowBackgroundActions())
+            }
+            var recreateTick by remember { mutableIntStateOf(0) }
 
             val localeOptions = remember(languageTag) {
                 buildLocaleOptions(languageTag)
@@ -93,6 +104,13 @@ class SettingsActivity : AppActivity() {
                 stringResource(R.string.follow_system)
             }
             val contributors = htmlToPlainText(getString(R.string.translation_contributors))
+
+            LaunchedEffect(recreateTick) {
+                if (recreateTick > 0) {
+                    delay(260)
+                    recreate()
+                }
+            }
 
             ShizukuExpressiveTheme {
                 ShizukuLazyScaffold(
@@ -164,7 +182,7 @@ class SettingsActivity : AppActivity() {
                                         prefs.edit().putBoolean(KEY_BLACK_NIGHT_THEME, enabled).apply()
                                         blackNightTheme = enabled
                                         if (ResourceUtils.isNightMode(resources.configuration)) {
-                                            recreate()
+                                            recreateTick++
                                         }
                                     }
                                 )
@@ -178,10 +196,32 @@ class SettingsActivity : AppActivity() {
                                     onCheckedChange = { enabled ->
                                         prefs.edit().putBoolean(KEY_USE_SYSTEM_COLOR, enabled).apply()
                                         useSystemColor = enabled
-                                        recreate()
+                                        recreateTick++
                                     }
                                 )
                             }
+                        }
+                    }
+
+                    item {
+                        SettingsGroup(title = stringResource(R.string.modules_settings_title)) {
+                            SettingsRow(
+                                icon = R.drawable.ic_settings_outline_24dp,
+                                title = stringResource(R.string.modules_access_mode),
+                                summary = stringResource(moduleAccessMode.labelRes),
+                                onClick = { showModuleModeDialog = true }
+                            )
+                            GroupDivider()
+                            SwitchSettingsRow(
+                                icon = R.drawable.ic_outline_play_arrow_24,
+                                title = stringResource(R.string.modules_background_actions),
+                                summary = stringResource(R.string.modules_background_actions_summary),
+                                checked = moduleBackground,
+                                onCheckedChange = { enabled ->
+                                    ModuleSettings.setAllowBackgroundActions(enabled)
+                                    moduleBackground = enabled
+                                }
+                            )
                         }
                     }
                 }
@@ -189,7 +229,13 @@ class SettingsActivity : AppActivity() {
                 if (showLanguageDialog) {
                     ChoiceDialog(
                         title = stringResource(R.string.settings_language),
-                        choices = localeOptions.map { it.title to it.summary },
+                        choices = localeOptions.map {
+                            ChoiceOption(
+                                title = it.title,
+                                summary = it.summary,
+                                icon = R.drawable.ic_outline_translate_24
+                            )
+                        },
                         selectedIndex = localeOptions.indexOfFirst { it.tag == languageTag },
                         onDismiss = { showLanguageDialog = false },
                         onSelect = { index ->
@@ -211,7 +257,14 @@ class SettingsActivity : AppActivity() {
                     ChoiceDialog(
                         title = stringResource(R.string.dark_theme),
                         choices = nightValues.mapIndexed { index, _ ->
-                            nightLabels[index] to null
+                            ChoiceOption(
+                                title = nightLabels[index],
+                                icon = when (nightValues[index]) {
+                                    AppCompatDelegate.MODE_NIGHT_NO -> R.drawable.ic_outline_light_mode_24
+                                    AppCompatDelegate.MODE_NIGHT_YES -> R.drawable.ic_outline_dark_mode_24
+                                    else -> R.drawable.ic_settings_outline_24dp
+                                }
+                            )
                         },
                         selectedIndex = nightValues.indexOf(nightMode),
                         onDismiss = { showNightDialog = false },
@@ -222,6 +275,28 @@ class SettingsActivity : AppActivity() {
                             AppCompatDelegate.setDefaultNightMode(value)
                             showNightDialog = false
                             recreate()
+                        }
+                    )
+                }
+
+                if (showModuleModeDialog) {
+                    val moduleModes = listOf(ModuleSettings.AccessMode.SAFE, ModuleSettings.AccessMode.FULL)
+                    ChoiceDialog(
+                        title = stringResource(R.string.modules_access_mode),
+                        choices = moduleModes.map {
+                            ChoiceOption(
+                                title = stringResource(it.labelRes),
+                                summary = stringResource(it.summaryRes),
+                                icon = R.drawable.ic_adb_24dp
+                            )
+                        },
+                        selectedIndex = moduleModes.indexOf(moduleAccessMode),
+                        onDismiss = { showModuleModeDialog = false },
+                        onSelect = { index ->
+                            val mode = moduleModes[index]
+                            ModuleSettings.setAccessMode(mode)
+                            moduleAccessMode = mode
+                            showModuleModeDialog = false
                         }
                     )
                 }
@@ -269,10 +344,16 @@ class SettingsActivity : AppActivity() {
     }
 }
 
+private data class ChoiceOption(
+    val title: String,
+    val summary: String? = null,
+    @param:androidx.annotation.DrawableRes val icon: Int? = null
+)
+
 @Composable
 private fun ChoiceDialog(
     title: String,
-    choices: List<Pair<String, String?>>,
+    choices: List<ChoiceOption>,
     selectedIndex: Int,
     onDismiss: () -> Unit,
     onSelect: (Int) -> Unit
@@ -289,9 +370,9 @@ private fun ChoiceDialog(
             ) {
                 choices.forEachIndexed { index, choice ->
                     SettingsRow(
-                        icon = R.drawable.ic_outline_translate_24,
-                        title = choice.first,
-                        summary = choice.second,
+                        icon = choice.icon,
+                        title = choice.title,
+                        summary = choice.summary,
                         onClick = { onSelect(index) },
                         trailing = {
                             RadioButton(

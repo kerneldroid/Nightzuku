@@ -3,10 +3,27 @@
 ## Fork status
 
 This repository is an independent fork of Shizuku, based on the upstream project by RikkaApps.
-The fork modernizes the Android manager UI with Jetpack Compose and Material 3 Expressive,
-tracks newer Android SDK targets, and carries local server/manager fixes.
+It is not the official upstream app.
+
+This fork modernizes the Android manager UI with Jetpack Compose and Material 3 Expressive,
+tracks newer Android SDK targets, carries local server/manager fixes, and adds an ADB-backed
+module runner for ZIP modules.
 
 Upstream project: <https://github.com/RikkaApps/Shizuku>
+
+## Fork additions
+
+- Jetpack Compose manager UI with Material 3 Expressive components, motion, switches, and rounded icon treatment.
+- Android 16/17 target work with current preview SDK/build tooling in this fork.
+- ADB Modules screen for installing and managing ZIP modules.
+- Module features: `module.prop`, banner, enable/disable switch, `action.sh`, policy-gated `service.sh`, local WebUI, delete, path checks, size limits, output limits, and last-run logs.
+- Module policy settings: Safe mode, Full access, and background action control.
+- Debug test module under `test-modules/adb-test-module.zip`.
+
+## Documentation
+
+- [ADB Modules guide](docs/adb-modules-guide.md)
+- [ADB Modules API reference](docs/adb-modules-api.md)
 
 ## Background
 
@@ -30,6 +47,9 @@ Shizuku uses a completely different way. See detailed description below.
 <p align="center">
   <img src="screenshots/main.png" width="300" />
   <img src="screenshots/apps.png" width="300" />
+  <img src="screenshots/modules.png" width="300" />
+  <img src="screenshots/module-webui.png" width="300" />
+  <img src="screenshots/settings.png" width="300" />
 </p>
 
 ## How does Shizuku work?

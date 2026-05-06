@@ -102,6 +102,14 @@
             </intent-filter>
         </activity>
         <activity
+            android:name=".module.ModulesActivity"
+            android:exported="false"
+            android:label="@string/modules_title" />
+        <activity
+            android:name=".module.ModuleWebViewActivity"
+            android:exported="false"
+            android:label="@string/modules_webui" />
+        <activity
             android:name=".starter.StarterActivity"
             android:label="@string/starter" />
         <activity

@@ -88,6 +88,7 @@
     <string name="home_diagnostics_title">Diagnostics</string>
     <string name="home_diagnostics_copy">Copy diagnostics</string>
     <string name="home_diagnostics_copied">Diagnostics copied.</string>
+    <string name="home_modules_description">Install and manage ADB-backed modules</string>
 
     <!-- Home - Adb permissions limited -->
     <string name="home_adb_is_limited_title">You need to take an extra step</string>
@@ -128,6 +129,44 @@ With %1$s, in any terminal app, you can connect to and interact with the shell r
     <string name="settings_start_on_boot">Start on boot (root)</string>
     <string name="settings_start_on_boot_summary">For rooted devices, Shizuku is able to start automatically on boot</string>
     <string name="settings_use_system_color">Use system theme color</string>
+
+    <!-- ADB modules -->
+    <string name="modules_title">ADB Modules</string>
+    <string name="modules_settings_title">Modules</string>
+    <string name="modules_settings_summary">Install ZIP modules and run their actions through the active Shizuku ADB/root server</string>
+    <string name="modules_header_summary">%1$d installed, %2$d enabled</string>
+    <string name="modules_version_label">Version: %s</string>
+    <string name="modules_author_label">Author: %s</string>
+    <string name="modules_access_mode">Module access mode</string>
+    <string name="modules_access_mode_safe">Safe</string>
+    <string name="modules_access_mode_safe_summary">Manual actions only. Background service scripts stay blocked.</string>
+    <string name="modules_access_mode_full">Full access</string>
+    <string name="modules_access_mode_full_summary">Allows module background behavior when this fork implements service runners.</string>
+    <string name="modules_background_actions">Allow background actions</string>
+    <string name="modules_background_actions_summary">Permit installed modules to request background ADB work in full access mode</string>
+    <string name="modules_background_allowed">Background allowed</string>
+    <string name="modules_background_blocked">Background blocked</string>
+    <string name="modules_install_zip">Install ZIP</string>
+    <string name="modules_empty_title">No modules installed</string>
+    <string name="modules_empty_summary">ADB modules use a KernelSU/Magisk-style ZIP with module.prop, optional banner, WebUI, action.sh and service.sh.</string>
+    <string name="modules_install_success">Installed %s</string>
+    <string name="modules_install_failed">Install failed: %s</string>
+    <string name="modules_enabled">Enabled</string>
+    <string name="modules_disabled">Disabled</string>
+    <string name="modules_enable">Enable</string>
+    <string name="modules_disable">Disable</string>
+    <string name="modules_run_action">Action</string>
+    <string name="modules_run_service">Service</string>
+    <string name="modules_running">Running module script…</string>
+    <string name="modules_open_webui">WebUI</string>
+    <string name="modules_webui">Module WebUI</string>
+    <string name="modules_delete">Delete</string>
+    <string name="modules_delete_title">Delete module?</string>
+    <string name="modules_delete_message">%s will be removed from Shizuku module storage.</string>
+    <string name="modules_action_result">Action finished: exit %d</string>
+    <string name="modules_action_failed">Action failed</string>
+    <string name="modules_service_result">Service finished: exit %d</string>
+    <string name="modules_service_failed">Service failed</string>
 
     <!-- About -->
     <string name="action_about">About</string>

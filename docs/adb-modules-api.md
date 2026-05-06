@@ -1,0 +1,222 @@
+# Shizuku ADB Modules API
+
+ADB Modules are ZIP packages installed into Shizuku private app storage and executed through the currently active Shizuku server. If Shizuku is running from ADB, module scripts run with ADB shell privileges. If Shizuku is running from root, scripts run with root privileges.
+
+This is not a root overlay system. It is a Shizuku-backed module runner for actions, WebUI, service hooks, and controlled ADB/root shell access.
+
+## Package Format
+
+A module is a `.zip` file with `module.prop` at the ZIP root.
+
+```text
+module.zip
+├── module.prop
+├── banner.png
+├── action.sh
+├── service.sh
+└── webui/
+    └── index.html
+```
+
+All paths must be relative. Absolute paths and `..` traversal are rejected during install.
+
+## module.prop
+
+Required fields:
+
+```properties
+id=my-module
+name=My Module
+version=1.0
+versionCode=1
+author=Author
+description=Short description
+```
+
+Optional fields:
+
+```properties
+banner=banner.png
+webui=webui
+action=action.sh
+```
+
+Rules:
+
+- `id` must match `[A-Za-z][A-Za-z0-9._-]{1,63}`.
+- `banner` can point to `.png`, `.jpg`, `.jpeg`, or `.webp`.
+- If `banner` is omitted, Shizuku checks `banner.png`, `banner.jpg`, `banner.jpeg`, then `banner.webp`.
+- If `webui` is omitted, Shizuku checks `webroot`, `webui`, then `web`.
+- WebUI is available only when `<webui>/index.html` exists.
+- `action` defaults to `action.sh`.
+- `service.sh` is detected automatically.
+
+## Install Behavior
+
+Install flow:
+
+1. User selects a module ZIP with Android file picker.
+2. Shizuku copies it into cache.
+3. Shizuku validates `module.prop`.
+4. Shizuku extracts into a staging directory.
+5. Shizuku rejects unsafe paths.
+6. Shizuku marks `.sh` files executable.
+7. Shizuku replaces any existing module with the same `id`.
+8. Shizuku stores the module under app-private storage.
+
+Safety limits:
+
+- Max ZIP entries: `2048`.
+- Max extracted size: `200 MB`.
+- Script output retained in memory/log: last `64 KB` per stream.
+- Script timeout: `120 seconds`.
+
+## Runtime Environment
+
+Scripts run through Shizuku server process creation. The command is:
+
+```sh
+sh /path/to/module/action.sh
+```
+
+or:
+
+```sh
+sh /path/to/module/service.sh
+```
+
+Working directory is the module directory.
+
+Environment variables:
+
+```sh
+MODDIR=/data/user/0/<package>/files/adb_modules/<id>
+ASH_STANDALONE=1
+SHIZUKU_MODULE_ID=<id>
+SHIZUKU_MODULE_MODE=safe|full
+SHIZUKU_MODULE_BACKGROUND=0|1
+```
+
+Use `MODDIR` for all module-local files. Do not assume root paths such as `/data/adb/modules`.
+
+## Actions
+
+`action.sh` is a manual user action. It can be launched from the module card when the module is enabled.
+
+Action result:
+
+- stdout/stderr are shown in a dialog.
+- Last output is written to `logs/action-last.log` inside the module directory.
+- Timeout returns exit code `124`.
+
+Minimal `action.sh`:
+
+```sh
+#!/system/bin/sh
+echo "module=$SHIZUKU_MODULE_ID"
+echo "mode=$SHIZUKU_MODULE_MODE"
+id
+cmd package list packages | head
+```
+
+## Services
+
+`service.sh` is the background/service hook.
+
+Execution policy:
+
+- `Safe` mode: blocked.
+- `Full access` mode: allowed only when `Allow background actions` is enabled.
+- Disabled modules are skipped.
+- Service scripts auto-run once per Shizuku binder session when Shizuku becomes available from the manager.
+- Last output is written to `logs/service-last.log`.
+- Timeout returns exit code `124`.
+
+Minimal `service.sh`:
+
+```sh
+#!/system/bin/sh
+echo "service for $SHIZUKU_MODULE_ID"
+date
+```
+
+This is intentionally controlled. Modules do not get an always-on daemon by default.
+
+## WebUI
+
+WebUI is loaded from the installed module directory:
+
+```text
+webui/index.html
+```
+
+Current WebView policy:
+
+- JavaScript: enabled.
+- DOM storage: enabled.
+- File access: enabled for module-local files.
+- Universal file access from file URLs: disabled.
+- Content access: disabled.
+
+WebUI should treat module files as local UI assets. Shell execution is not exposed directly to JavaScript.
+
+## Enable, Disable, Delete
+
+Disable creates:
+
+```text
+disable
+```
+
+inside the module directory.
+
+Effects:
+
+- `action.sh` is blocked.
+- `service.sh` is skipped.
+- UI dims the card/banner.
+
+Delete removes the whole module directory.
+
+## Test Module
+
+The repository includes a test module:
+
+```text
+test-modules/adb-test-module.zip
+```
+
+It contains:
+
+- `module.prop`
+- `banner.png`
+- `action.sh`
+- `service.sh`
+- `webui/index.html`
+
+Expected action output includes the current UID, SDK version, module id, and module mode.
+
+## Current Scope
+
+Implemented:
+
+- ZIP install.
+- Module metadata parsing.
+- Path traversal protection.
+- Size and entry limits.
+- Enable/disable/delete.
+- Banner rendering.
+- WebUI rendering.
+- Manual `action.sh`.
+- Policy-gated `service.sh`.
+- One service run per Shizuku binder session.
+- Last action/service logs.
+
+Not implemented:
+
+- Systemless filesystem overlays.
+- Magisk/KSU mount semantics.
+- Direct JavaScript-to-shell bridge.
+- Long-running service supervision.
+
+Those are separate features and should not be implied by the current ADB module API.

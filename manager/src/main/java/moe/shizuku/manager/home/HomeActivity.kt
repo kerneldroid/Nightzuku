@@ -79,6 +79,8 @@ import moe.shizuku.manager.R
 import moe.shizuku.manager.ShizukuSettings
 import moe.shizuku.manager.app.AppActivity
 import moe.shizuku.manager.management.ApplicationManagementActivity
+import moe.shizuku.manager.module.AdbModuleManager
+import moe.shizuku.manager.module.ModulesActivity
 import moe.shizuku.manager.management.appsViewModel
 import moe.shizuku.manager.model.ServiceStatus
 import moe.shizuku.manager.settings.SettingsActivity
@@ -106,6 +108,7 @@ abstract class HomeActivity : AppActivity() {
     }
 
     private val binderDeadListener = Shizuku.OnBinderDeadListener {
+        AdbModuleManager.resetServiceRunGuard()
         checkServerStatus()
     }
 
@@ -148,6 +151,10 @@ abstract class HomeActivity : AppActivity() {
                             ShizukuSettings.LaunchMethod.ADB
                         }
                     )
+                    try {
+                        AdbModuleManager.runEnabledServicesIfAllowed(applicationContext)
+                    } catch (_: Throwable) {
+                    }
                 }
             }
 
@@ -165,6 +172,7 @@ abstract class HomeActivity : AppActivity() {
                     onSettings = { startActivity(Intent(this, SettingsActivity::class.java)) },
                     onAbout = ::showAboutDialog,
                     onStop = ::showStopDialog,
+                    onModules = { startActivity(Intent(this, ModulesActivity::class.java)) },
                     onManageApps = { startActivity(Intent(this, ApplicationManagementActivity::class.java)) },
                     onTerminal = { startActivity(Intent(this, ShellTutorialActivity::class.java)) },
                     onStartRoot = ::startRoot,
@@ -386,6 +394,7 @@ private fun HomeScreen(
     onSettings: () -> Unit,
     onAbout: () -> Unit,
     onStop: () -> Unit,
+    onModules: () -> Unit,
     onManageApps: () -> Unit,
     onTerminal: () -> Unit,
     onStartRoot: () -> Unit,
@@ -496,6 +505,19 @@ private fun HomeScreen(
                         status = status,
                         grantedCount = grantedCount,
                         onClick = onManageApps
+                    )
+                }
+                item {
+                    SimpleActionCard(
+                        icon = R.drawable.ic_adb_24dp,
+                        title = stringResource(R.string.modules_title),
+                        body = if (running) {
+                            stringResource(R.string.home_modules_description)
+                        } else {
+                            stringResource(R.string.home_status_service_not_running, stringResource(R.string.app_name))
+                        },
+                        enabled = running,
+                        onClick = onModules
                     )
                 }
                 item {

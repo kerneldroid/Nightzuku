@@ -45,6 +45,7 @@ import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.HelpOutline
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.OpenInNew
@@ -349,7 +350,7 @@ fun SettingsGroup(
 
 @Composable
 fun SettingsRow(
-    @DrawableRes icon: Int,
+    @DrawableRes icon: Int?,
     title: String,
     modifier: Modifier = Modifier,
     summary: String? = null,
@@ -371,12 +372,14 @@ fun SettingsRow(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        ShizukuIcon(
-            icon = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(24.dp)
-        )
+        if (icon != null) {
+            ShizukuIcon(
+                icon = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp)
+            )
+        }
         Column(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(3.dp)
@@ -401,7 +404,7 @@ fun SettingsRow(
 
 @Composable
 fun SwitchSettingsRow(
-    @DrawableRes icon: Int,
+    @DrawableRes icon: Int?,
     title: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
@@ -585,6 +588,7 @@ private fun roundedIconFor(@DrawableRes icon: Int): ImageVector? {
         R.drawable.ic_outline_translate_24 -> Icons.Rounded.Translate
         R.drawable.ic_baseline_link_24 -> Icons.Rounded.Link
         R.drawable.ic_outline_dark_mode_24 -> Icons.Rounded.DarkMode
+        R.drawable.ic_outline_light_mode_24 -> Icons.Rounded.LightMode
         R.drawable.ic_outline_notifications_active_24 -> Icons.Rounded.NotificationsActive
         R.drawable.ic_outline_open_in_new_24 -> Icons.AutoMirrored.Rounded.OpenInNew
         R.drawable.ic_outline_play_arrow_24,

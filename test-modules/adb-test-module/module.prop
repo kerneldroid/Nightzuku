@@ -1,0 +1,8 @@
+id=adb-test-module
+name=ADB Test Module
+version=1.0
+versionCode=1
+author=Shizuku Modern
+description=Test module for Shizuku ADB module runner. Includes action.sh, service.sh and WebUI.
+webui=webui
+action=action.sh
