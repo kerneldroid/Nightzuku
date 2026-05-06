@@ -4,52 +4,80 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ADB Test Module</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/beercss@latest/dist/cdn/beer.min.css">
+  <script type="module" src="https://cdn.jsdelivr.net/npm/beercss@latest/dist/cdn/beer.min.js"></script>
   <style>
     body {
       margin: 0;
+    }
+    main.responsive {
+      padding-top: 24px;
+      padding-bottom: 24px;
+    }
+    pre {
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 360px;
+    }
+    .fallback {
       font: 16px system-ui, sans-serif;
-      color: #101418;
-      background: #f8fafc;
-    }
-    main {
-      padding: 24px;
-      display: grid;
-      gap: 12px;
-    }
-    h1 {
-      margin: 0;
-      font-size: 24px;
-    }
-    code {
-      padding: 10px 12px;
-      border-radius: 12px;
-      background: #e6edf5;
-      display: block;
-      overflow-wrap: anywhere;
+      padding: 16px;
     }
   </style>
 </head>
-<body>
-  <main>
-    <h1>ADB Test Module</h1>
-    <p>WebUI loaded from the installed module directory.</p>
-    <code>module.prop + action.sh + service.sh + webui/index.html</code>
-    <button id="testBtn">Test JS-to-Shell Bridge</button>
-    <pre id="output" style="background:#333;color:#eee;padding:12px;border-radius:12px;overflow:auto;"></pre>
+<body class="dark">
+  <main class="responsive">
+    <article class="round large-padding">
+      <h5>ADB Test Module</h5>
+      <p>WebUI loaded from the installed module directory. BeerCSS is loaded from HTTPS CDN.</p>
+      <div class="grid">
+        <button id="infoBtn" class="border">Module info</button>
+        <button id="testBtn">Test shell bridge</button>
+        <button id="advancedBtn" class="border">Test execWithOptions</button>
+        <button id="downloadBtn" class="border">Cache BeerCSS CSS</button>
+      </div>
+      <pre id="output" class="surface-container highest-padding round"></pre>
+    </article>
   </main>
+
   <script>
-    document.getElementById('testBtn').addEventListener('click', () => {
+    const output = document.getElementById('output');
+    const print = (value) => {
+      output.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+    };
+    const call = (fn) => {
       try {
-        if (window.Shizuku) {
-          const result = JSON.parse(window.Shizuku.exec('id'));
-          document.getElementById('output').textContent = JSON.stringify(result, null, 2);
-        } else {
-          document.getElementById('output').textContent = "Error: window.Shizuku interface not found.";
-        }
+        if (!window.Shizuku) throw new Error('window.Shizuku interface not found');
+        print(fn());
       } catch (e) {
-        document.getElementById('output').textContent = "Exception: " + e.message;
+        print('Exception: ' + e.message);
       }
-    });
+    };
+
+    document.getElementById('infoBtn').addEventListener('click', () => call(() =>
+      JSON.parse(window.Shizuku.getModuleInfo())
+    ));
+
+    document.getElementById('testBtn').addEventListener('click', () => call(() =>
+      JSON.parse(window.Shizuku.exec('id; echo MODDIR=$MODDIR; echo MODE=$SHIZUKU_MODULE_MODE'))
+    ));
+
+    document.getElementById('advancedBtn').addEventListener('click', () => call(() =>
+      JSON.parse(window.Shizuku.execWithOptions('cat; pwd; echo FOO=$FOO', JSON.stringify({
+        timeoutSeconds: 30,
+        stdin: 'stdin-ok\\n',
+        cwd: 'webui',
+        env: { FOO: 'bar' }
+      })))
+    ));
+
+    document.getElementById('downloadBtn').addEventListener('click', () => call(() =>
+      JSON.parse(window.Shizuku.download(
+        'https://cdn.jsdelivr.net/npm/beercss@latest/dist/cdn/beer.min.css',
+        'vendor/beer.min.css'
+      ))
+    ));
   </script>
 </body>
 </html>

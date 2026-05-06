@@ -2,6 +2,8 @@ package moe.shizuku.manager.module
 
 import android.annotation.SuppressLint
 import android.os.Bundle
+import android.webkit.CookieManager
+import android.webkit.WebSettings
 import android.webkit.WebView
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.padding
@@ -39,7 +41,11 @@ class ModuleWebViewActivity : AppActivity() {
                                 settings.allowFileAccess = true
                                 settings.allowContentAccess = false
                                 settings.allowFileAccessFromFileURLs = false
-                                settings.allowUniversalAccessFromFileURLs = false
+                                settings.allowUniversalAccessFromFileURLs = true
+                                settings.blockNetworkLoads = false
+                                settings.cacheMode = WebSettings.LOAD_DEFAULT
+                                settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                                CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
                                 addJavascriptInterface(ModuleJsBridge(module), "Shizuku")
                                 loadUrl(index.toURI().toString())
                             }
