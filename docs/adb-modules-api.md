@@ -158,7 +158,23 @@ Current WebView policy:
 - Universal file access from file URLs: disabled.
 - Content access: disabled.
 
-WebUI should treat module files as local UI assets. Shell execution is not exposed directly to JavaScript.
+WebUI should treat module files as local UI assets. 
+
+### JavaScript-to-Shell Bridge
+
+A synchronous shell execution bridge is exposed to the WebUI when the module is enabled and set to **Full access** mode.
+
+```javascript
+// Execute a shell command through Shizuku
+const resultJson = window.Shizuku.exec("id");
+const result = JSON.parse(resultJson);
+
+console.log(result.exitCode); // e.g. 0
+console.log(result.stdout);   // e.g. "uid=2000(shell) gid=2000(shell)..."
+console.log(result.stderr);   // e.g. ""
+```
+
+If the module is disabled or running in **Safe** mode, `exec()` will return a JSON object with `exitCode: -1` and a permission denied message in `stderr`. Execution timeout is 120 seconds. The command is run with the module directory as its working directory.
 
 ## Enable, Disable, Delete
 
@@ -211,12 +227,12 @@ Implemented:
 - Policy-gated `service.sh`.
 - One service run per Shizuku binder session.
 - Last action/service logs.
+- Direct JavaScript-to-shell bridge.
 
 Not implemented:
 
 - Systemless filesystem overlays.
 - Magisk/KSU mount semantics.
-- Direct JavaScript-to-shell bridge.
 - Long-running service supervision.
 
 Those are separate features and should not be implied by the current ADB module API.
