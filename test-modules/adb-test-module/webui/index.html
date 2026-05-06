@@ -34,6 +34,22 @@
     <h1>ADB Test Module</h1>
     <p>WebUI loaded from the installed module directory.</p>
     <code>module.prop + action.sh + service.sh + webui/index.html</code>
+    <button id="testBtn">Test JS-to-Shell Bridge</button>
+    <pre id="output" style="background:#333;color:#eee;padding:12px;border-radius:12px;overflow:auto;"></pre>
   </main>
+  <script>
+    document.getElementById('testBtn').addEventListener('click', () => {
+      try {
+        if (window.Shizuku) {
+          const result = JSON.parse(window.Shizuku.exec('id'));
+          document.getElementById('output').textContent = JSON.stringify(result, null, 2);
+        } else {
+          document.getElementById('output').textContent = "Error: window.Shizuku interface not found.";
+        }
+      } catch (e) {
+        document.getElementById('output').textContent = "Exception: " + e.message;
+      }
+    });
+  </script>
 </body>
 </html>

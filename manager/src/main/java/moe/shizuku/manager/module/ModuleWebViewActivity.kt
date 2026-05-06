@@ -40,6 +40,7 @@ class ModuleWebViewActivity : AppActivity() {
                                 settings.allowContentAccess = false
                                 settings.allowFileAccessFromFileURLs = false
                                 settings.allowUniversalAccessFromFileURLs = false
+                                addJavascriptInterface(ModuleJsBridge(module), "Shizuku")
                                 loadUrl(index.toURI().toString())
                             }
                         },
