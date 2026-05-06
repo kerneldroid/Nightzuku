@@ -63,3 +63,8 @@
 -repackageclasses rikka.shizuku
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
+
+# Keep JavascriptInterface methods for WebView
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
