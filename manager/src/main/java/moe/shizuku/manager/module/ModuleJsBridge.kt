@@ -5,96 +5,342 @@ import android.webkit.JavascriptInterface
 import moe.shizuku.server.IShizukuService
 import org.json.JSONObject
 import rikka.shizuku.Shizuku
+import java.io.BufferedInputStream
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.HttpsURLConnection
 
 class ModuleJsBridge(private val module: AdbModule) {
 
     @JavascriptInterface
+    fun getModuleInfo(): String {
+        return JSONObject().apply {
+            put("ok", true)
+            put("id", module.id)
+            put("name", module.name)
+            put("version", module.version ?: "")
+            put("versionCode", module.versionCode ?: 0)
+            put("author", module.author ?: "")
+            put("enabled", module.enabled)
+            put("webRoot", module.webRoot?.absolutePath ?: "")
+            put("moduleDir", module.directory.absolutePath)
+            put("accessMode", ModuleSettings.getAccessMode().value)
+            put("background", ModuleSettings.allowBackgroundActions())
+        }.toString()
+    }
+
+    @JavascriptInterface
     fun exec(command: String): String {
+        return execInternal(command, ExecOptions())
+    }
+
+    @JavascriptInterface
+    fun execWithOptions(command: String, optionsJson: String): String {
+        return try {
+            execInternal(command, parseExecOptions(optionsJson))
+        } catch (e: Exception) {
+            shellError(e.message ?: "Invalid exec options.")
+        }
+    }
+
+    @JavascriptInterface
+    fun download(url: String, relativeWebPath: String): String {
         val result = JSONObject()
+        return try {
+            ensureModuleUsableForWebFiles()
+            val outFile = resolveWebFile(relativeWebPath)
+            val bytes = downloadHttpsToFile(url, outFile)
+            result.apply {
+                put("ok", true)
+                put("url", url)
+                put("path", relativeWebPath)
+                put("bytes", bytes)
+            }.toString()
+        } catch (e: Exception) {
+            result.apply {
+                put("ok", false)
+                put("url", url)
+                put("path", relativeWebPath)
+                put("error", e.message ?: "Download failed.")
+            }.toString()
+        }
+    }
+
+    private fun execInternal(command: String, options: ExecOptions): String {
+        if (command.isBlank()) {
+            return shellError("Command is blank.")
+        }
 
         if (!module.enabled) {
-            return result.apply {
-                put("exitCode", -1)
-                put("stdout", "")
-                put("stderr", "Module is disabled.")
-            }.toString()
+            return shellError("Module is disabled.")
         }
 
         val mode = ModuleSettings.getAccessMode()
         if (mode != ModuleSettings.AccessMode.FULL) {
-            return result.apply {
-                put("exitCode", -1)
-                put("stdout", "")
-                put("stderr", "Permission denied: requires Full access mode.")
-            }.toString()
+            return shellError("Permission denied: requires Full access mode.")
         }
 
-        val binder = Shizuku.getBinder()
-        if (binder == null) {
-            return result.apply {
-                put("exitCode", -1)
-                put("stdout", "")
-                put("stderr", "Shizuku service is not running.")
-            }.toString()
-        }
+        val binder = Shizuku.getBinder() ?: return shellError("Shizuku service is not running.")
 
+        val result = JSONObject()
         return try {
             val service = IShizukuService.Stub.asInterface(binder)
-            val env = arrayOf(
-                "MODDIR=${module.directory.absolutePath}",
-                "ASH_STANDALONE=1",
-                "SHIZUKU_MODULE_ID=${module.id}",
-                "SHIZUKU_MODULE_MODE=${mode.value}",
-                "SHIZUKU_MODULE_BACKGROUND=${if (ModuleSettings.allowBackgroundActions()) "1" else "0"}"
-            )
+            val env = buildEnvironment(mode, options.extraEnv)
+            val cwd = resolveModuleDirectory(options.cwd)
             val remote = service.newProcess(
                 arrayOf("sh", "-c", command),
                 env,
-                module.directory.absolutePath
+                cwd.absolutePath
             )
 
-            ParcelFileDescriptor.AutoCloseOutputStream(remote.outputStream).close()
             var stdout = ""
             var stderr = ""
             val stdoutThread = Thread {
                 try {
-                    stdout = ParcelFileDescriptor.AutoCloseInputStream(remote.inputStream)
-                        .bufferedReader()
-                        .readText()
-                } catch (ignore: Exception) {}
+                    stdout = readStreamTail(remote.getInputStream())
+                } catch (ignore: Exception) {
+                }
             }
             val stderrThread = Thread {
                 try {
-                    stderr = ParcelFileDescriptor.AutoCloseInputStream(remote.errorStream)
-                        .bufferedReader()
-                        .readText()
-                } catch (ignore: Exception) {}
+                    stderr = readStreamTail(remote.getErrorStream())
+                } catch (ignore: Exception) {
+                }
             }
             stdoutThread.start()
             stderrThread.start()
-            
-            val finished = remote.waitForTimeout(120, TimeUnit.SECONDS.name)
+
+            ParcelFileDescriptor.AutoCloseOutputStream(remote.getOutputStream()).use { output ->
+                if (options.stdin.isNotEmpty()) {
+                    output.write(options.stdin.toByteArray(Charsets.UTF_8))
+                    output.flush()
+                }
+            }
+
+            val finished = remote.waitForTimeout(options.timeoutSeconds, TimeUnit.SECONDS.name)
             val exitCode = if (finished) {
                 remote.exitValue()
             } else {
                 remote.destroy()
-                124
+                EXIT_TIMEOUT
             }
             stdoutThread.join(1000)
             stderrThread.join(1000)
 
             result.apply {
+                put("ok", finished && exitCode == 0)
                 put("exitCode", exitCode)
-                put("stdout", stdout.takeLast(64 * 1024))
-                put("stderr", stderr.takeLast(64 * 1024))
+                put("stdout", stdout)
+                put("stderr", stderr)
+                put("timedOut", !finished)
             }.toString()
         } catch (e: Exception) {
-            result.apply {
-                put("exitCode", -1)
-                put("stdout", "")
-                put("stderr", e.message ?: "Unknown error")
-            }.toString()
+            shellError(e.message ?: "Unknown error")
         }
+    }
+
+    private fun buildEnvironment(
+        mode: ModuleSettings.AccessMode,
+        extraEnv: Map<String, String>
+    ): Array<String> {
+        val env = linkedMapOf(
+            "MODDIR" to module.directory.absolutePath,
+            "ASH_STANDALONE" to "1",
+            "SHIZUKU_MODULE_ID" to module.id,
+            "SHIZUKU_MODULE_MODE" to mode.value,
+            "SHIZUKU_MODULE_BACKGROUND" to if (ModuleSettings.allowBackgroundActions()) "1" else "0"
+        )
+        extraEnv.forEach { (key, value) -> env[key] = value }
+        return env.map { (key, value) -> "$key=$value" }.toTypedArray()
+    }
+
+    private fun parseExecOptions(raw: String): ExecOptions {
+        if (raw.isBlank()) return ExecOptions()
+
+        val json = JSONObject(raw)
+        val timeout = json.optLong("timeoutSeconds", DEFAULT_SCRIPT_SECONDS)
+            .coerceIn(MIN_SCRIPT_SECONDS, MAX_SCRIPT_SECONDS)
+        val stdin = json.optString("stdin", "")
+        require(stdin.length <= MAX_STDIN_CHARS) { "stdin is too large." }
+
+        val cwd = if (json.has("cwd")) json.optString("cwd", "") else ""
+        val envJson = json.optJSONObject("env")
+        val extraEnv = linkedMapOf<String, String>()
+        if (envJson != null) {
+            val keys = envJson.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                require(ENV_KEY_REGEX.matches(key)) { "Invalid env key: $key" }
+                require(extraEnv.size < MAX_EXTRA_ENV_COUNT) { "Too many env variables." }
+                val value = envJson.optString(key, "")
+                require(value.length <= MAX_ENV_VALUE_CHARS) { "Env value is too large: $key" }
+                extraEnv[key] = value
+            }
+        }
+
+        return ExecOptions(
+            timeoutSeconds = timeout,
+            stdin = stdin,
+            cwd = cwd,
+            extraEnv = extraEnv
+        )
+    }
+
+    private fun readStreamTail(fd: ParcelFileDescriptor): String {
+        return ParcelFileDescriptor.AutoCloseInputStream(fd).use { input ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            val tail = StringBuilder()
+            while (true) {
+                val read = input.read(buffer)
+                if (read <= 0) break
+                tail.append(String(buffer, 0, read, Charsets.UTF_8))
+                if (tail.length > MAX_OUTPUT_CHARS * 2) {
+                    tail.delete(0, tail.length - MAX_OUTPUT_CHARS)
+                }
+            }
+            if (tail.length > MAX_OUTPUT_CHARS) {
+                tail.substring(tail.length - MAX_OUTPUT_CHARS)
+            } else {
+                tail.toString()
+            }
+        }
+    }
+
+    private fun resolveModuleDirectory(relativePath: String): File {
+        if (relativePath.isBlank() || relativePath == ".") return module.directory
+        val clean = cleanRelativePath(relativePath)
+        val directory = File(module.directory, clean)
+        ensureInside(module.directory, directory)
+        require(directory.isDirectory) { "cwd is not a directory: $relativePath" }
+        return directory
+    }
+
+    private fun ensureModuleUsableForWebFiles() {
+        require(module.enabled) { "Module is disabled." }
+        require(module.webRoot?.isDirectory == true) { "Module has no WebUI root." }
+    }
+
+    private fun resolveWebFile(relativeWebPath: String): File {
+        val root = module.webRoot ?: error("Module has no WebUI root.")
+        val clean = cleanRelativePath(relativeWebPath)
+        val file = File(root, clean)
+        ensureInside(root, file)
+        require(!file.isDirectory) { "Destination is a directory." }
+        return file
+    }
+
+    private fun cleanRelativePath(path: String): String {
+        val clean = path.replace('\\', '/').trim('/')
+        require(clean.isNotBlank()) { "Path is blank." }
+        val parts = clean.split('/')
+        require(parts.none { it.isBlank() || it == "." || it == ".." }) { "Unsafe path: $path" }
+        return clean
+    }
+
+    private fun ensureInside(root: File, file: File) {
+        val rootPath = root.canonicalFile.toPath()
+        val filePath = file.canonicalFile.toPath()
+        require(filePath.startsWith(rootPath)) { "Path escapes module directory." }
+    }
+
+    private fun downloadHttpsToFile(rawUrl: String, outFile: File): Long {
+        var current = parseHttpsUrl(rawUrl)
+        var redirects = 0
+
+        while (true) {
+            val connection = (current.openConnection() as HttpsURLConnection).apply {
+                instanceFollowRedirects = false
+                connectTimeout = NETWORK_TIMEOUT_MS
+                readTimeout = NETWORK_TIMEOUT_MS
+                requestMethod = "GET"
+                setRequestProperty("User-Agent", "Shizuku-Module-WebUI/1.0")
+            }
+
+            val code = connection.responseCode
+            if (code in REDIRECT_CODES) {
+                redirects++
+                require(redirects <= MAX_REDIRECTS) { "Too many redirects." }
+                val location = connection.getHeaderField("Location")
+                    ?: throw IllegalStateException("Redirect without Location header.")
+                current = parseHttpsUrl(URL(current, location).toString())
+                connection.disconnect()
+                continue
+            }
+
+            require(code in 200..299) { "HTTP $code while downloading $current" }
+            val parent = outFile.parentFile ?: error("Destination has no parent directory.")
+            parent.mkdirs()
+            val tmp = File(parent, "${outFile.name}.download")
+            var total = 0L
+            try {
+                BufferedInputStream(connection.inputStream).use { input ->
+                    tmp.outputStream().use { output ->
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read <= 0) break
+                            total += read.toLong()
+                            require(total <= MAX_DOWNLOAD_BYTES) { "Downloaded file is too large." }
+                            output.write(buffer, 0, read)
+                        }
+                    }
+                }
+                if (outFile.exists()) outFile.delete()
+                check(tmp.renameTo(outFile)) { "Unable to save downloaded file." }
+                return total
+            } finally {
+                connection.disconnect()
+                if (tmp.exists()) tmp.delete()
+            }
+        }
+    }
+
+    private fun parseHttpsUrl(raw: String): URL {
+        val url = URL(raw.trim())
+        require(url.protocol.equals("https", ignoreCase = true)) { "Only HTTPS URLs are allowed." }
+        require(!url.host.isNullOrBlank()) { "URL host is blank." }
+        return url
+    }
+
+    private fun shellError(message: String): String {
+        return JSONObject().apply {
+            put("ok", false)
+            put("exitCode", EXIT_ERROR)
+            put("stdout", "")
+            put("stderr", message)
+            put("timedOut", false)
+        }.toString()
+    }
+
+    private data class ExecOptions(
+        val timeoutSeconds: Long = DEFAULT_SCRIPT_SECONDS,
+        val stdin: String = "",
+        val cwd: String = "",
+        val extraEnv: Map<String, String> = emptyMap()
+    )
+
+    companion object {
+        private const val EXIT_ERROR = -1
+        private const val EXIT_TIMEOUT = 124
+        private const val DEFAULT_SCRIPT_SECONDS = 120L
+        private const val MIN_SCRIPT_SECONDS = 1L
+        private const val MAX_SCRIPT_SECONDS = 600L
+        private const val MAX_OUTPUT_CHARS = 64 * 1024
+        private const val MAX_STDIN_CHARS = 64 * 1024
+        private const val MAX_EXTRA_ENV_COUNT = 32
+        private const val MAX_ENV_VALUE_CHARS = 4096
+        private const val MAX_DOWNLOAD_BYTES = 20L * 1024L * 1024L
+        private const val NETWORK_TIMEOUT_MS = 15_000
+        private const val MAX_REDIRECTS = 5
+        private val ENV_KEY_REGEX = Regex("[A-Za-z_][A-Za-z0-9_]*")
+        private val REDIRECT_CODES = setOf(
+            HttpURLConnection.HTTP_MOVED_PERM,
+            HttpURLConnection.HTTP_MOVED_TEMP,
+            HttpURLConnection.HTTP_SEE_OTHER,
+            307,
+            308
+        )
     }
 }

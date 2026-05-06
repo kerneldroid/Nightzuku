@@ -155,26 +155,99 @@ Current WebView policy:
 - JavaScript: enabled.
 - DOM storage: enabled.
 - File access: enabled for module-local files.
-- Universal file access from file URLs: disabled.
+- HTTPS network loads: enabled.
+- Universal file access from file URLs: enabled so local WebUI pages can load/fetch HTTPS assets.
+- Mixed content: blocked.
 - Content access: disabled.
+- Third-party cookies: disabled.
 
-WebUI should treat module files as local UI assets. 
+WebUI should treat module files as local UI assets and load remote dependencies from HTTPS only.
+
+Example using the latest BeerCSS package from jsDelivr:
+
+```html
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/beercss@latest/dist/cdn/beer.min.css">
+<script type="module" src="https://cdn.jsdelivr.net/npm/beercss@latest/dist/cdn/beer.min.js"></script>
+```
 
 ### JavaScript-to-Shell Bridge
 
-A synchronous shell execution bridge is exposed to the WebUI when the module is enabled and set to **Full access** mode.
+A shell execution bridge is exposed as `window.Shizuku` when the module is enabled and set to **Full access** mode.
+
+#### Module Info
+
+You can retrieve the current module's metadata, paths, and settings:
+
+```javascript
+const info = JSON.parse(window.Shizuku.getModuleInfo());
+console.log(info.id);         // e.g. "my-module"
+console.log(info.enabled);    // true
+console.log(info.accessMode); // "full"
+console.log(info.moduleDir);  // absolute path to module storage
+```
+
+#### Shell Execution
 
 ```javascript
 // Execute a shell command through Shizuku
 const resultJson = window.Shizuku.exec("id");
 const result = JSON.parse(resultJson);
 
+console.log(result.ok);       // true when exitCode === 0 and no timeout
 console.log(result.exitCode); // e.g. 0
 console.log(result.stdout);   // e.g. "uid=2000(shell) gid=2000(shell)..."
 console.log(result.stderr);   // e.g. ""
+console.log(result.timedOut); // false
 ```
 
-If the module is disabled or running in **Safe** mode, `exec()` will return a JSON object with `exitCode: -1` and a permission denied message in `stderr`. Execution timeout is 120 seconds. The command is run with the module directory as its working directory.
+Advanced execution with timeout, stdin, cwd, and extra environment variables:
+
+```javascript
+const result = JSON.parse(window.Shizuku.execWithOptions("cat && pwd && echo $FOO", JSON.stringify({
+  timeoutSeconds: 30,
+  stdin: "hello\n",
+  cwd: "webui",
+  env: {
+    FOO: "bar"
+  }
+})));
+```
+
+Rules:
+
+- `exec()` timeout defaults to 120 seconds.
+- `execWithOptions().timeoutSeconds` is clamped to `1..600` seconds.
+- `stdin` is limited to 64 KB.
+- stdout/stderr return only the last 64 KB per stream, but the process streams are still drained to avoid deadlocks.
+- `cwd` must stay inside the module directory.
+- extra env keys must match `[A-Za-z_][A-Za-z0-9_]*`.
+
+If the module is disabled or running in **Safe** mode, shell calls return JSON with `ok: false`, `exitCode: -1`, and the error text in `stderr`.
+
+### WebUI Internet File Loader
+
+`window.Shizuku.download(url, relativeWebPath)` downloads an HTTPS URL into the module WebUI directory. This is meant for optional runtime caching of CSS, JS, fonts, and other WebUI assets.
+
+```javascript
+const result = JSON.parse(window.Shizuku.download(
+  "https://cdn.jsdelivr.net/npm/beercss@latest/dist/cdn/beer.min.css",
+  "vendor/beer.min.css"
+));
+
+if (result.ok) {
+  console.log(`saved ${result.bytes} bytes`);
+} else {
+  console.error(result.error);
+}
+```
+
+Rules:
+
+- URL must be `https://`.
+- destination path is relative to the module WebUI root.
+- `..`, absolute paths, and path traversal are rejected.
+- max file size is 20 MB.
+- redirects are followed only if they stay on HTTPS.
 
 ## Enable, Disable, Delete
 
@@ -223,11 +296,13 @@ Implemented:
 - Enable/disable/delete.
 - Banner rendering.
 - WebUI rendering.
+- HTTPS WebUI asset loading.
+- WebUI HTTPS file download into the module WebUI root.
 - Manual `action.sh`.
 - Policy-gated `service.sh`.
 - One service run per Shizuku binder session.
 - Last action/service logs.
-- Direct JavaScript-to-shell bridge.
+- Direct JavaScript-to-shell bridge with optional timeout/stdin/cwd/env.
 
 Not implemented:
 
