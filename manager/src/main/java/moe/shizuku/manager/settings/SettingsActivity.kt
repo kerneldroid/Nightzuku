@@ -443,7 +443,12 @@ private fun CustomPermissionsDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.modules_custom_permissions)) },
         text = {
-            Column {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
                 SwitchSettingsRow(
                     icon = R.drawable.ic_outline_play_arrow_24,
                     title = stringResource(R.string.modules_permission_action),
@@ -465,7 +470,13 @@ private fun CustomPermissionsDialog(
                     title = stringResource(R.string.modules_permission_web_bridge),
                     summary = stringResource(R.string.modules_permission_web_bridge_summary),
                     checked = draft.webBridge,
-                    onCheckedChange = { draft = draft.copy(webBridge = it) }
+                    onCheckedChange = { enabled ->
+                        draft = if (enabled) {
+                            draft.copy(webBridge = true, webNetwork = false)
+                        } else {
+                            draft.copy(webBridge = false)
+                        }
+                    }
                 )
                 GroupDivider()
                 SwitchSettingsRow(
@@ -473,7 +484,13 @@ private fun CustomPermissionsDialog(
                     title = stringResource(R.string.modules_permission_web_network),
                     summary = stringResource(R.string.modules_permission_web_network_summary),
                     checked = draft.webNetwork,
-                    onCheckedChange = { draft = draft.copy(webNetwork = it) }
+                    onCheckedChange = { enabled ->
+                        draft = if (enabled) {
+                            draft.copy(webNetwork = true, webBridge = false)
+                        } else {
+                            draft.copy(webNetwork = false)
+                        }
+                    }
                 )
                 GroupDivider()
                 SwitchSettingsRow(

@@ -40,10 +40,7 @@ class ModuleWebViewActivity : AppActivity() {
             var pendingCommand by remember { mutableStateOf<ModuleCommandRequest?>(null) }
             var pendingDecision by remember { mutableStateOf<((Boolean) -> Unit)?>(null) }
             val webNetworkAllowed = ModuleSettings.canUseWebNetwork()
-            val exposeBridge = module.enabled &&
-                module.declaresShellBridge &&
-                ModuleSettings.canExposeWebBridge() &&
-                !webNetworkAllowed
+            val exposeBridge = module.enabled && ModuleSettings.canExposeWebBridge() && !webNetworkAllowed
 
             ShizukuExpressiveTheme {
                 ShizukuScaffold(
