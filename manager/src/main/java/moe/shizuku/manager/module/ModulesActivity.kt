@@ -59,6 +59,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.neverEqualPolicy
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -89,7 +90,7 @@ class ModulesActivity : AppActivity() {
         setContent {
             val context = LocalContext.current
             val scope = rememberCoroutineScope()
-            var modules by remember { mutableStateOf<List<AdbModule>>(emptyList()) }
+            var modules by remember { mutableStateOf<List<AdbModule>>(emptyList(), neverEqualPolicy()) }
             var output by remember { mutableStateOf<Pair<String, String>?>(null) }
             var deleteTarget by remember { mutableStateOf<AdbModule?>(null) }
             var pendingCommand by remember { mutableStateOf<ModuleCommandRequest?>(null) }
