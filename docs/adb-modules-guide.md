@@ -87,8 +87,11 @@ Custom paths can be declared in `module.prop`:
 ```properties
 banner=assets/banner.webp
 webui=webui
+usesShellBridge=true
 action=scripts/action.sh
 ```
+
+`usesShellBridge=true` is mandatory for WebUI pages that need `window.Shizuku`.
 
 ## Script Environment
 
@@ -98,7 +101,7 @@ Scripts run from the module directory. Use these variables:
 MODDIR=/data/user/0/<package>/files/adb_modules/<id>
 ASH_STANDALONE=1
 SHIZUKU_MODULE_ID=<id>
-SHIZUKU_MODULE_MODE=safe|full
+SHIZUKU_MODULE_MODE=safe|custom|full
 SHIZUKU_MODULE_BACKGROUND=0|1
 ```
 
@@ -111,7 +114,7 @@ Use `action.sh` for a user-triggered command.
 Use `service.sh` for controlled background setup. It runs only when:
 
 - the module is enabled;
-- access mode is Full;
+- access mode is Full, or Custom with Service enabled;
 - background actions are enabled;
 - Shizuku binder is available.
 

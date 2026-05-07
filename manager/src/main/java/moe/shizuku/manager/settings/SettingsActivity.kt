@@ -16,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
@@ -30,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import moe.shizuku.manager.R
 import moe.shizuku.manager.ShizukuSettings
@@ -85,11 +87,28 @@ class SettingsActivity : AppActivity() {
             var showLanguageDialog by remember { mutableStateOf(false) }
             var showNightDialog by remember { mutableStateOf(false) }
             var showModuleModeDialog by remember { mutableStateOf(false) }
+            var showCustomPermissionsDialog by remember { mutableStateOf(false) }
+            var showAiDialog by remember { mutableStateOf(false) }
             var moduleAccessMode by remember {
                 mutableStateOf(ModuleSettings.getAccessMode())
             }
+            var customPermissions by remember {
+                mutableStateOf(ModuleSettings.getCustomPermissions())
+            }
             var moduleBackground by remember {
                 mutableStateOf(ModuleSettings.allowBackgroundActions())
+            }
+            var recommandWebUi by remember {
+                mutableStateOf(ModuleSettings.recommandForWebUi())
+            }
+            var recommandAction by remember {
+                mutableStateOf(ModuleSettings.recommandForAction())
+            }
+            var aiModel by remember {
+                mutableStateOf(ModuleSettings.getAiModel())
+            }
+            var aiApiKey by remember {
+                mutableStateOf(ModuleSettings.getAiApiKey())
             }
             var recreateTick by remember { mutableIntStateOf(0) }
 
@@ -211,6 +230,15 @@ class SettingsActivity : AppActivity() {
                                 summary = stringResource(moduleAccessMode.labelRes),
                                 onClick = { showModuleModeDialog = true }
                             )
+                            if (moduleAccessMode == ModuleSettings.AccessMode.CUSTOM) {
+                                GroupDivider()
+                                SettingsRow(
+                                    icon = R.drawable.ic_add_24,
+                                    title = stringResource(R.string.modules_custom_permissions),
+                                    summary = stringResource(R.string.modules_custom_permissions_summary),
+                                    onClick = { showCustomPermissionsDialog = true }
+                                )
+                            }
                             GroupDivider()
                             SwitchSettingsRow(
                                 icon = R.drawable.ic_outline_play_arrow_24,
@@ -221,6 +249,35 @@ class SettingsActivity : AppActivity() {
                                     ModuleSettings.setAllowBackgroundActions(enabled)
                                     moduleBackground = enabled
                                 }
+                            )
+                            GroupDivider()
+                            SwitchSettingsRow(
+                                icon = R.drawable.ic_warning_24,
+                                title = stringResource(R.string.modules_recommand_webui),
+                                summary = stringResource(R.string.modules_recommand_webui_summary),
+                                checked = recommandWebUi,
+                                onCheckedChange = { enabled ->
+                                    ModuleSettings.setRecommandForWebUi(enabled)
+                                    recommandWebUi = enabled
+                                }
+                            )
+                            GroupDivider()
+                            SwitchSettingsRow(
+                                icon = R.drawable.ic_warning_24,
+                                title = stringResource(R.string.modules_recommand_action),
+                                summary = stringResource(R.string.modules_recommand_action_summary),
+                                checked = recommandAction,
+                                onCheckedChange = { enabled ->
+                                    ModuleSettings.setRecommandForAction(enabled)
+                                    recommandAction = enabled
+                                }
+                            )
+                            GroupDivider()
+                            SettingsRow(
+                                icon = R.drawable.ic_settings_outline_24dp,
+                                title = stringResource(R.string.modules_ai),
+                                summary = stringResource(aiModel.labelRes),
+                                onClick = { showAiDialog = true }
                             )
                         }
                     }
@@ -280,7 +337,11 @@ class SettingsActivity : AppActivity() {
                 }
 
                 if (showModuleModeDialog) {
-                    val moduleModes = listOf(ModuleSettings.AccessMode.SAFE, ModuleSettings.AccessMode.FULL)
+                    val moduleModes = listOf(
+                        ModuleSettings.AccessMode.SAFE,
+                        ModuleSettings.AccessMode.CUSTOM,
+                        ModuleSettings.AccessMode.FULL
+                    )
                     ChoiceDialog(
                         title = stringResource(R.string.modules_access_mode),
                         choices = moduleModes.map {
@@ -297,6 +358,33 @@ class SettingsActivity : AppActivity() {
                             ModuleSettings.setAccessMode(mode)
                             moduleAccessMode = mode
                             showModuleModeDialog = false
+                        }
+                    )
+                }
+
+                if (showCustomPermissionsDialog) {
+                    CustomPermissionsDialog(
+                        value = customPermissions,
+                        onDismiss = { showCustomPermissionsDialog = false },
+                        onSave = { value ->
+                            ModuleSettings.setCustomPermissions(value)
+                            customPermissions = value
+                            showCustomPermissionsDialog = false
+                        }
+                    )
+                }
+
+                if (showAiDialog) {
+                    AiSettingsDialog(
+                        model = aiModel,
+                        apiKey = aiApiKey,
+                        onDismiss = { showAiDialog = false },
+                        onSave = { model, apiKey ->
+                            ModuleSettings.setAiModel(model)
+                            ModuleSettings.setAiApiKey(apiKey)
+                            aiModel = model
+                            aiApiKey = apiKey
+                            showAiDialog = false
                         }
                     )
                 }
@@ -342,6 +430,135 @@ class SettingsActivity : AppActivity() {
             }
         }
     }
+}
+
+@Composable
+private fun CustomPermissionsDialog(
+    value: ModuleSettings.CustomPermissions,
+    onDismiss: () -> Unit,
+    onSave: (ModuleSettings.CustomPermissions) -> Unit
+) {
+    var draft by remember(value) { mutableStateOf(value) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.modules_custom_permissions)) },
+        text = {
+            Column {
+                SwitchSettingsRow(
+                    icon = R.drawable.ic_outline_play_arrow_24,
+                    title = stringResource(R.string.modules_permission_action),
+                    summary = stringResource(R.string.modules_permission_action_summary),
+                    checked = draft.action,
+                    onCheckedChange = { draft = draft.copy(action = it) }
+                )
+                GroupDivider()
+                SwitchSettingsRow(
+                    icon = R.drawable.ic_terminal_24,
+                    title = stringResource(R.string.modules_permission_service),
+                    summary = stringResource(R.string.modules_permission_service_summary),
+                    checked = draft.service,
+                    onCheckedChange = { draft = draft.copy(service = it) }
+                )
+                GroupDivider()
+                SwitchSettingsRow(
+                    icon = R.drawable.ic_code_24dp,
+                    title = stringResource(R.string.modules_permission_web_bridge),
+                    summary = stringResource(R.string.modules_permission_web_bridge_summary),
+                    checked = draft.webBridge,
+                    onCheckedChange = { draft = draft.copy(webBridge = it) }
+                )
+                GroupDivider()
+                SwitchSettingsRow(
+                    icon = R.drawable.ic_baseline_link_24,
+                    title = stringResource(R.string.modules_permission_web_network),
+                    summary = stringResource(R.string.modules_permission_web_network_summary),
+                    checked = draft.webNetwork,
+                    onCheckedChange = { draft = draft.copy(webNetwork = it) }
+                )
+                GroupDivider()
+                SwitchSettingsRow(
+                    icon = R.drawable.ic_outline_arrow_upward_24,
+                    title = stringResource(R.string.modules_permission_web_download),
+                    summary = stringResource(R.string.modules_permission_web_download_summary),
+                    checked = draft.webDownload,
+                    onCheckedChange = { draft = draft.copy(webDownload = it) }
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(draft) }) {
+                Text(stringResource(android.R.string.ok))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(android.R.string.cancel))
+            }
+        },
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = MaterialTheme.shapes.extraLarge
+    )
+}
+
+@Composable
+private fun AiSettingsDialog(
+    model: ModuleSettings.AiModel,
+    apiKey: String,
+    onDismiss: () -> Unit,
+    onSave: (ModuleSettings.AiModel, String) -> Unit
+) {
+    var draftModel by remember(model) { mutableStateOf(model) }
+    var draftApiKey by remember(apiKey) { mutableStateOf(apiKey) }
+    val models = ModuleSettings.AiModel.entries
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.modules_ai)) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                models.forEach { item ->
+                    SettingsRow(
+                        icon = R.drawable.ic_settings_outline_24dp,
+                        title = stringResource(item.labelRes),
+                        summary = item.modelId,
+                        onClick = { draftModel = item },
+                        trailing = {
+                            RadioButton(
+                                selected = item == draftModel,
+                                onClick = { draftModel = item }
+                            )
+                        }
+                    )
+                }
+                OutlinedTextField(
+                    value = draftApiKey,
+                    onValueChange = { draftApiKey = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    label = { Text(stringResource(R.string.modules_ai_api_key)) },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(draftModel, draftApiKey) }) {
+                Text(stringResource(android.R.string.ok))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(android.R.string.cancel))
+            }
+        },
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = MaterialTheme.shapes.extraLarge
+    )
 }
 
 private data class ChoiceOption(

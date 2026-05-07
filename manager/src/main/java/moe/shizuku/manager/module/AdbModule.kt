@@ -12,6 +12,7 @@ data class AdbModule(
     val directory: File,
     val banner: File?,
     val webRoot: File?,
+    val declaresShellBridge: Boolean,
     val actionScript: File?,
     val serviceScript: File?,
     val logsDir: File,

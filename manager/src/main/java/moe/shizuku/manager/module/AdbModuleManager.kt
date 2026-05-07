@@ -101,13 +101,13 @@ object AdbModuleManager {
     }
 
     suspend fun runAction(module: AdbModule): ModuleActionResult = withContext(Dispatchers.IO) {
+        check(ModuleSettings.canRunAction()) { "action.sh is blocked by module access policy." }
         val script = module.actionScript?.takeIf { it.isFile } ?: error("This module has no action.sh.")
         runModuleScript(module, script, module.lastActionLog)
     }
 
     suspend fun runService(module: AdbModule): ModuleActionResult = withContext(Dispatchers.IO) {
-        val mode = ModuleSettings.getAccessMode()
-        check(mode == ModuleSettings.AccessMode.FULL) { "service.sh requires Full access mode." }
+        check(ModuleSettings.canRunService()) { "service.sh is blocked by module access policy." }
         check(ModuleSettings.allowBackgroundActions()) { "Background actions are disabled." }
         val script = module.serviceScript?.takeIf { it.isFile } ?: error("This module has no service.sh.")
         runModuleScript(module, script, module.lastServiceLog)
@@ -116,7 +116,7 @@ object AdbModuleManager {
     suspend fun runEnabledServicesIfAllowed(context: Context): List<Pair<AdbModule, ModuleActionResult>> =
         withContext(Dispatchers.IO) {
             if (servicesStartedForBinder) return@withContext emptyList()
-            if (ModuleSettings.getAccessMode() != ModuleSettings.AccessMode.FULL) return@withContext emptyList()
+            if (!ModuleSettings.canRunService()) return@withContext emptyList()
             if (!ModuleSettings.allowBackgroundActions()) return@withContext emptyList()
             if (!Shizuku.pingBinder()) return@withContext emptyList()
 
@@ -212,6 +212,9 @@ object AdbModuleManager {
                 "webui",
                 "web"
             )?.takeIf { it.isDirectory },
+            declaresShellBridge = props["usesShellBridge"]?.toBooleanStrictOrNull()
+                ?: props["shellBridge"]?.toBooleanStrictOrNull()
+                ?: false,
             actionScript = findFirstExisting(directory, props["action"], "action.sh"),
             serviceScript = findFirstExisting(directory, "service.sh"),
             logsDir = directory.resolve("logs"),

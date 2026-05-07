@@ -155,24 +155,30 @@ Current WebView policy:
 - JavaScript: enabled.
 - DOM storage: enabled.
 - File access: enabled for module-local files.
-- HTTPS network loads: enabled.
-- Universal file access from file URLs: enabled so local WebUI pages can load/fetch HTTPS assets.
+- HTTPS network loads: blocked unless Custom mode explicitly enables WebView internet.
+- Universal file access from file URLs: disabled.
 - Mixed content: blocked.
 - Content access: disabled.
 - Third-party cookies: disabled.
+- `window.Shizuku` is exposed only when the module declares `usesShellBridge=true`, the access policy allows the WebUI bridge, and WebView internet is off.
 
-WebUI should treat module files as local UI assets and load remote dependencies from HTTPS only.
+WebUI should treat module files as local UI assets. Remote dependencies are blocked by default.
 
-Example using the latest BeerCSS package from jsDelivr:
+Example using a pinned BeerCSS package from jsDelivr:
 
 ```html
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/beercss@latest/dist/cdn/beer.min.css">
-<script type="module" src="https://cdn.jsdelivr.net/npm/beercss@latest/dist/cdn/beer.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/beercss@4.0.21/dist/cdn/beer.min.css">
+<script type="module" src="https://cdn.jsdelivr.net/npm/beercss@4.0.21/dist/cdn/beer.min.js"></script>
 ```
 
 ### JavaScript-to-Shell Bridge
 
-A shell execution bridge is exposed as `window.Shizuku` when the module is enabled and set to **Full access** mode.
+A shell execution bridge is exposed as `window.Shizuku` only when:
+
+- the module is enabled;
+- `module.prop` declares `usesShellBridge=true`;
+- access mode is **Full access**, or **Custom** with WebUI shell bridge enabled;
+- WebView internet is off.
 
 #### Module Info
 
@@ -222,7 +228,7 @@ Rules:
 - `cwd` must stay inside the module directory.
 - extra env keys must match `[A-Za-z_][A-Za-z0-9_]*`.
 
-If the module is disabled or running in **Safe** mode, shell calls return JSON with `ok: false`, `exitCode: -1`, and the error text in `stderr`.
+If the module is disabled, missing `usesShellBridge=true`, or blocked by Safe/Custom policy, shell calls return JSON with `ok: false`, `exitCode: -1`, and the error text in `stderr`.
 
 ### WebUI Internet File Loader
 
@@ -230,7 +236,7 @@ If the module is disabled or running in **Safe** mode, shell calls return JSON w
 
 ```javascript
 const result = JSON.parse(window.Shizuku.download(
-  "https://cdn.jsdelivr.net/npm/beercss@latest/dist/cdn/beer.min.css",
+  "https://cdn.jsdelivr.net/npm/beercss@4.0.21/dist/cdn/beer.min.css",
   "vendor/beer.min.css"
 ));
 
@@ -246,6 +252,8 @@ Rules:
 - URL must be `https://`.
 - destination path is relative to the module WebUI root.
 - `..`, absolute paths, and path traversal are rejected.
+- `index.html` and nested `*/index.html` cannot be overwritten.
+- Safe mode blocks `download()`.
 - max file size is 20 MB.
 - redirects are followed only if they stay on HTTPS.
 

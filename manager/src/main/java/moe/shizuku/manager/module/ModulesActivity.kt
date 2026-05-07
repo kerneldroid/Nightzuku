@@ -89,11 +89,25 @@ class ModulesActivity : AppActivity() {
             var modules by remember { mutableStateOf<List<AdbModule>>(emptyList()) }
             var output by remember { mutableStateOf<Pair<String, String>?>(null) }
             var deleteTarget by remember { mutableStateOf<AdbModule?>(null) }
+            var pendingCommand by remember { mutableStateOf<ModuleCommandRequest?>(null) }
             var runningModuleId by remember { mutableStateOf<String?>(null) }
 
             fun reload() {
                 scope.launch {
                     modules = AdbModuleManager.listModules(context)
+                }
+            }
+
+            fun runModuleAction(module: AdbModule) {
+                scope.launch {
+                    runningModuleId = module.id
+                    output = runCatching {
+                        val result = AdbModuleManager.runAction(module)
+                        context.getString(R.string.modules_action_result, result.exitCode) to result.combinedOutput
+                    }.getOrElse {
+                        context.getString(R.string.modules_action_failed) to (it.message ?: it.javaClass.simpleName)
+                    }
+                    runningModuleId = null
                 }
             }
 
@@ -164,15 +178,14 @@ class ModulesActivity : AppActivity() {
                                 }
                             },
                             onRunAction = {
-                                scope.launch {
-                                    runningModuleId = module.id
-                                    output = runCatching {
-                                        val result = AdbModuleManager.runAction(module)
-                                        context.getString(R.string.modules_action_result, result.exitCode) to result.combinedOutput
-                                    }.getOrElse {
-                                        context.getString(R.string.modules_action_failed) to (it.message ?: it.javaClass.simpleName)
-                                    }
-                                    runningModuleId = null
+                                if (ModuleSettings.recommandForAction()) {
+                                    pendingCommand = ModuleCommandRequest(
+                                        module = module,
+                                        source = ModuleCommandSource.ACTION,
+                                        command = module.actionCommandPreview()
+                                    )
+                                } else {
+                                    runModuleAction(module)
                                 }
                             },
                             onRunService = {
@@ -240,6 +253,20 @@ class ModulesActivity : AppActivity() {
                         shape = MaterialTheme.shapes.extraLarge
                     )
                 }
+
+                pendingCommand?.let { request ->
+                    ReCommandDialog(
+                        request = request,
+                        busy = runningModuleId == request.module.id,
+                        onAnalyze = { ModuleAiCommandAnalyzer.analyze(request.command) },
+                        onDismiss = { pendingCommand = null },
+                        onReject = { pendingCommand = null },
+                        onApprove = {
+                            pendingCommand = null
+                            runModuleAction(request.module)
+                        }
+                    )
+                }
             }
         }
     }
@@ -252,6 +279,22 @@ class ModulesActivity : AppActivity() {
         )
     }
 }
+
+private fun AdbModule.actionCommandPreview(): String {
+    val script = actionScript ?: return "sh action.sh"
+    val content = runCatching { script.readText().trim() }.getOrDefault("")
+    return buildString {
+        append("sh ")
+        append(script.absolutePath)
+        if (content.isNotBlank()) {
+            appendLine()
+            appendLine()
+            append(content)
+        }
+    }.take(MAX_RECOMMAND_COMMAND_CHARS)
+}
+
+private const val MAX_RECOMMAND_COMMAND_CHARS = 64 * 1024
 
 @Composable
 private fun EmptyModulesCard(onInstall: () -> Unit) {
@@ -441,7 +484,7 @@ private fun ModuleActions(
             label = R.string.modules_run_action,
             icon = R.drawable.ic_outline_play_arrow_24,
             primary = true,
-            enabled = !busy && module.enabled && module.hasAction,
+            enabled = !busy && module.enabled && module.hasAction && ModuleSettings.canRunAction(),
             onClick = onRunAction
         )
         ModuleButton(
@@ -453,7 +496,7 @@ private fun ModuleActions(
         ModuleButton(
             label = R.string.modules_run_service,
             icon = R.drawable.ic_terminal_24,
-            enabled = !busy && module.enabled && module.hasService,
+            enabled = !busy && module.enabled && module.hasService && ModuleSettings.canRunService(),
             onClick = onRunService
         )
         ModuleButton(

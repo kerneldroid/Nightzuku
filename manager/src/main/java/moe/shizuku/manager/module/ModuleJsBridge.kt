@@ -12,7 +12,10 @@ import java.net.URL
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.HttpsURLConnection
 
-class ModuleJsBridge(private val module: AdbModule) {
+class ModuleJsBridge(
+    private val module: AdbModule,
+    private val commandReviewer: ModuleCommandReviewer? = null
+) {
 
     @JavascriptInterface
     fun getModuleInfo(): String {
@@ -28,6 +31,19 @@ class ModuleJsBridge(private val module: AdbModule) {
             put("moduleDir", module.directory.absolutePath)
             put("accessMode", ModuleSettings.getAccessMode().value)
             put("background", ModuleSettings.allowBackgroundActions())
+            put("permissions", JSONObject().apply {
+                put("action", ModuleSettings.canRunAction())
+                put("service", ModuleSettings.canRunService())
+                put(
+                    "webBridge",
+                    ModuleSettings.canExposeWebBridge() &&
+                        module.declaresShellBridge &&
+                        !ModuleSettings.canUseWebNetwork()
+                )
+                put("webNetwork", ModuleSettings.canUseWebNetwork())
+                put("webDownload", ModuleSettings.canDownloadWebFiles())
+                put("declaresShellBridge", module.declaresShellBridge)
+            })
         }.toString()
     }
 
@@ -78,8 +94,23 @@ class ModuleJsBridge(private val module: AdbModule) {
         }
 
         val mode = ModuleSettings.getAccessMode()
-        if (mode != ModuleSettings.AccessMode.FULL) {
-            return shellError("Permission denied: requires Full access mode.")
+        if (!module.declaresShellBridge) {
+            return shellError("Permission denied: module.prop must declare usesShellBridge=true.")
+        }
+        if (!ModuleSettings.canExposeWebBridge()) {
+            return shellError("Permission denied: WebUI shell bridge is blocked by module access policy.")
+        }
+        if (ModuleSettings.recommandForWebUi()) {
+            val approved = commandReviewer?.confirmCommand(
+                ModuleCommandRequest(
+                    module = module,
+                    source = ModuleCommandSource.WEB_UI,
+                    command = command
+                )
+            ) ?: false
+            if (!approved) {
+                return shellError("Command rejected by ReCommand.")
+            }
         }
 
         val binder = Shizuku.getBinder() ?: return shellError("Shizuku service is not running.")
@@ -220,11 +251,16 @@ class ModuleJsBridge(private val module: AdbModule) {
     private fun ensureModuleUsableForWebFiles() {
         require(module.enabled) { "Module is disabled." }
         require(module.webRoot?.isDirectory == true) { "Module has no WebUI root." }
+        require(module.declaresShellBridge) { "module.prop must declare usesShellBridge=true." }
+        require(ModuleSettings.canDownloadWebFiles()) { "WebUI download is blocked by module access policy." }
     }
 
     private fun resolveWebFile(relativeWebPath: String): File {
         val root = module.webRoot ?: error("Module has no WebUI root.")
         val clean = cleanRelativePath(relativeWebPath)
+        require(!clean.equals("index.html", ignoreCase = true) && !clean.endsWith("/index.html", ignoreCase = true)) {
+            "download() cannot overwrite WebUI entry files."
+        }
         val file = File(root, clean)
         ensureInside(root, file)
         require(!file.isDirectory) { "Destination is a directory." }
