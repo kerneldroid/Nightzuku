@@ -170,19 +170,26 @@ class SettingsActivity : AppActivity() {
                                     title = stringResource(R.string.settings_translation_contributors),
                                     summary = contributors,
                                     onClick = {
-                                        if (aiUnlocked) return@SettingsRow
                                         val now = SystemClock.elapsedRealtime()
                                         val taps = (contributorTapTimes + now)
                                             .filter { now - it <= AI_UNLOCK_WINDOW_MS }
                                             .takeLast(AI_UNLOCK_TAPS)
                                         contributorTapTimes = taps
                                         if (taps.size >= AI_UNLOCK_TAPS) {
-                                            ModuleSettings.setAiCheckerUnlocked(true)
-                                            aiUnlocked = true
+                                            val nextUnlocked = !aiUnlocked
+                                            ModuleSettings.setAiCheckerUnlocked(nextUnlocked)
+                                            aiUnlocked = nextUnlocked
                                             contributorTapTimes = emptyList()
+                                            if (!nextUnlocked) {
+                                                showAiDialog = false
+                                            }
                                             Toast.makeText(
                                                 this@SettingsActivity,
-                                                R.string.modules_ai_unlocked,
+                                                if (nextUnlocked) {
+                                                    R.string.modules_ai_unlocked
+                                                } else {
+                                                    R.string.modules_ai_hidden
+                                                },
                                                 Toast.LENGTH_SHORT
                                             ).show()
                                         }

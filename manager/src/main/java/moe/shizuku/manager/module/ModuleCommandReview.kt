@@ -10,16 +10,21 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -161,13 +166,14 @@ fun ReCommandDialog(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var expanded by remember(request.command) { mutableStateOf(request.command.length <= 420) }
+    val canExpandCommand = request.command.length > COMMAND_PREVIEW_CHARS
+    var expanded by remember(request.command) { mutableStateOf(!canExpandCommand) }
     var aiResult by remember(request.command) { mutableStateOf<Result<AiCommandReview>?>(null) }
     var aiBusy by remember(request.command) { mutableStateOf(false) }
-    val commandPreview = if (expanded || request.command.length <= 420) {
+    val commandPreview = if (expanded || !canExpandCommand) {
         request.command
     } else {
-        request.command.take(420) + "\n..."
+        request.command.take(COMMAND_PREVIEW_CHARS) + "\n..."
     }
 
     AlertDialog(
@@ -199,16 +205,19 @@ fun ReCommandDialog(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    TextButton(onClick = { expanded = !expanded }) {
-                        Text(
-                            if (expanded) {
-                                stringResource(R.string.modules_recommand_collapse)
-                            } else {
-                                stringResource(R.string.modules_recommand_expand)
-                            }
-                        )
+                    if (canExpandCommand) {
+                        IconButton(onClick = { expanded = !expanded }) {
+                            Icon(
+                                imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                contentDescription = if (expanded) {
+                                    stringResource(R.string.modules_recommand_collapse)
+                                } else {
+                                    stringResource(R.string.modules_recommand_expand)
+                                }
+                            )
+                        }
                     }
-                    TextButton(
+                    IconButton(
                         onClick = {
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             clipboard.setPrimaryClip(
@@ -219,7 +228,10 @@ fun ReCommandDialog(
                             )
                         }
                     ) {
-                        Text(stringResource(R.string.modules_recommand_copy))
+                        Icon(
+                            imageVector = Icons.Rounded.ContentCopy,
+                            contentDescription = stringResource(R.string.modules_recommand_copy)
+                        )
                     }
                     if (aiEnabled) {
                         FilledTonalIconButton(
@@ -234,7 +246,7 @@ fun ReCommandDialog(
                         ) {
                             if (aiBusy) {
                                 CircularProgressIndicator(
-                                    modifier = Modifier.padding(8.dp),
+                                    modifier = Modifier.size(20.dp),
                                     strokeWidth = 2.dp
                                 )
                             } else {
@@ -302,3 +314,5 @@ fun ReCommandDialog(
         shape = MaterialTheme.shapes.extraLarge
     )
 }
+
+private const val COMMAND_PREVIEW_CHARS = 420

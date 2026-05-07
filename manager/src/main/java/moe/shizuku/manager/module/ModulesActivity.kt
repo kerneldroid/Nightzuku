@@ -44,6 +44,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.LoadingIndicator
@@ -145,6 +146,8 @@ class ModulesActivity : AppActivity() {
                     onNavigateUp = { finish() },
                     actions = {
                         FilledTonalButton(
+                            modifier = Modifier.height(36.dp),
+                            contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
                             onClick = {
                                 zipLauncher.launch(MODULE_MIME_TYPES)
                             }
@@ -152,8 +155,8 @@ class ModulesActivity : AppActivity() {
                             ShizukuIcon(
                                 R.drawable.ic_outline_arrow_upward_24,
                                 modifier = Modifier
-                                    .padding(end = 8.dp)
-                                    .size(18.dp)
+                                    .padding(end = 6.dp)
+                                    .size(16.dp)
                             )
                             Text(stringResource(R.string.modules_install_zip))
                         }

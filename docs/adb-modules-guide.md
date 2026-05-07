@@ -124,10 +124,13 @@ button execution uses the same policy.
 ## ReCommand and AI Checker
 
 ReCommand can show a confirmation dialog before WebUI shell execution and Action
-execution. The optional Gemini checker is hidden by default. In Settings, tap the
+execution. The dialog uses icon-only expand/collapse and copy controls, and the
+expand/collapse control is shown only for long commands.
+
+The optional Gemini checker is hidden by default. In Settings, tap the
 translation contributors row five times quickly to reveal the AI settings row and
-the Gemini star in ReCommand dialogs. The Gemini API key is stored encrypted with
-Android Keystore.
+the Gemini star in ReCommand dialogs. Repeat the same five-tap gesture to hide it
+again. The Gemini API key is stored encrypted with Android Keystore.
 
 ## Safety Limits
 
