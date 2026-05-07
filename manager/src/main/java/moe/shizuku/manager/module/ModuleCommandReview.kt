@@ -21,7 +21,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -154,6 +153,7 @@ object ModuleAiCommandAnalyzer {
 fun ReCommandDialog(
     request: ModuleCommandRequest,
     busy: Boolean = false,
+    aiEnabled: Boolean = false,
     onAnalyze: suspend () -> AiCommandReview,
     onDismiss: () -> Unit,
     onReject: () -> Unit,
@@ -221,26 +221,28 @@ fun ReCommandDialog(
                     ) {
                         Text(stringResource(R.string.modules_recommand_copy))
                     }
-                    FilledTonalIconButton(
-                        enabled = !aiBusy,
-                        onClick = {
-                            aiBusy = true
-                            scope.launch {
-                                aiResult = runCatching { onAnalyze() }
-                                aiBusy = false
+                    if (aiEnabled) {
+                        FilledTonalIconButton(
+                            enabled = !aiBusy,
+                            onClick = {
+                                aiBusy = true
+                                scope.launch {
+                                    aiResult = runCatching { onAnalyze() }
+                                    aiBusy = false
+                                }
                             }
-                        }
-                    ) {
-                        if (aiBusy) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.padding(8.dp),
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Rounded.AutoAwesome,
-                                contentDescription = stringResource(R.string.modules_ai)
-                            )
+                        ) {
+                            if (aiBusy) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.padding(8.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Rounded.AutoAwesome,
+                                    contentDescription = stringResource(R.string.modules_ai)
+                                )
+                            }
                         }
                     }
                 }
@@ -292,13 +294,8 @@ fun ReCommandDialog(
             }
         },
         dismissButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onDismiss) {
-                    Text(stringResource(android.R.string.cancel))
-                }
-                OutlinedButton(onClick = onReject) {
-                    Text(stringResource(R.string.modules_recommand_close))
-                }
+            TextButton(onClick = onReject) {
+                Text(stringResource(R.string.modules_recommand_close))
             }
         },
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,

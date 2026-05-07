@@ -121,6 +121,14 @@ Use `service.sh` for controlled background setup. It runs only when:
 The manager auto-runs enabled services once per Shizuku binder session. Manual Service
 button execution uses the same policy.
 
+## ReCommand and AI Checker
+
+ReCommand can show a confirmation dialog before WebUI shell execution and Action
+execution. The optional Gemini checker is hidden by default. In Settings, tap the
+translation contributors row five times quickly to reveal the AI settings row and
+the Gemini star in ReCommand dialogs. The Gemini API key is stored encrypted with
+Android Keystore.
+
 ## Safety Limits
 
 - ZIP path traversal is rejected.

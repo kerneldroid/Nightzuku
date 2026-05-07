@@ -258,6 +258,7 @@ class ModulesActivity : AppActivity() {
                     ReCommandDialog(
                         request = request,
                         busy = runningModuleId == request.module.id,
+                        aiEnabled = ModuleSettings.isAiCheckerUnlocked(),
                         onAnalyze = { ModuleAiCommandAnalyzer.analyze(request.command) },
                         onDismiss = { pendingCommand = null },
                         onReject = { pendingCommand = null },

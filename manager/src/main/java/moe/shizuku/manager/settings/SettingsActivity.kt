@@ -5,7 +5,9 @@ package moe.shizuku.manager.settings
 import android.content.ComponentName
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.text.TextUtils
+import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.layout.Column
@@ -89,6 +91,8 @@ class SettingsActivity : AppActivity() {
             var showModuleModeDialog by remember { mutableStateOf(false) }
             var showCustomPermissionsDialog by remember { mutableStateOf(false) }
             var showAiDialog by remember { mutableStateOf(false) }
+            var aiUnlocked by remember { mutableStateOf(ModuleSettings.isAiCheckerUnlocked()) }
+            var contributorTapTimes by remember { mutableStateOf<List<Long>>(emptyList()) }
             var moduleAccessMode by remember {
                 mutableStateOf(ModuleSettings.getAccessMode())
             }
@@ -164,7 +168,25 @@ class SettingsActivity : AppActivity() {
                                 SettingsRow(
                                     icon = R.drawable.ic_outline_info_24,
                                     title = stringResource(R.string.settings_translation_contributors),
-                                    summary = contributors
+                                    summary = contributors,
+                                    onClick = {
+                                        if (aiUnlocked) return@SettingsRow
+                                        val now = SystemClock.elapsedRealtime()
+                                        val taps = (contributorTapTimes + now)
+                                            .filter { now - it <= AI_UNLOCK_WINDOW_MS }
+                                            .takeLast(AI_UNLOCK_TAPS)
+                                        contributorTapTimes = taps
+                                        if (taps.size >= AI_UNLOCK_TAPS) {
+                                            ModuleSettings.setAiCheckerUnlocked(true)
+                                            aiUnlocked = true
+                                            contributorTapTimes = emptyList()
+                                            Toast.makeText(
+                                                this@SettingsActivity,
+                                                R.string.modules_ai_unlocked,
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    }
                                 )
                                 GroupDivider()
                             }
@@ -272,13 +294,15 @@ class SettingsActivity : AppActivity() {
                                     recommandAction = enabled
                                 }
                             )
-                            GroupDivider()
-                            SettingsRow(
-                                icon = R.drawable.ic_settings_outline_24dp,
-                                title = stringResource(R.string.modules_ai),
-                                summary = stringResource(aiModel.labelRes),
-                                onClick = { showAiDialog = true }
-                            )
+                            if (aiUnlocked) {
+                                GroupDivider()
+                                SettingsRow(
+                                    icon = R.drawable.ic_settings_outline_24dp,
+                                    title = stringResource(R.string.modules_ai),
+                                    summary = stringResource(aiModel.labelRes),
+                                    onClick = { showAiDialog = true }
+                                )
+                            }
                         }
                     }
                 }
@@ -374,7 +398,7 @@ class SettingsActivity : AppActivity() {
                     )
                 }
 
-                if (showAiDialog) {
+                if (showAiDialog && aiUnlocked) {
                     AiSettingsDialog(
                         model = aiModel,
                         apiKey = aiApiKey,
@@ -390,6 +414,11 @@ class SettingsActivity : AppActivity() {
                 }
             }
         }
+    }
+
+    companion object {
+        private const val AI_UNLOCK_TAPS = 5
+        private const val AI_UNLOCK_WINDOW_MS = 1800L
     }
 
     private data class LocaleOption(
@@ -558,6 +587,7 @@ private fun AiSettingsDialog(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     label = { Text(stringResource(R.string.modules_ai_api_key)) },
+                    supportingText = { Text(stringResource(R.string.modules_ai_api_key_summary)) },
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation()
                 )

@@ -193,6 +193,8 @@
     <string name="modules_recommand_action_summary">Показывать подтверждение перед action.sh.</string>
     <string name="modules_ai">AI</string>
     <string name="modules_ai_api_key">API-ключ</string>
+    <string name="modules_ai_api_key_summary">Хранится в зашифрованном виде через Android Keystore.</string>
+    <string name="modules_ai_unlocked">AI checker разблокирован</string>
     <string name="modules_ai_failed">AI-проверка не выполнена: %s</string>
     <string name="modules_ai_model_gemini_31_pro">Gemini 3.1 Pro</string>
     <string name="modules_ai_model_gemini_3_flash">Gemini 3 Flash</string>

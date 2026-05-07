@@ -86,6 +86,7 @@ class ModuleWebViewActivity : AppActivity() {
                 pendingCommand?.let { request ->
                     ReCommandDialog(
                         request = request,
+                        aiEnabled = ModuleSettings.isAiCheckerUnlocked(),
                         onAnalyze = { ModuleAiCommandAnalyzer.analyze(request.command) },
                         onDismiss = {
                             pendingDecision?.invoke(false)

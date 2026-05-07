@@ -160,7 +160,7 @@ Current WebView policy:
 - Mixed content: blocked.
 - Content access: disabled.
 - Third-party cookies: disabled.
-- `window.Shizuku` is exposed only when the module declares `usesShellBridge=true`, the access policy allows the WebUI bridge, and WebView internet is off.
+- `window.Shizuku` is exposed only for enabled module-local WebUI when the access policy allows WebUI bridge and WebView internet is off.
 
 WebUI should treat module files as local UI assets. Remote dependencies are blocked by default.
 
@@ -173,7 +173,7 @@ Example using a pinned BeerCSS package from jsDelivr:
 
 ### JavaScript-to-Shell Bridge
 
-A shell execution bridge is exposed as `window.Shizuku` only when:
+The `window.Shizuku` object can be exposed to module-local offline WebUI so pages can read module info. Shell methods are allowed only when:
 
 - the module is enabled;
 - `module.prop` declares `usesShellBridge=true`;
@@ -229,6 +229,17 @@ Rules:
 - extra env keys must match `[A-Za-z_][A-Za-z0-9_]*`.
 
 If the module is disabled, missing `usesShellBridge=true`, or blocked by Safe/Custom policy, shell calls return JSON with `ok: false`, `exitCode: -1`, and the error text in `stderr`.
+
+### ReCommand
+
+When ReCommand is enabled, WebUI shell execution and Action execution show a confirmation dialog before the command runs. The dialog shows the command, supports expand/collapse and copy, and has one close action plus one execute action.
+
+The optional AI checker is hidden by default. It is unlocked from Settings by tapping the translation contributors row five times quickly. After unlock:
+
+- the AI settings row appears in module settings;
+- the Gemini star appears in ReCommand dialogs;
+- the API key is stored encrypted with Android Keystore;
+- supported model ids are `gemini-3.1-pro-preview`, `gemini-3-flash-preview`, and `gemini-3.1-flash-lite-preview`.
 
 ### WebUI Internet File Loader
 

@@ -195,6 +195,8 @@ With %1$s, in any terminal app, you can connect to and interact with the shell r
     <string name="modules_recommand_action_summary">Show a confirmation dialog before action.sh.</string>
     <string name="modules_ai">AI</string>
     <string name="modules_ai_api_key">API key</string>
+    <string name="modules_ai_api_key_summary">Stored encrypted with Android Keystore.</string>
+    <string name="modules_ai_unlocked">AI checker unlocked</string>
     <string name="modules_ai_failed">AI check failed: %s</string>
     <string name="modules_ai_model_gemini_31_pro">Gemini 3.1 Pro</string>
     <string name="modules_ai_model_gemini_3_flash">Gemini 3 Flash</string>
