@@ -120,11 +120,11 @@ class SettingsActivity : AppActivity() {
                 buildLocaleOptions(languageTag)
             }
             val languageSummary = localeOptions.firstOrNull { it.tag == languageTag }?.summary
-                ?: stringResource(R.string.follow_system)
+                ?: stringResource(rikka.core.R.string.follow_system)
             val nightValues = resources.getIntArray(R.array.night_mode_value).toList()
             val nightLabels = stringArrayResource(R.array.night_mode).toList()
             val nightSummary = nightLabels.getOrElse(nightValues.indexOf(nightMode)) {
-                stringResource(R.string.follow_system)
+                stringResource(rikka.core.R.string.follow_system)
             }
             val contributors = htmlToPlainText(getString(R.string.translation_contributors))
 
@@ -215,7 +215,7 @@ class SettingsActivity : AppActivity() {
                         SettingsGroup(title = stringResource(R.string.settings_user_interface)) {
                             SettingsRow(
                                 icon = R.drawable.ic_outline_dark_mode_24,
-                                title = stringResource(R.string.dark_theme),
+                                title = stringResource(rikka.core.R.string.dark_theme),
                                 summary = nightSummary,
                                 onClick = { showNightDialog = true }
                             )
@@ -343,7 +343,7 @@ class SettingsActivity : AppActivity() {
 
                 if (showNightDialog) {
                     ChoiceDialog(
-                        title = stringResource(R.string.dark_theme),
+                        title = stringResource(rikka.core.R.string.dark_theme),
                         choices = nightValues.mapIndexed { index, _ ->
                             ChoiceOption(
                                 title = nightLabels[index],
@@ -441,7 +441,7 @@ class SettingsActivity : AppActivity() {
 
         return localeTags.mapIndexed { index, tag ->
             if (index == 0) {
-                LocaleOption(tag.toString(), getString(R.string.follow_system), null)
+                LocaleOption(tag.toString(), getString(rikka.core.R.string.follow_system), null)
             } else {
                 val locale = Locale.forLanguageTag(displayLocaleTags[index].toString())
                 val localeName = if (!TextUtils.isEmpty(locale.script)) {

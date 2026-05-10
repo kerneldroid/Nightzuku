@@ -12,3 +12,5 @@
 /manager/signing.properties
 /out
 /signing.properties
+.jdk/
+jdk21/
