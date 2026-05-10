@@ -1,34 +1,39 @@
-name: Bug report
-description: Report a bug of Shizuku
+name: Strict Bug Report
+description: Report a bug. STRIKE WARNING - incomplete reports will be closed.
+labels: [ "bug" ]
 
 body:
+  - type: markdown
+    attributes:
+      value: |
+        ### 🛑 STOP! READ BEFORE PROCEEDING
+        This is a **strict** bug report form. If you ignore the instructions, do not attach logs, or fail to reproduce the bug properly, your issue **will be automatically closed** without further explanation. We value our time.
+  
   - type: checkboxes
-    id: requirements
+    id: strict_requirements
     attributes:
-      label: Requirements
+      label: 📋 Mandatory Requirements
+      description: You MUST check all of these before submitting.
       options:
-        - label: Shizuku is downloaded from official channels (GitHub release or Google Play)
-        - label: Shizuku is not running in a virtual environment or broken ROM (GrapheneOS)
-        - label: (Root users) No Xposed installed / Xposed is not enabled for Shizuku
-
-  - type: input
-    id: version
-    attributes:
-      label: Latest Shizuku version
-    validations:
-      required: true
+        - label: I am using the LATEST version from GitHub Releases.
+          required: true
+        - label: I am NOT using a custom broken ROM (e.g. untested forks).
+          required: true
+        - label: I have searched the issue tracker and this is NOT a duplicate.
+          required: true
 
   - type: input
     id: shizuku_version
     attributes:
-      label: Version in use
+      label: 📦 Shizuku Version in use
+      placeholder: e.g. v13.6.0.r24
     validations:
       required: true
 
   - type: dropdown
     id: mode
     attributes:
-      label: Mode
+      label: ⚙️ Operation Mode
       options:
         - adb
         - root
@@ -39,29 +44,33 @@ body:
   - type: input
     id: android_version
     attributes:
-      label: Android version
-    validations:
-      required: true
-
-  - type: input
-    id: device
-    attributes:
-      label: Device
+      label: 📱 Android Version
+      placeholder: e.g. Android 15, Android 16
     validations:
       required: true
 
   - type: textarea
     id: reproducer
     attributes:
-      label: What did you do
+      label: 👣 Steps to reproduce
+      description: Provide EXACT steps to reproduce the bug. "It just crashes" is not accepted.
+      placeholder: |
+        1. Open the app
+        2. Click on 'Modules'
+        3. See error
+    validations:
+      required: true
 
   - type: textarea
     id: logs
     attributes:
-      label: What happened
-      description: You can upload log and screenshot
-
-  - type: textarea
-    id: expected-behaviour
-    attributes:
-      label: What do you expect
+      label: 📝 Logcat / Error Logs (MANDATORY)
+      description: Paste your crash logs or attach a .txt file. DO NOT paste screenshots of text logs.
+      placeholder: |
+        ```log
+        FATAL EXCEPTION: main
+        Process: moe.shizuku.manager
+        ...
+        ```
+    validations:
+      required: true
