@@ -1,28 +1,33 @@
 <!-- 
 🛑 STRICT PULL REQUEST TEMPLATE 🛑
 
-Thank you for contributing! To maintain code quality, we require you to fill out this template completely.
-If you submit a PR with an empty or low-effort description, it will be closed immediately.
+READ THIS BEFORE SUBMITTING:
+1. Low-effort PRs (e.g., "fixed typo", "updated dependencies" without context) will be CLOSED AND REJECTED.
+2. If this PR does not pass the CI checks, it will be ignored.
+3. If this PR changes the UI, YOU MUST PROVIDE BEFORE/AFTER SCREENSHOTS.
 -->
 
-### 🎯 What does this PR do?
-<!-- Describe the purpose of your changes in detail. What bug does it fix? What feature does it add? -->
+### 🎯 Objective
+<!-- Exactly what does this PR solve? Link the specific Issue number (e.g., "Fixes #123"). -->
 
-### 🛠️ How was this implemented?
-<!-- Briefly explain your technical approach. -->
+### 🛠️ Technical Implementation
+<!-- Explain HOW you solved the problem. What architectural choices did you make and why? -->
 
-### 🧪 How has this been tested?
+### 🧪 Rigorous Testing Matrix
 <!-- 
-MANDATORY: Describe exactly how you tested this.
-e.g., "Built Release APK, deployed on Pixel 7 (Android 14) and verified Edge-to-Edge."
+You MUST provide explicit proof of testing. 
+Example:
+- [x] Compiled Release APK (API 37 target).
+- [x] Tested ADB mode on Pixel 7 (Android 14).
+- [x] Tested Root mode on OnePlus (Android 13).
 -->
 
-### ✅ Checklist
-<!-- You MUST check all of these before we will review your PR. -->
-- [ ] I have read the `README.md` and followed project conventions.
-- [ ] My code builds successfully without any new warnings.
-- [ ] I have tested these changes on a real device or emulator.
-- [ ] I did not commit any secrets, local configurations, or unnecessary binary files.
+### ✅ Developer Declaration
+<!-- Check all boxes to confirm your compliance. -->
+- [ ] I have rigidly followed the existing Kotlin/Compose code style.
+- [ ] The code compiles locally with ZERO new warnings.
+- [ ] I did not introduce unnecessary third-party dependencies.
+- [ ] I have squashed my commits into a clean logical history.
 
-### 🖼️ Screenshots / Video (if applicable)
-<!-- If your PR introduces a UI change, you MUST attach a screenshot or video here. -->
+### 🖼️ Visual Evidence (Mandatory for UI changes)
+<!-- Attach screenshots or videos here. If no UI change, write "N/A". -->

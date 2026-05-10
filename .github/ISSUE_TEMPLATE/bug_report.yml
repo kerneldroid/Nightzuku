@@ -1,31 +1,36 @@
-name: Strict Bug Report
-description: Report a bug. STRIKE WARNING - incomplete reports will be closed.
+name: 🚨 STRICT BUG REPORT 🚨
+description: IF YOU DO NOT FILL THIS OUT COMPLETELY, YOUR ISSUE WILL BE DELETED WITHOUT WARNING.
 labels: [ "bug" ]
 
 body:
   - type: markdown
     attributes:
       value: |
-        ### 🛑 STOP! READ BEFORE PROCEEDING
-        This is a **strict** bug report form. If you ignore the instructions, do not attach logs, or fail to reproduce the bug properly, your issue **will be automatically closed** without further explanation. We value our time.
+        # 🛑 ZERO-TOLERANCE POLICY
+        This repository maintains a **STRICT** issue policy. We are developers, not your tech support. 
+        If you provide vague descriptions like "it doesn't work", "app crash", or if you fail to attach proper logcats, your issue will be **closed and locked immediately**. 
+        Do not waste our time, and we won't waste yours.
   
   - type: checkboxes
     id: strict_requirements
     attributes:
-      label: 📋 Mandatory Requirements
-      description: You MUST check all of these before submitting.
+      label: 📋 MANDATORY CHECKLIST (FAILURE TO CHECK ALL = INSTANT CLOSE)
+      description: You MUST physically verify these statements.
       options:
-        - label: I am using the LATEST version from GitHub Releases.
+        - label: I am using the EXACT latest version from GitHub Releases (I have checked the releases page today).
           required: true
-        - label: I am NOT using a custom broken ROM (e.g. untested forks).
+        - label: I am NOT using a custom, untested, or broken ROM (e.g., heavily modded MIUI/HyperOS, unknown GSI).
           required: true
-        - label: I have searched the issue tracker and this is NOT a duplicate.
+        - label: I have searched the issue tracker and this is DEFINITELY NOT a duplicate.
+          required: true
+        - label: I am providing actual text logs, NOT screenshots of text.
           required: true
 
   - type: input
     id: shizuku_version
     attributes:
-      label: 📦 Shizuku Version in use
+      label: 📦 EXACT Shizuku Version
+      description: "Do not write 'latest'. Write the exact tag, e.g., v13.6.0.r24"
       placeholder: e.g. v13.6.0.r24
     validations:
       required: true
@@ -34,43 +39,45 @@ body:
     id: mode
     attributes:
       label: ⚙️ Operation Mode
+      description: How is Shizuku running?
       options:
-        - adb
-        - root
-        - manual
+        - ADB Mode
+        - Root Mode
+        - Manual Mode (sh)
     validations:
       required: true
 
   - type: input
-    id: android_version
+    id: device_info
     attributes:
-      label: 📱 Android Version
-      placeholder: e.g. Android 15, Android 16
+      label: 📱 Exact Device Model & ROM
+      description: "Provide the commercial name, model number, and exact OS version (e.g., Pixel 7 Pro (Cheetah) - Android 14 QPR3)."
+      placeholder: e.g. Pixel 7 Pro - Android 14 (Stock)
     validations:
       required: true
 
   - type: textarea
     id: reproducer
     attributes:
-      label: 👣 Steps to reproduce
-      description: Provide EXACT steps to reproduce the bug. "It just crashes" is not accepted.
+      label: 👣 EXACT Steps to Reproduce
+      description: Provide a numbered list. Assume we know nothing about your setup.
       placeholder: |
-        1. Open the app
-        2. Click on 'Modules'
-        3. See error
+        1. Open the app...
+        2. Tap on X...
+        3. Observe Y happening instead of Z.
     validations:
       required: true
 
   - type: textarea
     id: logs
     attributes:
-      label: 📝 Logcat / Error Logs (MANDATORY)
-      description: Paste your crash logs or attach a .txt file. DO NOT paste screenshots of text logs.
+      label: 📝 CRASH LOGS / LOGCAT (MANDATORY)
+      description: |
+        You MUST provide the relevant `adb logcat` output or crash trace. 
+        DO NOT PASTE SCREENSHOTS. Wrap logs in ```log blocks.
       placeholder: |
         ```log
-        FATAL EXCEPTION: main
-        Process: moe.shizuku.manager
-        ...
+        Paste your logcat here.
         ```
     validations:
       required: true
