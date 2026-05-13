@@ -10,6 +10,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.res.stringResource
 import moe.shizuku.manager.R
 import moe.shizuku.manager.app.AppActivity
 import moe.shizuku.manager.module.ModuleSettings
@@ -28,15 +29,15 @@ class LabFeaturesActivity : AppActivity() {
 
             ShizukuExpressiveTheme {
                 ShizukuLazyScaffold(
-                    title = "Lab Features",
+                    title = stringResource(R.string.lab_features_title),
                     onNavigateUp = { finish() }
                 ) {
                     item {
-                        SettingsGroup(title = "Experimental Features") {
+                        SettingsGroup(title = stringResource(R.string.lab_features_summary)) {
                             SwitchSettingsRow(
                                 icon = R.drawable.ic_baseline_link_24,
-                                title = "Shizuku Connectors",
-                                summary = "Allow plugins to activate Shizuku",
+                                title = stringResource(R.string.shizuku_connectors_title),
+                                summary = stringResource(R.string.shizuku_connectors_summary),
                                 checked = connectorEnabled,
                                 onCheckedChange = { enabled ->
                                     if (enabled) {
@@ -54,20 +55,20 @@ class LabFeaturesActivity : AppActivity() {
                 if (showUnsafeDialog) {
                     AlertDialog(
                         onDismissRequest = { showUnsafeDialog = false },
-                        title = { Text("Внимание") },
-                        text = { Text("Включение этой функции НЕБЕЗОПАСНО. Вы уверены?") },
+                        title = { Text(stringResource(R.string.unsafe_warning_title)) },
+                        text = { Text(stringResource(R.string.unsafe_warning_message)) },
                         confirmButton = {
                             TextButton(onClick = {
                                 showUnsafeDialog = false
                                 connectorEnabled = true
                                 ModuleSettings.setConnectorEnabled(true)
                             }) {
-                                Text("Да")
+                                Text(stringResource(android.R.string.ok))
                             }
                         },
                         dismissButton = {
                             TextButton(onClick = { showUnsafeDialog = false }) {
-                                Text("Отмена")
+                                Text(stringResource(android.R.string.cancel))
                             }
                         }
                     )

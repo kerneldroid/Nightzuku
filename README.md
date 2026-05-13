@@ -24,6 +24,7 @@ Upstream project: <https://github.com/RikkaApps/Shizuku>
 
 - [ADB Modules guide](docs/adb-modules-guide.md)
 - [ADB Modules API reference](docs/adb-modules-api.md)
+- [Shizuku Connectors API](docs/shizuku-connectors.md)
 
 ## Background
 

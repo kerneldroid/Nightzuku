@@ -128,4 +128,11 @@
     <string name="home_app_management_empty">已请求或声明 Shizuku 的应用程序将显示在此处。</string>
     <string name="home_adb_is_limited_title">您需要进行额外的步骤</string>
     <string name="home_adb_is_limited_description">您的设备制造商限制了 adb 的权限，使用 Shizuku 的应用无法正常工作。\n\n通常，在“开发者选项”中调整一些选项即可解除此限制。请阅读帮助来了解具体的操作方式。\n\n您可能需要重新启动 Shizuku 以使操作生效。</string>
+    <!-- Lab Features -->
+    <string name="lab_features_title">实验室功能 (Lab Features)</string>
+    <string name="lab_features_summary">实验性功能</string>
+    <string name="shizuku_connectors_title">Shizuku Connectors</string>
+    <string name="shizuku_connectors_summary">允许插件激活 Shizuku</string>
+    <string name="unsafe_warning_title">警告</string>
+    <string name="unsafe_warning_message">启用此功能是不安全的。你确定吗？</string>
 </resources>

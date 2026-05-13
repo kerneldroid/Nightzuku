@@ -258,4 +258,11 @@ With %1$s, in any terminal app, you can connect to and interact with the shell r
     <string name="dialog_requesting_legacy_message"><![CDATA[<b>%1$s</b> has modern Shizuku support, but it\'s requesting legacy Shizuku. This could because Shizuku is not running, please check in Shizuku app.<p>Legacy Shizuku has been deprecated since March 2019.]]></string>
     <string name="dialog_requesting_legacy_button_open_shizuku">Open Shizuku</string>
 
+    <!-- Lab Features -->
+    <string name="lab_features_title">Lab Features</string>
+    <string name="lab_features_summary">Experimental features</string>
+    <string name="shizuku_connectors_title">Shizuku Connectors</string>
+    <string name="shizuku_connectors_summary">Allow plugins to activate Shizuku</string>
+    <string name="unsafe_warning_title">Warning</string>
+    <string name="unsafe_warning_message">Enabling this feature is UNSAFE. Are you sure?</string>
 </resources>
