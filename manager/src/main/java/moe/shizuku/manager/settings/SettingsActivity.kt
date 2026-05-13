@@ -214,11 +214,11 @@ class SettingsActivity : AppActivity() {
                     }
 
                     item {
-                        SettingsGroup(title = "Lab Features") {
+                        SettingsGroup(title = stringResource(R.string.lab_features_title)) {
                             SettingsRow(
                                 icon = R.drawable.ic_settings_outline_24dp,
-                                title = "Lab Features",
-                                summary = "Experimental features",
+                                title = stringResource(R.string.lab_features_title),
+                                summary = stringResource(R.string.lab_features_summary),
                                 onClick = { startActivity(android.content.Intent(this@SettingsActivity, LabFeaturesActivity::class.java)) }
                             )
                         }

@@ -213,4 +213,11 @@
 \n
 \nВозможно Вам понадобится перезапустить Shizuku для применения изменений.</string>
     <string name="home_adb_is_limited_title">Нужен дополнительный шаг</string>
+    <!-- Lab Features -->
+    <string name="lab_features_title">Лаборатория (Lab Features)</string>
+    <string name="lab_features_summary">Экспериментальные функции</string>
+    <string name="shizuku_connectors_title">Shizuku Connectors</string>
+    <string name="shizuku_connectors_summary">Разрешить плагинам активировать Shizuku</string>
+    <string name="unsafe_warning_title">Внимание</string>
+    <string name="unsafe_warning_message">Включение этой функции НЕБЕЗОПАСНО. Вы уверены?</string>
 </resources>
