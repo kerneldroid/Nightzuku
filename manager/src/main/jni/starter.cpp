@@ -242,8 +242,7 @@ int main(int argc, char *argv[]) {
         if (kill(pid, SIGKILL) == 0)
             printf("info: killed %d (%s)\n", pid, name);
         else if (errno == EPERM) {
-            perrorf("fatal: can't kill %d, please try to stop existing Shizuku from app first.\n", pid);
-            exit(EXIT_FATAL_KILL);
+            printf("warn: can't kill %d (EPERM), ignoring potential fake process.\n", pid);
         } else {
             printf("warn: failed to kill %d (%s)\n", pid, name);
         }

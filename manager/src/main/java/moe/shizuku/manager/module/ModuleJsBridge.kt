@@ -300,41 +300,43 @@ class ModuleJsBridge(
                 setRequestProperty("User-Agent", "Shizuku-Module-WebUI/1.0")
             }
 
-            val code = connection.responseCode
-            if (code in REDIRECT_CODES) {
-                redirects++
-                require(redirects <= MAX_REDIRECTS) { "Too many redirects." }
-                val location = connection.getHeaderField("Location")
-                    ?: throw IllegalStateException("Redirect without Location header.")
-                current = parseHttpsUrl(URL(current, location).toString())
-                connection.disconnect()
-                continue
-            }
-
-            require(code in 200..299) { "HTTP $code while downloading $current" }
-            val parent = outFile.parentFile ?: error("Destination has no parent directory.")
-            parent.mkdirs()
-            val tmp = File(parent, "${outFile.name}.download")
-            var total = 0L
             try {
-                BufferedInputStream(connection.inputStream).use { input ->
-                    tmp.outputStream().use { output ->
-                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                        while (true) {
-                            val read = input.read(buffer)
-                            if (read <= 0) break
-                            total += read.toLong()
-                            require(total <= MAX_DOWNLOAD_BYTES) { "Downloaded file is too large." }
-                            output.write(buffer, 0, read)
+                val code = connection.responseCode
+                if (code in REDIRECT_CODES) {
+                    redirects++
+                    require(redirects <= MAX_REDIRECTS) { "Too many redirects." }
+                    val location = connection.getHeaderField("Location")
+                        ?: throw IllegalStateException("Redirect without Location header.")
+                    current = parseHttpsUrl(URL(current, location).toString())
+                    continue
+                }
+
+                require(code in 200..299) { "HTTP $code while downloading $current" }
+                val parent = outFile.parentFile ?: error("Destination has no parent directory.")
+                parent.mkdirs()
+                val tmp = File(parent, "${outFile.name}.download")
+                var total = 0L
+                try {
+                    BufferedInputStream(connection.inputStream).use { input ->
+                        tmp.outputStream().use { output ->
+                            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                            while (true) {
+                                val read = input.read(buffer)
+                                if (read <= 0) break
+                                total += read.toLong()
+                                require(total <= MAX_DOWNLOAD_BYTES) { "Downloaded file is too large." }
+                                output.write(buffer, 0, read)
+                            }
                         }
                     }
+                    if (outFile.exists()) outFile.delete()
+                    check(tmp.renameTo(outFile)) { "Unable to save downloaded file." }
+                    return total
+                } finally {
+                    if (tmp.exists()) tmp.delete()
                 }
-                if (outFile.exists()) outFile.delete()
-                check(tmp.renameTo(outFile)) { "Unable to save downloaded file." }
-                return total
             } finally {
                 connection.disconnect()
-                if (tmp.exists()) tmp.delete()
             }
         }
     }

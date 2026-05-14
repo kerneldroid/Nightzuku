@@ -31,11 +31,13 @@ object ApkChangedObservers {
     fun stop(listener: ApkChangedListener) {
         val pathToRemove = mutableListOf<String>()
 
-        for ((path, observer) in observers) {
-            observer.removeListener(listener)
+        synchronized(observers) {
+            for ((path, observer) in observers) {
+                observer.removeListener(listener)
 
-            if (!observer.hasListeners()) {
-                pathToRemove.add(path)
+                if (!observer.hasListeners()) {
+                    pathToRemove.add(path)
+                }
             }
         }
 

@@ -40,6 +40,7 @@ private class NotRootedException : Exception()
 class StarterActivity : AppActivity() {
 
     private var waitingForService = false
+    private var binderReceivedListener: Shizuku.OnBinderReceivedListener? = null
 
     private val viewModel by viewModels {
         ViewModel(
@@ -48,6 +49,14 @@ class StarterActivity : AppActivity() {
             intent.getStringExtra(EXTRA_HOST),
             intent.getIntExtra(EXTRA_PORT, 0)
         )
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        binderReceivedListener?.let {
+            Shizuku.removeBinderReceivedListener(it)
+            binderReceivedListener = null
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,9 +71,10 @@ class StarterActivity : AppActivity() {
                 viewModel.appendOutput("")
                 viewModel.appendOutput("Waiting for service...")
 
-                Shizuku.addBinderReceivedListenerSticky(object : Shizuku.OnBinderReceivedListener {
+                val listener = object : Shizuku.OnBinderReceivedListener {
                     override fun onBinderReceived() {
                         Shizuku.removeBinderReceivedListener(this)
+                        binderReceivedListener = null
                         runOnUiThread {
                             viewModel.appendOutput("Service started, this window will be automatically closed in 3 seconds")
                             window?.decorView?.postDelayed({
@@ -72,7 +82,9 @@ class StarterActivity : AppActivity() {
                             }, 3000)
                         }
                     }
-                })
+                }
+                binderReceivedListener = listener
+                Shizuku.addBinderReceivedListenerSticky(listener)
             } else if (it.status == Status.ERROR) {
                 var message = 0
                 when (it.error) {

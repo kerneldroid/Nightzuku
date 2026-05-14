@@ -12,6 +12,9 @@ import java.util.concurrent.TimeUnit
 import java.util.zip.ZipFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.ConcurrentHashMap
 
 object AdbModuleManager {
 
@@ -23,6 +26,7 @@ object AdbModuleManager {
     private const val MAX_OUTPUT_CHARS = 64 * 1024
     private var servicesStartedForBinder = false
     private val idRegex = Regex("[A-Za-z][A-Za-z0-9._-]{1,63}")
+    private val installMutexes = ConcurrentHashMap<String, Mutex>()
 
     fun modulesRoot(context: Context): File {
         return File(context.filesDir, MODULES_DIR).apply { mkdirs() }
@@ -52,35 +56,37 @@ object AdbModuleManager {
                 val id = props["id"]?.trim().orEmpty()
                 require(idRegex.matches(id)) { "Invalid module id: $id" }
 
-                val target = File(modulesRoot(context), id)
-                val staging = File(modulesRoot(context), ".$id.installing")
-                staging.deleteRecursively()
-                staging.mkdirs()
+                installMutexes.getOrPut(id) { Mutex() }.withLock {
+                    val target = File(modulesRoot(context), id)
+                    val staging = File(modulesRoot(context), ".$id.installing")
+                    staging.deleteRecursively()
+                    staging.mkdirs()
 
-                var entryCount = 0
-                var extractedBytes = 0L
-                zip.entries().asSequence().forEach { entry ->
-                    entryCount++
-                    require(entryCount <= MAX_ENTRY_COUNT) { "Module ZIP has too many files." }
-                    val cleanName = cleanZipName(entry.name)
-                    val outFile = File(staging, cleanName)
-                    ensureInside(staging, outFile)
-                    if (entry.isDirectory) {
-                        outFile.mkdirs()
-                    } else {
-                        outFile.parentFile?.mkdirs()
-                        BufferedInputStream(zip.getInputStream(entry)).use { input ->
-                            outFile.outputStream().use { output -> input.copyTo(output) }
+                    var entryCount = 0
+                    var extractedBytes = 0L
+                    zip.entries().asSequence().forEach { entry ->
+                        entryCount++
+                        require(entryCount <= MAX_ENTRY_COUNT) { "Module ZIP has too many files." }
+                        val cleanName = cleanZipName(entry.name)
+                        val outFile = File(staging, cleanName)
+                        ensureInside(staging, outFile)
+                        if (entry.isDirectory) {
+                            outFile.mkdirs()
+                        } else {
+                            outFile.parentFile?.mkdirs()
+                            BufferedInputStream(zip.getInputStream(entry)).use { input ->
+                                outFile.outputStream().use { output -> input.copyTo(output) }
+                            }
+                            extractedBytes += outFile.length()
+                            require(extractedBytes <= MAX_EXTRACTED_BYTES) { "Module ZIP is too large." }
                         }
-                        extractedBytes += outFile.length()
-                        require(extractedBytes <= MAX_EXTRACTED_BYTES) { "Module ZIP is too large." }
                     }
-                }
 
-                markScriptsExecutable(staging)
-                target.deleteRecursively()
-                check(staging.renameTo(target)) { "Unable to move module into storage." }
-                readModule(target) ?: error("Installed module is unreadable.")
+                    markScriptsExecutable(staging)
+                    target.deleteRecursively()
+                    check(staging.renameTo(target)) { "Unable to move module into storage." }
+                    readModule(target) ?: error("Installed module is unreadable.")
+                }
             }
         } finally {
             temp.delete()
