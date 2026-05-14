@@ -328,7 +328,7 @@ public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuCl
                 if (allowed) {
                     PermissionManagerApis.grantRuntimePermission(packageName, PERMISSION, userId);
                 } else {
-                    PermissionManagerApis.revokeRuntimePermission(packageName, PERMISSION, userId);
+                    rikka.shizuku.server.util.Android17Compat.revokeRuntimePermission(packageName, PERMISSION, userId);
                 }
             }
         }
@@ -403,7 +403,7 @@ public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuCl
                 if (allowed) {
                     PermissionManagerApis.grantRuntimePermission(packageName, PERMISSION, userId);
                 } else {
-                    PermissionManagerApis.revokeRuntimePermission(packageName, PERMISSION, userId);
+                    rikka.shizuku.server.util.Android17Compat.revokeRuntimePermission(packageName, PERMISSION, userId);
                 }
 
                 // TODO kill user service using
@@ -477,7 +477,7 @@ public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuCl
 
     private static void sendBinderToClient(Binder binder, int userId) {
         try {
-            for (PackageInfo pi : PackageManagerApis.getInstalledPackagesNoThrow(PackageManager.GET_PERMISSIONS, userId)) {
+            for (PackageInfo pi : rikka.shizuku.server.util.Android17Compat.getInstalledPackages(PackageManager.GET_PERMISSIONS, userId)) {
                 if (pi == null || pi.requestedPermissions == null)
                     continue;
 

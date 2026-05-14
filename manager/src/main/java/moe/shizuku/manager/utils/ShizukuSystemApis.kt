@@ -54,17 +54,40 @@ object ShizukuSystemApis {
     }
 
     fun getInstalledPackages(flags: Long, userId: Int): List<PackageInfo> {
-        return if (!Shizuku.pingBinder()) {
-            ArrayList()
-        } else try {
+        if (!Shizuku.pingBinder()) {
+            return ArrayList()
+        }
+        try {
             val listSlice: ParceledListSlice<PackageInfo>? =
-                PackageManagerApis.getInstalledPackages(
-                    flags,
-                    userId
-                )
+                PackageManagerApis.getInstalledPackages(flags, userId)
             return if (listSlice != null) {
                 listSlice.list
             } else ArrayList()
+        } catch (e: NoSuchMethodError) {
+            val binder = rikka.shizuku.ShizukuBinderWrapper(
+                android.os.ServiceManager.getService("package")
+            )
+            val stubClass = Class.forName("android.content.pm.IPackageManager\$Stub")
+            val pm = stubClass.getDeclaredMethod("asInterface", android.os.IBinder::class.java).invoke(null, binder)
+            var foundList: ParceledListSlice<PackageInfo>? = null
+            for (method in pm.javaClass.methods) {
+                if (method.name == "getInstalledPackages") {
+                    val paramTypes = method.parameterTypes
+                    val args = Array<Any?>(paramTypes.size) { null }
+                    for (i in paramTypes.indices) {
+                        when (paramTypes[i]) {
+                            Long::class.javaPrimitiveType -> args[i] = flags
+                            Int::class.javaPrimitiveType -> args[i] = userId
+                        }
+                    }
+                    val result = method.invoke(pm, *args)
+                    if (result != null) {
+                        foundList = result as ParceledListSlice<PackageInfo>
+                        break
+                    }
+                }
+            }
+            return if (foundList != null) foundList.list else ArrayList()
         } catch (tr: RemoteException) {
             throw RuntimeException(tr.message, tr)
         }
@@ -86,6 +109,36 @@ object ShizukuSystemApis {
         }
         try {
             PermissionManagerApis.grantRuntimePermission(packageName, permissionName, userId)
+        } catch (e: NoSuchMethodError) {
+            try {
+                val binder = rikka.shizuku.ShizukuBinderWrapper(
+                    android.os.ServiceManager.getService("permissionmgr")
+                )
+                val stubClass = Class.forName("android.permission.IPermissionManager\$Stub")
+                val pm = stubClass.getDeclaredMethod("asInterface", android.os.IBinder::class.java).invoke(null, binder)
+                for (method in pm.javaClass.methods) {
+                    if (method.name == "grantRuntimePermission") {
+                        val paramTypes = method.parameterTypes
+                        if (paramTypes.size >= 3 && paramTypes[0] == String::class.java && paramTypes[1] == String::class.java) {
+                            val args = Array<Any?>(paramTypes.size) { null }
+                            args[0] = packageName
+                            args[1] = permissionName
+                            if (paramTypes.size == 4 && paramTypes[2] == Int::class.javaPrimitiveType && paramTypes[3] == Int::class.javaPrimitiveType) {
+                                args[2] = 0 // DEVICE_ID_DEFAULT
+                                args[3] = userId
+                            } else {
+                                for (i in 2 until paramTypes.size) {
+                                    if (paramTypes[i] == Int::class.javaPrimitiveType) args[i] = userId
+                                }
+                            }
+                            method.invoke(pm, *args)
+                            return
+                        }
+                    }
+                }
+            } catch (ex: Throwable) {
+                // Ignore fallback failure
+            }
         } catch (tr: RemoteException) {
             throw RuntimeException(tr.message, tr)
         }
@@ -97,6 +150,40 @@ object ShizukuSystemApis {
         }
         try {
             PermissionManagerApis.revokeRuntimePermission(packageName, permissionName, userId)
+        } catch (e: NoSuchMethodError) {
+            try {
+                val binder = rikka.shizuku.ShizukuBinderWrapper(
+                    android.os.ServiceManager.getService("permissionmgr")
+                )
+                val stubClass = Class.forName("android.permission.IPermissionManager\$Stub")
+                val pm = stubClass.getDeclaredMethod("asInterface", android.os.IBinder::class.java).invoke(null, binder)
+                for (method in pm.javaClass.methods) {
+                    if (method.name == "revokeRuntimePermission") {
+                        val paramTypes = method.parameterTypes
+                        if (paramTypes.size >= 3 && paramTypes[0] == String::class.java && paramTypes[1] == String::class.java) {
+                            val args = Array<Any?>(paramTypes.size) { null }
+                            args[0] = packageName
+                            args[1] = permissionName
+                            if (paramTypes.size == 5 && paramTypes[2] == Int::class.javaPrimitiveType && paramTypes[3] == Int::class.javaPrimitiveType && paramTypes[4] == String::class.java) {
+                                args[2] = 0 // DEVICE_ID_DEFAULT
+                                args[3] = userId
+                                args[4] = "shizuku"
+                            } else if (paramTypes.size == 4 && paramTypes[2] == Int::class.javaPrimitiveType && paramTypes[3] == Int::class.javaPrimitiveType) {
+                                args[2] = 0 // DEVICE_ID_DEFAULT
+                                args[3] = userId
+                            } else {
+                                for (i in 2 until paramTypes.size) {
+                                    if (paramTypes[i] == Int::class.javaPrimitiveType) args[i] = userId
+                                }
+                            }
+                            method.invoke(pm, *args)
+                            return
+                        }
+                    }
+                }
+            } catch (ex: Throwable) {
+                // Ignore fallback failure
+            }
         } catch (tr: RemoteException) {
             throw RuntimeException(tr.message, tr)
         }
