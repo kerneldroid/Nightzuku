@@ -121,7 +121,49 @@ class SettingsActivity : AppActivity() {
                 }
             }
 
-            ShizukuExpressiveTheme {
+            val isWatch = moe.shizuku.manager.utils.EnvironmentUtils.isWatch(this@SettingsActivity)
+            if (isWatch) {
+                moe.shizuku.manager.ui.compose.WearShizukuTheme {
+                    
+                WearSettingsScreen(
+                    startOnBoot = startOnBoot,
+                    onStartOnBootChange = { enabled ->
+                        packageManager.setComponentEnabled(componentName, enabled)
+                        startOnBoot = packageManager.isComponentEnabled(componentName)
+                    },
+                    nightModeSummary = nightSummary,
+                    onNightModeClick = { showNightDialog = true },
+                    blackNightTheme = blackNightTheme,
+                    onBlackNightThemeChange = { enabled ->
+                        prefs.edit().putBoolean(moe.shizuku.manager.app.ThemeHelper.KEY_BLACK_NIGHT_THEME, enabled).apply()
+                        blackNightTheme = enabled
+                        if (rikka.core.util.ResourceUtils.isNightMode(resources.configuration)) {
+                            recreateTick++
+                        }
+                    },
+                    useSystemColor = useSystemColor,
+                    onUseSystemColorChange = { enabled ->
+                        prefs.edit().putBoolean(moe.shizuku.manager.app.ThemeHelper.KEY_USE_SYSTEM_COLOR, enabled).apply()
+                        useSystemColor = enabled
+                        recreateTick++
+                    },
+                    showNightDialog = showNightDialog,
+                    nightLabels = nightLabels,
+                    nightValues = nightValues,
+                    currentNightMode = nightMode,
+                    onNightModeSelect = { value ->
+                        prefs.edit().putInt(NIGHT_MODE, value).apply()
+                        nightMode = value
+                        androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(value)
+                        showNightDialog = false
+                        recreate()
+                    },
+                    onNightDialogDismiss = { showNightDialog = false }
+                )
+
+                }
+            } else {
+                ShizukuExpressiveTheme {
                 ShizukuLazyScaffold(
                     title = stringResource(R.string.settings_title),
                     onNavigateUp = { finish() }
@@ -369,6 +411,7 @@ class SettingsActivity : AppActivity() {
                         }
                     )
                 }
+            }
             }
         }
     }

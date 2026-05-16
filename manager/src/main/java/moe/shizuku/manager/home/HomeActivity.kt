@@ -366,7 +366,7 @@ abstract class HomeActivity : AppActivity() {
     }
 }
 
-private data class LocalNetworkPermissionState(
+internal data class LocalNetworkPermissionState(
     val permission: String?,
     val required: Boolean,
     val granted: Boolean
@@ -384,7 +384,89 @@ private data class HomeButtonSpec(
 )
 
 @Composable
+
 private fun HomeScreen(
+    serviceResource: Resource<ServiceStatus>?,
+    grantedResource: Resource<Int>?,
+    localNetworkPermissionState: LocalNetworkPermissionState,
+    isPrimaryUser: Boolean,
+    isRooted: Boolean,
+    onRefresh: () -> Unit,
+    onSettings: () -> Unit,
+    onAbout: () -> Unit,
+    onStop: () -> Unit,
+    onModules: () -> Unit,
+    onManageApps: () -> Unit,
+    onTerminal: () -> Unit,
+    onStartRoot: () -> Unit,
+    onStartWirelessAdb: () -> Unit,
+    onPairWirelessAdb: () -> Unit,
+    onOpenWirelessGuide: () -> Unit,
+    onShowAdbCommand: () -> Unit,
+    onOpenAdbHelp: () -> Unit,
+    onOpenAdbPermissionHelp: () -> Unit,
+    onLearnMore: () -> Unit,
+    onCopyDiagnostics: (String) -> Unit,
+    onRequestLocalNetworkPermission: () -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val isWatch = androidx.compose.runtime.remember(context) { moe.shizuku.manager.utils.EnvironmentUtils.isWatch(context) }
+    if (isWatch) {
+        moe.shizuku.manager.ui.compose.WearShizukuTheme {
+            WearHomeScreen(
+                serviceResource = serviceResource,
+                grantedResource = grantedResource,
+                localNetworkPermissionState = localNetworkPermissionState,
+                isPrimaryUser = isPrimaryUser,
+                isRooted = isRooted,
+                onRefresh = onRefresh,
+                onSettings = onSettings,
+                onAbout = onAbout,
+                onStop = onStop,
+                onModules = onModules,
+                onManageApps = onManageApps,
+                onTerminal = onTerminal,
+                onStartRoot = onStartRoot,
+                onStartWirelessAdb = onStartWirelessAdb,
+                onPairWirelessAdb = onPairWirelessAdb,
+                onOpenWirelessGuide = onOpenWirelessGuide,
+                onShowAdbCommand = onShowAdbCommand,
+                onOpenAdbHelp = onOpenAdbHelp,
+                onOpenAdbPermissionHelp = onOpenAdbPermissionHelp,
+                onLearnMore = onLearnMore,
+                onCopyDiagnostics = onCopyDiagnostics,
+                onRequestLocalNetworkPermission = onRequestLocalNetworkPermission
+            )
+        }
+    } else {
+        PhoneHomeScreen(
+            serviceResource = serviceResource,
+            grantedResource = grantedResource,
+            localNetworkPermissionState = localNetworkPermissionState,
+            isPrimaryUser = isPrimaryUser,
+            isRooted = isRooted,
+            onRefresh = onRefresh,
+            onSettings = onSettings,
+            onAbout = onAbout,
+            onStop = onStop,
+            onModules = onModules,
+            onManageApps = onManageApps,
+            onTerminal = onTerminal,
+            onStartRoot = onStartRoot,
+            onStartWirelessAdb = onStartWirelessAdb,
+            onPairWirelessAdb = onPairWirelessAdb,
+            onOpenWirelessGuide = onOpenWirelessGuide,
+            onShowAdbCommand = onShowAdbCommand,
+            onOpenAdbHelp = onOpenAdbHelp,
+            onOpenAdbPermissionHelp = onOpenAdbPermissionHelp,
+            onLearnMore = onLearnMore,
+            onCopyDiagnostics = onCopyDiagnostics,
+            onRequestLocalNetworkPermission = onRequestLocalNetworkPermission
+        )
+    }
+}
+
+@Composable private fun PhoneHomeScreen(
     serviceResource: Resource<ServiceStatus>?,
     grantedResource: Resource<Int>?,
     localNetworkPermissionState: LocalNetworkPermissionState,

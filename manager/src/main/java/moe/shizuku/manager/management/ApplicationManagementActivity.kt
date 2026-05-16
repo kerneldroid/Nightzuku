@@ -95,7 +95,41 @@ class ApplicationManagementActivity : AppActivity() {
             val packages = packagesResource?.data.orEmpty()
             val tick = permissionTick.intValue
 
-            ShizukuExpressiveTheme {
+            val isWatch = moe.shizuku.manager.utils.EnvironmentUtils.isWatch(this@ApplicationManagementActivity)
+            if (isWatch) {
+                moe.shizuku.manager.ui.compose.WearShizukuTheme {
+                val pm = androidx.compose.ui.platform.LocalContext.current.packageManager
+                val apps = androidx.compose.runtime.remember(packages, tick) {
+                    packages.map { pkg ->
+                        val appInfo = pkg.applicationInfo!!
+                        WearAppItem(
+                            label = appInfo.loadLabel(pm).toString(),
+                            packageName = pkg.packageName,
+                            uid = appInfo.uid,
+                            granted = moe.shizuku.manager.authorization.AuthorizationManager.granted(pkg.packageName, appInfo.uid)
+                        )
+                    }
+                }
+                WearApplicationManagementScreen(
+                    apps = apps,
+                    onToggle = { app ->
+                        try {
+                            if (app.granted) {
+                                moe.shizuku.manager.authorization.AuthorizationManager.revoke(app.packageName, app.uid)
+                            } else {
+                                moe.shizuku.manager.authorization.AuthorizationManager.grant(app.packageName, app.uid)
+                            }
+                            permissionTick.intValue++
+                            viewModel.load(onlyCount = true)
+                        } catch (_: SecurityException) {
+                            showAdbLimitedDialog()
+                        }
+                    }
+                )
+
+                }
+            } else {
+                ShizukuExpressiveTheme {
                 ShizukuLazyScaffold(
                     title = stringResource(R.string.home_app_management_title),
                     onNavigateUp = { finish() },
@@ -182,6 +216,7 @@ class ApplicationManagementActivity : AppActivity() {
                         }
                     }
                 }
+            }
             }
         }
     }
