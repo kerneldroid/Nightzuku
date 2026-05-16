@@ -79,6 +79,7 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,6 +87,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -134,11 +136,94 @@ fun ShizukuExpressiveTheme(content: @Composable () -> Unit) {
         baseScheme
     }
 
-    MaterialExpressiveTheme(
-        colorScheme = colorScheme,
-        motionScheme = MotionScheme.expressive(),
+    val density = LocalDensity.current
+
+    CompositionLocalProvider(LocalDensity provides density) {
+        MaterialExpressiveTheme(
+            colorScheme = colorScheme,
+            motionScheme = MotionScheme.expressive(),
+            content = content
+        )
+    }
+}
+
+@Composable
+fun WearShizukuTheme(content: @Composable () -> Unit) {
+    val context = LocalContext.current
+    val dark = isSystemInDarkTheme()
+    
+    val fallbackColorScheme = androidx.wear.compose.material3.ColorScheme(
+        primary = Color(if (dark) 0xFFB1B8DF else 0xFF3F51B5),
+        secondary = Color(if (dark) 0xFFB9C7E8 else 0xFF52669B),
+        tertiary = Color(if (dark) 0xFFE2B8C8 else 0xFF8C4A62),
+        background = Color(if (dark) 0xFF000000 else 0xFFF0F0F0),
+        surfaceContainer = Color(if (dark) 0xFF0B0B0B else 0xFFFFFFFF),
+        onPrimary = Color(if (dark) 0xFF1D244D else 0xFFFFFFFF),
+        onSecondary = Color(if (dark) 0xFF24304D else 0xFFFFFFFF),
+        onBackground = Color(if (dark) 0xFFE4E1E9 else 0xFF1B1B1F),
+        onSurface = Color(if (dark) 0xFFE4E1E9 else 0xFF1B1B1F),
+        error = Color(0xFFFFB4AB),
+        onError = Color(0xFF690005)
+    )
+
+    val colorScheme = if (ThemeHelper.isUsingSystemColor() && Build.VERSION.SDK_INT >= 31) {
+        androidx.wear.compose.material3.dynamicColorScheme(context) ?: fallbackColorScheme
+    } else {
+        fallbackColorScheme
+    }
+    
+    val finalColorScheme = if (dark && ThemeHelper.isBlackNightTheme(context)) {
+        colorScheme.copy(
+            background = Color.Black,
+            surfaceContainerLow = Color.Black,
+            surfaceContainer = Color(0xFF0B0B0B),
+            surfaceContainerHigh = Color(0xFF141414)
+        )
+    } else {
+        colorScheme
+    }
+
+    androidx.wear.compose.material3.MaterialTheme(
+        colorScheme = finalColorScheme,
         content = content
     )
+}
+
+@Composable
+fun WearScreenScaffold(
+    content: @Composable (androidx.wear.compose.foundation.lazy.TransformingLazyColumnState) -> Unit
+) {
+    val state = androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState()
+    androidx.wear.compose.material3.ScreenScaffold(
+        scrollState = state,
+        timeText = { androidx.wear.compose.material3.TimeText() }
+    ) {
+        content(state)
+    }
+}
+
+@Composable
+fun WearScreenTitle(
+    icon: ImageVector,
+    title: String
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(bottom = 8.dp)
+    ) {
+        androidx.wear.compose.material3.Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(24.dp),
+            tint = androidx.wear.compose.material3.MaterialTheme.colorScheme.primary
+        )
+        Spacer(Modifier.width(8.dp))
+        androidx.wear.compose.material3.Text(
+            text = title,
+            style = androidx.wear.compose.material3.MaterialTheme.typography.titleMedium,
+            color = androidx.wear.compose.material3.MaterialTheme.colorScheme.primary
+        )
+    }
 }
 
 @Composable

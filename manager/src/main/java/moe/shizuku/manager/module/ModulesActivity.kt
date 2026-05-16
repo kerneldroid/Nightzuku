@@ -143,7 +143,39 @@ class ModulesActivity : AppActivity() {
                 modules = AdbModuleManager.listModules(context)
             }
 
-            ShizukuExpressiveTheme {
+            val isWatch = moe.shizuku.manager.utils.EnvironmentUtils.isWatch(this@ModulesActivity)
+            if (isWatch) {
+                moe.shizuku.manager.ui.compose.WearShizukuTheme {
+                    
+                WearModulesScreen(
+                    modules = modules,
+                    busyId = runningModuleId,
+                    onToggle = { module ->
+                        scope.launch {
+                            AdbModuleManager.setEnabled(module, !module.enabled)
+                            reload()
+                        }
+                    },
+                    onRunAction = { module -> runModuleAction(module) },
+                    onRunService = { module -> 
+                        scope.launch {
+                            runningModuleId = module.id
+                            output = runCatching {
+                                val result = AdbModuleManager.runService(module)
+                                context.getString(R.string.modules_service_result, result.exitCode) to result.combinedOutput
+                            }.getOrElse {
+                                context.getString(R.string.modules_service_failed) to (it.message ?: it.javaClass.simpleName)
+                            }
+                            runningModuleId = null
+                        }
+                    },
+                    onDelete = { module -> deleteTarget = module },
+                    onInstallZip = { zipLauncher.launch(MODULE_MIME_TYPES) }
+                )
+
+                }
+            } else {
+                ShizukuExpressiveTheme {
                 ShizukuLazyScaffold(
                     title = stringResource(R.string.modules_title),
                     onNavigateUp = { finish() },
@@ -280,6 +312,7 @@ class ModulesActivity : AppActivity() {
                         }
                     )
                 }
+            }
             }
         }
     }

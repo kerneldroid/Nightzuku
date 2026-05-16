@@ -25,6 +25,8 @@ Upstream project: <https://github.com/RikkaApps/Shizuku>
 - [ADB Modules guide](docs/adb-modules-guide.md)
 - [ADB Modules API reference](docs/adb-modules-api.md)
 - [Shizuku Connectors API](docs/shizuku-connectors.md)
+- [Android 17 Compatibility](docs/android-17-compatibility.md)
+- [Wear OS Compatibility](docs/wearos-compatibility.md)
 
 ## Background
 
@@ -48,17 +50,34 @@ Shizuku uses a completely different way. See detailed description below.
 <details>
   <summary>📸 Click to open Screenshot Gallery</summary>
   <br/>
+
+  ### Phone UI
   <table>
     <tr>
-      <td align="center"><img src="screenshots/main.png" width="300" /><br/><b>Main Screen</b></td>
-      <td align="center"><img src="screenshots/apps.png" width="300" /><br/><b>Authorized Apps</b></td>
+      <td align="center"><img src="screenshots/phone/main.png" width="300" /><br/><b>Main Screen</b></td>
+      <td align="center"><img src="screenshots/phone/apps.png" width="300" /><br/><b>Authorized Apps</b></td>
     </tr>
     <tr>
-      <td align="center"><img src="screenshots/modules.png" width="300" /><br/><b>ADB Modules</b></td>
-      <td align="center"><img src="screenshots/module-webui.png" width="300" /><br/><b>Module WebUI</b></td>
+      <td align="center"><img src="screenshots/phone/modules.png" width="300" /><br/><b>ADB Modules</b></td>
+      <td align="center"><img src="screenshots/phone/module-webui.png" width="300" /><br/><b>Module WebUI</b></td>
     </tr>
     <tr>
-      <td colspan="2" align="center"><img src="screenshots/settings.png" width="300" /><br/><b>Settings</b></td>
+      <td colspan="2" align="center"><img src="screenshots/phone/settings.png" width="300" /><br/><b>Settings</b></td>
+    </tr>
+  </table>
+
+  ### Wear OS UI (Native Material 3)
+  <table>
+    <tr>
+      <td align="center"><img src="screenshots/wearos/wearos_main_scaled.png" width="200" /><br/><b>Main Screen</b></td>
+      <td align="center"><img src="screenshots/wearos/wearos_apps.png" width="200" /><br/><b>Authorized Apps</b></td>
+    </tr>
+    <tr>
+      <td align="center"><img src="screenshots/wearos/wearos_modules_scaled.png" width="200" /><br/><b>ADB Modules</b></td>
+      <td align="center"><img src="screenshots/wearos/wearos_settings_scaled.png" width="200" /><br/><b>Settings</b></td>
+    </tr>
+    <tr>
+      <td colspan="2" align="center"><img src="screenshots/wearos/wearos_dialog.png" width="200" /><br/><b>Theme Dialog</b></td>
     </tr>
   </table>
 </details>
