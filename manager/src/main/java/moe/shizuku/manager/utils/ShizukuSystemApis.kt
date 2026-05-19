@@ -17,23 +17,32 @@ import java.lang.reflect.Method
 
 object ShizukuSystemApis {
 
+    @Volatile
     private var sPackageManager: Any? = null
+    @Volatile
     private var getInstalledPackagesMethod: Method? = null
+    @Volatile
     private var getPackageInfoMethod: Method? = null
+    @Volatile
     private var getApplicationInfoMethod: Method? = null
+    @Volatile
     private var getListMethod: Method? = null
-
+ 
+    @Volatile
     private var sPermissionManager: Any? = null
+    @Volatile
     private var grantRuntimePermissionMethod: Method? = null
+    @Volatile
     private var revokeRuntimePermissionMethod: Method? = null
+    @Volatile
     private var checkPermissionMethod: Method? = null
-
+ 
     init {
         SystemServiceBinder.setOnGetBinderListener {
             return@setOnGetBinderListener ShizukuBinderWrapper(it)
         }
     }
-
+ 
     @Synchronized
     private fun getPackageManager(): Any? {
         if (sPackageManager == null) {
@@ -46,17 +55,26 @@ object ShizukuSystemApis {
                         when (method.name) {
                             "getInstalledPackages" -> {
                                 if (method.parameterTypes.isNotEmpty() && method.parameterTypes[0] == Long::class.javaPrimitiveType) {
-                                    getInstalledPackagesMethod = method
+                                    val current = getInstalledPackagesMethod
+                                    if (current == null || method.parameterTypes.size > current.parameterTypes.size) {
+                                        getInstalledPackagesMethod = method
+                                    }
                                 }
                             }
                             "getPackageInfo" -> {
                                 if (method.parameterTypes.size >= 2 && method.parameterTypes[0] == String::class.java && method.parameterTypes[1] == Long::class.javaPrimitiveType) {
-                                    getPackageInfoMethod = method
+                                    val current = getPackageInfoMethod
+                                    if (current == null || method.parameterTypes.size > current.parameterTypes.size) {
+                                        getPackageInfoMethod = method
+                                    }
                                 }
                             }
                             "getApplicationInfo" -> {
                                 if (method.parameterTypes.size >= 2 && method.parameterTypes[0] == String::class.java && method.parameterTypes[1] == Long::class.javaPrimitiveType) {
-                                    getApplicationInfoMethod = method
+                                    val current = getApplicationInfoMethod
+                                    if (current == null || method.parameterTypes.size > current.parameterTypes.size) {
+                                        getApplicationInfoMethod = method
+                                    }
                                 }
                             }
                         }
@@ -67,7 +85,7 @@ object ShizukuSystemApis {
         }
         return sPackageManager
     }
-
+ 
     @Synchronized
     private fun getPermissionManager(): Any? {
         if (sPermissionManager == null) {
@@ -80,17 +98,26 @@ object ShizukuSystemApis {
                         when (method.name) {
                             "grantRuntimePermission" -> {
                                 if (method.parameterTypes.size >= 3 && method.parameterTypes[0] == String::class.java) {
-                                    grantRuntimePermissionMethod = method
+                                    val current = grantRuntimePermissionMethod
+                                    if (current == null || method.parameterTypes.size > current.parameterTypes.size) {
+                                        grantRuntimePermissionMethod = method
+                                    }
                                 }
                             }
                             "revokeRuntimePermission" -> {
                                 if (method.parameterTypes.size >= 3 && method.parameterTypes[0] == String::class.java) {
-                                    revokeRuntimePermissionMethod = method
+                                    val current = revokeRuntimePermissionMethod
+                                    if (current == null || method.parameterTypes.size > current.parameterTypes.size) {
+                                        revokeRuntimePermissionMethod = method
+                                    }
                                 }
                             }
                             "checkPermission" -> {
                                 if (method.parameterTypes.size >= 3 && method.parameterTypes[0] == String::class.java) {
-                                    checkPermissionMethod = method
+                                    val current = checkPermissionMethod
+                                    if (current == null || method.parameterTypes.size > current.parameterTypes.size) {
+                                        checkPermissionMethod = method
+                                    }
                                 }
                             }
                         }
@@ -101,7 +128,7 @@ object ShizukuSystemApis {
         }
         return sPermissionManager
     }
-
+ 
     private fun invokeCompat(method: Method?, target: Any?, vararg args: Any?): Any? {
         if (method == null || target == null) return null
         val paramTypes = method.parameterTypes
@@ -125,9 +152,9 @@ object ShizukuSystemApis {
         }
         return method.invoke(target, *finalArgs)
     }
-
+ 
     private val users = arrayListOf<UserInfoCompat>()
-
+ 
     private fun getUsers(): List<UserInfoCompat> {
         return if (!Shizuku.pingBinder()) {
             arrayListOf(UserInfoCompat(UserHandleCompat.myUserId(), "Owner"))
@@ -142,7 +169,7 @@ object ShizukuSystemApis {
             arrayListOf(UserInfoCompat(UserHandleCompat.myUserId(), "Owner"))
         }
     }
-
+ 
     fun getUsers(useCache: Boolean = true): List<UserInfoCompat> {
         synchronized(users) {
             if (!useCache || users.isEmpty()) {
@@ -152,14 +179,14 @@ object ShizukuSystemApis {
             return users
         }
     }
-
+ 
     fun getUserInfo(userId: Int): UserInfoCompat {
         return getUsers(useCache = true).firstOrNull { it.id == userId } ?: UserInfoCompat(
             UserHandleCompat.myUserId(),
             "Unknown"
         )
     }
-
+ 
     @Suppress("UNCHECKED_CAST")
     fun getInstalledPackages(flags: Long, userId: Int): List<PackageInfo> {
         if (!Shizuku.pingBinder()) {
@@ -177,7 +204,11 @@ object ShizukuSystemApis {
                 val result = invokeCompat(getInstalledPackagesMethod, pm, flags, userId)
                 if (result != null) {
                     if (getListMethod == null) {
-                        getListMethod = result.javaClass.getMethod("getList")
+                        synchronized(this) {
+                            if (getListMethod == null) {
+                                getListMethod = result.javaClass.getMethod("getList")
+                            }
+                        }
                     }
                     return (getListMethod!!.invoke(result) as List<PackageInfo>)
                 }
