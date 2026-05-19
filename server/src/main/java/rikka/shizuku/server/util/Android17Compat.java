@@ -19,16 +19,16 @@ public class Android17Compat {
     private static final String TAG = "ShizukuAndroid17Compat";
     private static final int DEVICE_ID_DEFAULT = 0; // Context.DEVICE_ID_DEFAULT
 
-    private static Object sPackageManager;
-    private static Method sGetInstalledPackagesMethod;
-    private static Method sGetPackageInfoMethod;
-    private static Method sGetApplicationInfoMethod;
+    private static volatile Object sPackageManager;
+    private static volatile Method sGetInstalledPackagesMethod;
+    private static volatile Method sGetPackageInfoMethod;
+    private static volatile Method sGetApplicationInfoMethod;
     
-    private static Object sPermissionManager;
-    private static Method sGrantRuntimePermissionMethod;
-    private static Method sRevokeRuntimePermissionMethod;
-    private static Method sCheckPermissionMethod;
-    private static Method sCheckPermissionUidMethod;
+    private static volatile Object sPermissionManager;
+    private static volatile Method sGrantRuntimePermissionMethod;
+    private static volatile Method sRevokeRuntimePermissionMethod;
+    private static volatile Method sCheckPermissionMethod;
+    private static volatile Method sCheckPermissionUidMethod;
 
     private static synchronized Object getPackageManager() throws Exception {
         if (sPackageManager == null) {
@@ -48,7 +48,7 @@ public class Android17Compat {
         return sPermissionManager;
     }
 
-    private static Method sGetListMethod;
+    private static volatile Method sGetListMethod;
 
     @SuppressWarnings("unchecked")
     public static List<PackageInfo> getInstalledPackages(long flags, int userId) {
@@ -60,14 +60,22 @@ public class Android17Compat {
                 if (pm == null) return new ArrayList<>();
 
                 if (sGetInstalledPackagesMethod == null) {
-                    sGetInstalledPackagesMethod = findMethod(pm, "getInstalledPackages", long.class);
+                    synchronized (Android17Compat.class) {
+                        if (sGetInstalledPackagesMethod == null) {
+                            sGetInstalledPackagesMethod = findMethod(pm, "getInstalledPackages", long.class);
+                        }
+                    }
                 }
 
                 if (sGetInstalledPackagesMethod != null) {
                     Object result = invokeMethod(pm, sGetInstalledPackagesMethod, flags, userId);
                     if (result != null) {
                         if (sGetListMethod == null) {
-                            sGetListMethod = result.getClass().getMethod("getList");
+                            synchronized (Android17Compat.class) {
+                                if (sGetListMethod == null) {
+                                    sGetListMethod = result.getClass().getMethod("getList");
+                                }
+                            }
                         }
                         return (List<PackageInfo>) sGetListMethod.invoke(result);
                     }
@@ -87,7 +95,11 @@ public class Android17Compat {
             try {
                 Object pm = getPackageManager();
                 if (sGetPackageInfoMethod == null) {
-                    sGetPackageInfoMethod = findMethod(pm, "getPackageInfo", String.class, long.class);
+                    synchronized (Android17Compat.class) {
+                        if (sGetPackageInfoMethod == null) {
+                            sGetPackageInfoMethod = findMethod(pm, "getPackageInfo", String.class, long.class);
+                        }
+                    }
                 }
                 if (sGetPackageInfoMethod != null) {
                     return (PackageInfo) invokeMethod(pm, sGetPackageInfoMethod, packageName, flags, userId);
@@ -106,7 +118,11 @@ public class Android17Compat {
             try {
                 Object pm = getPackageManager();
                 if (sGetApplicationInfoMethod == null) {
-                    sGetApplicationInfoMethod = findMethod(pm, "getApplicationInfo", String.class, long.class);
+                    synchronized (Android17Compat.class) {
+                        if (sGetApplicationInfoMethod == null) {
+                            sGetApplicationInfoMethod = findMethod(pm, "getApplicationInfo", String.class, long.class);
+                        }
+                    }
                 }
                 if (sGetApplicationInfoMethod != null) {
                     return (ApplicationInfo) invokeMethod(pm, sGetApplicationInfoMethod, packageName, flags, userId);
@@ -125,7 +141,11 @@ public class Android17Compat {
             try {
                 Object pm = getPermissionManager();
                 if (sCheckPermissionMethod == null) {
-                    sCheckPermissionMethod = findMethod(pm, "checkPermission", String.class, String.class);
+                    synchronized (Android17Compat.class) {
+                        if (sCheckPermissionMethod == null) {
+                            sCheckPermissionMethod = findMethod(pm, "checkPermission", String.class, String.class);
+                        }
+                    }
                 }
                 if (sCheckPermissionMethod != null) {
                     return (int) invokeMethod(pm, sCheckPermissionMethod, permissionName, packageName, userId);
@@ -146,7 +166,11 @@ public class Android17Compat {
             try {
                 Object pm = getPermissionManager();
                 if (sCheckPermissionUidMethod == null) {
-                    sCheckPermissionUidMethod = findMethod(pm, "checkPermission", String.class, int.class);
+                    synchronized (Android17Compat.class) {
+                        if (sCheckPermissionUidMethod == null) {
+                            sCheckPermissionUidMethod = findMethod(pm, "checkPermission", String.class, int.class);
+                        }
+                    }
                 }
                 if (sCheckPermissionUidMethod != null) {
                     Class<?>[] paramTypes = sCheckPermissionUidMethod.getParameterTypes();
@@ -172,7 +196,11 @@ public class Android17Compat {
             try {
                 Object pm = getPermissionManager();
                 if (sGrantRuntimePermissionMethod == null) {
-                    sGrantRuntimePermissionMethod = findMethod(pm, "grantRuntimePermission", String.class, String.class);
+                    synchronized (Android17Compat.class) {
+                        if (sGrantRuntimePermissionMethod == null) {
+                            sGrantRuntimePermissionMethod = findMethod(pm, "grantRuntimePermission", String.class, String.class);
+                        }
+                    }
                 }
                 if (sGrantRuntimePermissionMethod != null) {
                     invokeMethod(pm, sGrantRuntimePermissionMethod, packageName, permissionName, userId);
@@ -190,7 +218,11 @@ public class Android17Compat {
             try {
                 Object pm = getPermissionManager();
                 if (sRevokeRuntimePermissionMethod == null) {
-                    sRevokeRuntimePermissionMethod = findMethod(pm, "revokeRuntimePermission", String.class, String.class);
+                    synchronized (Android17Compat.class) {
+                        if (sRevokeRuntimePermissionMethod == null) {
+                            sRevokeRuntimePermissionMethod = findMethod(pm, "revokeRuntimePermission", String.class, String.class);
+                        }
+                    }
                 }
                 if (sRevokeRuntimePermissionMethod != null) {
                     Class<?>[] paramTypes = sRevokeRuntimePermissionMethod.getParameterTypes();
@@ -207,6 +239,7 @@ public class Android17Compat {
     }
 
     private static Method findMethod(Object obj, String name, Class<?>... prefixTypes) {
+        Method bestMethod = null;
         for (Method method : obj.getClass().getMethods()) {
             if (name.equals(method.getName())) {
                 Class<?>[] paramTypes = method.getParameterTypes();
@@ -218,11 +251,15 @@ public class Android17Compat {
                             break;
                         }
                     }
-                    if (match) return method;
+                    if (match) {
+                        if (bestMethod == null || paramTypes.length > bestMethod.getParameterTypes().length) {
+                            bestMethod = method;
+                        }
+                    }
                 }
             }
         }
-        return null;
+        return bestMethod;
     }
 
     private static Object invokeMethod(Object obj, Method method, Object... prefixArgs) throws Exception {
