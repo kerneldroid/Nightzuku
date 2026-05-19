@@ -1,6 +1,6 @@
 # Wear OS Compatibility (Android 15-16 / Wear OS 5-6.1)
 
-This document details the Wear OS compatibility enhancements introduced in the Shizuku modern fork.
+This document details the Wear OS compatibility enhancements introduced in the Nightzuku modern fork.
 
 ## Supported Versions
 * Wear OS 5.1 (Android 15)
@@ -21,6 +21,6 @@ The entire user interface for Wear OS has been rewritten using the official `and
 * **Optimized Layouts:** Removed the previous 0.8x scaling hack. The UI now natively adapts to small, high-density circular screens with proper paddings and touch targets.
 
 ## Verification
-* The Shizuku server successfully binds and operates on Wear OS 6.1 (API 36.1) emulators and real devices.
+* The Nightzuku server successfully binds and operates on Wear OS 6.1 (API 36.1) emulators and real devices.
 * Application UI provides a first-class native experience on 1.4-inch and 1.5-inch round displays.
 * All core functionalities, including ADB bindings and root execution, are functional.

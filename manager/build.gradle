@@ -10,7 +10,7 @@ plugins {
 android {
     namespace 'moe.shizuku.manager'
     defaultConfig {
-        applicationId "moe.shizuku.privileged.api"
+        applicationId "kerneldroid.nightzuku"
         versionCode rootProject.ext.versionCode
         versionName rootProject.ext.versionName
         externalNativeBuild {
@@ -137,7 +137,7 @@ afterEvaluate {
                 copy {
                     from apk
                     into rootProject.layout.projectDirectory.dir('out/apk')
-                    rename { "shizuku-v${versionName}-${variantName}.apk" }
+                    rename { "nightzuku-v${versionName}-${variantName}.apk" }
                 }
                 if (variantName == 'release') {
                     def mapping = layout.buildDirectory.file('outputs/mapping/release/mapping.txt').get().asFile
