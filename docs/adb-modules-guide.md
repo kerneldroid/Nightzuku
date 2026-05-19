@@ -91,7 +91,7 @@ usesShellBridge=true
 action=scripts/action.sh
 ```
 
-`usesShellBridge=true` is mandatory for WebUI pages that need `window.Nightzuku`.
+`usesShellBridge=true` is mandatory for WebUI pages that need `window.Shizuku`.
 
 ## Script Environment
 

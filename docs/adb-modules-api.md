@@ -160,8 +160,8 @@ Current WebView policy:
 - Mixed content: blocked.
 - Content access: disabled.
 - Third-party cookies: disabled.
-- `window.Nightzuku` is exposed only for enabled module-local WebUI when the access policy allows WebUI bridge and WebView internet is off.
-- Full Trust modules can use WebView internet and `window.Nightzuku` together.
+- `window.Shizuku` is exposed only for enabled module-local WebUI when the access policy allows WebUI bridge and WebView internet is off.
+- Full Trust modules can use WebView internet and `window.Shizuku` together.
 
 WebUI should treat module files as local UI assets. Remote dependencies are blocked by default.
 
@@ -174,7 +174,7 @@ Example using a pinned BeerCSS package from jsDelivr:
 
 ### JavaScript-to-Shell Bridge
 
-The `window.Nightzuku` object can be exposed to module-local offline WebUI so pages can read module info. Shell methods are allowed only when:
+The `window.Shizuku` object can be exposed to module-local offline WebUI so pages can read module info. Shell methods are allowed only when:
 
 - the module is enabled;
 - `module.prop` declares `usesShellBridge=true`;
@@ -188,7 +188,7 @@ Full Trust modules bypass the `usesShellBridge=true`, WebUI bridge, WebView inte
 You can retrieve the current module's metadata, paths, and settings:
 
 ```javascript
-const info = JSON.parse(window.Nightzuku.getModuleInfo());
+const info = JSON.parse(window.Shizuku.getModuleInfo());
 console.log(info.id);         // e.g. "my-module"
 console.log(info.enabled);    // true
 console.log(info.accessMode); // "full"
@@ -200,7 +200,7 @@ console.log(info.moduleDir);  // absolute path to module storage
 
 ```javascript
 // Execute a shell command through Nightzuku
-const resultJson = window.Nightzuku.exec("id");
+const resultJson = window.Shizuku.exec("id");
 const result = JSON.parse(resultJson);
 
 console.log(result.ok);       // true when exitCode === 0 and no timeout
@@ -213,7 +213,7 @@ console.log(result.timedOut); // false
 Advanced execution with timeout, stdin, cwd, and extra environment variables:
 
 ```javascript
-const result = JSON.parse(window.Nightzuku.execWithOptions("cat && pwd && echo $FOO", JSON.stringify({
+const result = JSON.parse(window.Shizuku.execWithOptions("cat && pwd && echo $FOO", JSON.stringify({
   timeoutSeconds: 30,
   stdin: "hello\n",
   cwd: "webui",
@@ -242,7 +242,7 @@ Trusted modules:
 
 - can run Action and Service regardless of the global Safe/Custom/Full mode;
 - can run background Service without the global background toggle;
-- can expose `window.Nightzuku` without `usesShellBridge=true`;
+- can expose `window.Shizuku` without `usesShellBridge=true`;
 - can use WebView internet while the bridge is exposed;
 - skip ReCommand prompts;
 - can use `download()` even when global WebUI download is blocked;
@@ -250,10 +250,10 @@ Trusted modules:
 
 ### WebUI Internet File Loader
 
-`window.Nightzuku.download(url, relativeWebPath)` downloads an HTTPS URL into the module WebUI directory. This is meant for optional runtime caching of CSS, JS, fonts, and other WebUI assets.
+`window.Shizuku.download(url, relativeWebPath)` downloads an HTTPS URL into the module WebUI directory. This is meant for optional runtime caching of CSS, JS, fonts, and other WebUI assets.
 
 ```javascript
-const result = JSON.parse(window.Nightzuku.download(
+const result = JSON.parse(window.Shizuku.download(
   "https://cdn.jsdelivr.net/npm/beercss@4.0.21/dist/cdn/beer.min.css",
   "vendor/beer.min.css"
 ));

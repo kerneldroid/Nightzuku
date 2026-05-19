@@ -16,7 +16,7 @@ To use it, the user must navigate to the Nightzuku Settings -> **Lab Features**,
 When Nightzuku Connectors is enabled, Nightzuku exposes a local, exported `ContentProvider` at the following URI:
 
 ```
-content://moe.shizuku.privileged.api.connector
+content://kerneldroid.nightzuku.connector
 ```
 
 ### Querying the Provider
@@ -26,7 +26,7 @@ You can query this URI to retrieve a `Cursor` containing exactly one row and one
 #### Android Java/Kotlin Example:
 
 ```kotlin
-val uri = Uri.parse("content://moe.shizuku.privileged.api.connector")
+val uri = Uri.parse("content://kerneldroid.nightzuku.connector")
 contentResolver.query(uri, null, null, null, null)?.use { cursor ->
     if (cursor.moveToFirst()) {
         val commandIndex = cursor.getColumnIndex("command")
@@ -42,7 +42,7 @@ contentResolver.query(uri, null, null, null, null)?.use { cursor ->
 #### Shell Script Example:
 
 ```bash
-OUTPUT=$(content query --uri content://moe.shizuku.privileged.api.connector)
+OUTPUT=$(content query --uri content://kerneldroid.nightzuku.connector)
 if [[ $OUTPUT == *"command="* ]]; then
     CMD=$(echo "$OUTPUT" | grep -o 'command=.*' | cut -d= -f2-)
     # Run the command with elevated privileges

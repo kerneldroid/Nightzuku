@@ -17,5 +17,5 @@ Thank you for contributing to the Nightzuku-modern repository. Please follow the
 
 ## Code Style
 - Follow standard Kotlin idioms.
-- Use state hoisting and avoid deep nesting in Compose. Use `NightzukuExpressiveTheme`.
+- Use state hoisting and avoid deep nesting in Compose. Use `ShizukuExpressiveTheme`.
 - Run internal linters before submitting.
