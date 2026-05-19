@@ -1,6 +1,6 @@
 # Nightzuku
 
-**Nightzuku** is the official modern successor to Nightzuku, maintained by kerneldroid. It provides a robust, high-performance interface for applications to use system APIs directly with elevated permissions (root/ADB).
+**Nightzuku** is the official modern successor to Shizuku, maintained by kerneldroid. It provides a robust, high-performance interface for applications to use system APIs directly with elevated permissions (root/ADB).
 
 This project tracks the latest Android platform developments, including Android 16/17 target stability, introduces a revamped Modern Material 3 Expressive UI using Jetpack Compose, and includes a full ADB-backed ZIP modules runner.
 
