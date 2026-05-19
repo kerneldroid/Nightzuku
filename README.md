@@ -4,9 +4,6 @@
 
 This project tracks the latest Android platform developments, including Android 16/17 target stability, introduces a revamped Modern Material 3 Expressive UI using Jetpack Compose, and includes a full ADB-backed ZIP modules runner.
 
-> [!IMPORTANT]
-> **Migration Action Required:** Due to the package identity upgrade (`moe.shizuku.privileged.api` -> `kerneldroid.nightzuku`), you **MUST UNINSTALL** any older official Nightzuku Manager app from your device before installing Nightzuku. Otherwise, they will conflict.
-
 Upstream project reference: <https://github.com/RikkaApps/Shizuku>
 
 ## Fork additions
@@ -134,9 +131,3 @@ The `:manager:assembleDebug` task generates a debuggable server. You can attach 
 ## License
 
 All code files in this project are licensed under Apache 2.0
-
-Under Apache 2.0 section 6, specifically:
-
-* You are **FORBIDDEN** to use `manager/src/main/res/mipmap*/ic_launcher*.png` image files, unless for displaying Nightzuku itself.
-
-* You are **FORBIDDEN** to use `Nightzuku` as app name or use `moe.shizuku.privileged.api` as application id or declare `moe.shizuku.manager.permission.*` permission.
