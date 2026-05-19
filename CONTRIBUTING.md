@@ -1,6 +1,6 @@
 # Contributing Guidelines
 
-Thank you for contributing to the Shizuku-modern repository. Please follow these guidelines to ensure a smooth review process.
+Thank you for contributing to the Nightzuku-modern repository. Please follow these guidelines to ensure a smooth review process.
 
 ## Issue Reporting
 - **Use Templates:** Use the provided GitHub Issue templates and fill them out completely.
@@ -17,5 +17,5 @@ Thank you for contributing to the Shizuku-modern repository. Please follow these
 
 ## Code Style
 - Follow standard Kotlin idioms.
-- Use state hoisting and avoid deep nesting in Compose. Use `ShizukuExpressiveTheme`.
+- Use state hoisting and avoid deep nesting in Compose. Use `NightzukuExpressiveTheme`.
 - Run internal linters before submitting.

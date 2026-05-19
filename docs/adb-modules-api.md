@@ -1,8 +1,8 @@
-# Shizuku ADB Modules API
+# Nightzuku ADB Modules API
 
-ADB Modules are ZIP packages installed into Shizuku private app storage and executed through the currently active Shizuku server. If Shizuku is running from ADB, module scripts run with ADB shell privileges. If Shizuku is running from root, scripts run with root privileges.
+ADB Modules are ZIP packages installed into Nightzuku private app storage and executed through the currently active Nightzuku server. If Nightzuku is running from ADB, module scripts run with ADB shell privileges. If Nightzuku is running from root, scripts run with root privileges.
 
-This is not a root overlay system. It is a Shizuku-backed module runner for actions, WebUI, service hooks, and controlled ADB/root shell access.
+This is not a root overlay system. It is a Nightzuku-backed module runner for actions, WebUI, service hooks, and controlled ADB/root shell access.
 
 ## Package Format
 
@@ -45,8 +45,8 @@ Rules:
 
 - `id` must match `[A-Za-z][A-Za-z0-9._-]{1,63}`.
 - `banner` can point to `.png`, `.jpg`, `.jpeg`, or `.webp`.
-- If `banner` is omitted, Shizuku checks `banner.png`, `banner.jpg`, `banner.jpeg`, then `banner.webp`.
-- If `webui` is omitted, Shizuku checks `webroot`, `webui`, then `web`.
+- If `banner` is omitted, Nightzuku checks `banner.png`, `banner.jpg`, `banner.jpeg`, then `banner.webp`.
+- If `webui` is omitted, Nightzuku checks `webroot`, `webui`, then `web`.
 - WebUI is available only when `<webui>/index.html` exists.
 - `action` defaults to `action.sh`.
 - `service.sh` is detected automatically.
@@ -56,13 +56,13 @@ Rules:
 Install flow:
 
 1. User selects a module ZIP with Android file picker.
-2. Shizuku copies it into cache.
-3. Shizuku validates `module.prop`.
-4. Shizuku extracts into a staging directory.
-5. Shizuku rejects unsafe paths.
-6. Shizuku marks `.sh` files executable.
-7. Shizuku replaces any existing module with the same `id`.
-8. Shizuku stores the module under app-private storage.
+2. Nightzuku copies it into cache.
+3. Nightzuku validates `module.prop`.
+4. Nightzuku extracts into a staging directory.
+5. Nightzuku rejects unsafe paths.
+6. Nightzuku marks `.sh` files executable.
+7. Nightzuku replaces any existing module with the same `id`.
+8. Nightzuku stores the module under app-private storage.
 
 Safety limits:
 
@@ -73,7 +73,7 @@ Safety limits:
 
 ## Runtime Environment
 
-Scripts run through Shizuku server process creation. The command is:
+Scripts run through Nightzuku server process creation. The command is:
 
 ```sh
 sh /path/to/module/action.sh
@@ -128,7 +128,7 @@ Execution policy:
 - `Safe` mode: blocked.
 - `Full access` mode: allowed only when `Allow background actions` is enabled.
 - Disabled modules are skipped.
-- Service scripts auto-run once per Shizuku binder session when Shizuku becomes available from the manager.
+- Service scripts auto-run once per Nightzuku binder session when Nightzuku becomes available from the manager.
 - Last output is written to `logs/service-last.log`.
 - Timeout returns exit code `124`.
 
@@ -160,8 +160,8 @@ Current WebView policy:
 - Mixed content: blocked.
 - Content access: disabled.
 - Third-party cookies: disabled.
-- `window.Shizuku` is exposed only for enabled module-local WebUI when the access policy allows WebUI bridge and WebView internet is off.
-- Full Trust modules can use WebView internet and `window.Shizuku` together.
+- `window.Nightzuku` is exposed only for enabled module-local WebUI when the access policy allows WebUI bridge and WebView internet is off.
+- Full Trust modules can use WebView internet and `window.Nightzuku` together.
 
 WebUI should treat module files as local UI assets. Remote dependencies are blocked by default.
 
@@ -174,7 +174,7 @@ Example using a pinned BeerCSS package from jsDelivr:
 
 ### JavaScript-to-Shell Bridge
 
-The `window.Shizuku` object can be exposed to module-local offline WebUI so pages can read module info. Shell methods are allowed only when:
+The `window.Nightzuku` object can be exposed to module-local offline WebUI so pages can read module info. Shell methods are allowed only when:
 
 - the module is enabled;
 - `module.prop` declares `usesShellBridge=true`;
@@ -188,7 +188,7 @@ Full Trust modules bypass the `usesShellBridge=true`, WebUI bridge, WebView inte
 You can retrieve the current module's metadata, paths, and settings:
 
 ```javascript
-const info = JSON.parse(window.Shizuku.getModuleInfo());
+const info = JSON.parse(window.Nightzuku.getModuleInfo());
 console.log(info.id);         // e.g. "my-module"
 console.log(info.enabled);    // true
 console.log(info.accessMode); // "full"
@@ -199,8 +199,8 @@ console.log(info.moduleDir);  // absolute path to module storage
 #### Shell Execution
 
 ```javascript
-// Execute a shell command through Shizuku
-const resultJson = window.Shizuku.exec("id");
+// Execute a shell command through Nightzuku
+const resultJson = window.Nightzuku.exec("id");
 const result = JSON.parse(resultJson);
 
 console.log(result.ok);       // true when exitCode === 0 and no timeout
@@ -213,7 +213,7 @@ console.log(result.timedOut); // false
 Advanced execution with timeout, stdin, cwd, and extra environment variables:
 
 ```javascript
-const result = JSON.parse(window.Shizuku.execWithOptions("cat && pwd && echo $FOO", JSON.stringify({
+const result = JSON.parse(window.Nightzuku.execWithOptions("cat && pwd && echo $FOO", JSON.stringify({
   timeoutSeconds: 30,
   stdin: "hello\n",
   cwd: "webui",
@@ -242,7 +242,7 @@ Trusted modules:
 
 - can run Action and Service regardless of the global Safe/Custom/Full mode;
 - can run background Service without the global background toggle;
-- can expose `window.Shizuku` without `usesShellBridge=true`;
+- can expose `window.Nightzuku` without `usesShellBridge=true`;
 - can use WebView internet while the bridge is exposed;
 - skip ReCommand prompts;
 - can use `download()` even when global WebUI download is blocked;
@@ -250,10 +250,10 @@ Trusted modules:
 
 ### WebUI Internet File Loader
 
-`window.Shizuku.download(url, relativeWebPath)` downloads an HTTPS URL into the module WebUI directory. This is meant for optional runtime caching of CSS, JS, fonts, and other WebUI assets.
+`window.Nightzuku.download(url, relativeWebPath)` downloads an HTTPS URL into the module WebUI directory. This is meant for optional runtime caching of CSS, JS, fonts, and other WebUI assets.
 
 ```javascript
-const result = JSON.parse(window.Shizuku.download(
+const result = JSON.parse(window.Nightzuku.download(
   "https://cdn.jsdelivr.net/npm/beercss@4.0.21/dist/cdn/beer.min.css",
   "vendor/beer.min.css"
 ));
@@ -326,7 +326,7 @@ Implemented:
 - WebUI HTTPS file download into the module WebUI root.
 - Manual `action.sh`.
 - Policy-gated `service.sh`.
-- One service run per Shizuku binder session.
+- One service run per Nightzuku binder session.
 - Last action/service logs.
 - Direct JavaScript-to-shell bridge with optional timeout/stdin/cwd/env.
 

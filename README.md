@@ -1,15 +1,13 @@
-# Shizuku
+# Nightzuku
 
-## Fork status
+**Nightzuku** is the official modern successor to Nightzuku, maintained by kerneldroid. It provides a robust, high-performance interface for applications to use system APIs directly with elevated permissions (root/ADB).
 
-This repository is an independent fork of Shizuku, based on the upstream project by RikkaApps.
-It is not the official upstream app.
+This project tracks the latest Android platform developments, including Android 16/17 target stability, introduces a revamped Modern Material 3 Expressive UI using Jetpack Compose, and includes a full ADB-backed ZIP modules runner.
 
-This fork modernizes the Android manager UI with Jetpack Compose and Material 3 Expressive,
-tracks newer Android SDK targets, carries local server/manager fixes, and adds an ADB-backed
-module runner for ZIP modules.
+> [!IMPORTANT]
+> **Migration Action Required:** Due to the package identity upgrade (`moe.shizuku.privileged.api` -> `kerneldroid.nightzuku`), you **MUST UNINSTALL** any older official Nightzuku Manager app from your device before installing Nightzuku. Otherwise, they will conflict.
 
-Upstream project: <https://github.com/RikkaApps/Shizuku>
+Upstream project reference: <https://github.com/RikkaApps/Shizuku>
 
 ## Fork additions
 
@@ -24,7 +22,7 @@ Upstream project: <https://github.com/RikkaApps/Shizuku>
 
 - [ADB Modules guide](docs/adb-modules-guide.md)
 - [ADB Modules API reference](docs/adb-modules-api.md)
-- [Shizuku Connectors API](docs/shizuku-connectors.md)
+- [Nightzuku Connectors API](docs/nightzuku-connectors.md)
 - [Android 17 Compatibility](docs/android-17-compatibility.md)
 - [Wear OS Compatibility](docs/wearos-compatibility.md)
 
@@ -39,11 +37,9 @@ This method has very big disadvantages:
 3. The possibility is limited to available commands
 4. Even if ADB has sufficient permissions, the app requires root privileges to run
 
-Shizuku uses a completely different way. See detailed description below.
+Nightzuku uses a completely different way. See detailed description below.
 
-## User guide & Download
 
-<https://shizuku.rikka.app/>
 
 ## Screenshots
 
@@ -82,7 +78,7 @@ Shizuku uses a completely different way. See detailed description below.
   </table>
 </details>
 
-## How does Shizuku work?
+## How does Nightzuku work?
 
 First, we need to talk about how app use system APIs. For example, if the app wants to get installed apps, we all know we should use `PackageManager#getInstalledPackages()`. This is actually an interprocess communication (IPC) process of the app process and system server process, just the Android framework did the inner works for us.
 
@@ -90,9 +86,9 @@ Android uses `binder` to do this type of IPC. `Binder` allows the server-side to
 
 Usually, if there is a "manager" (e.g., `PackageManager`) for apps to use, there should be a "service" (e.g., `PackageManagerService`) in the system server process. We can simply think if the app holds the `binder` of the "service", it can communicate with the "service". The app process will receive binders of system services on start.
 
-Shizuku guides users to run a process, Shizuku server, with root or ADB first. When the app starts, the `binder` to Shizuku server will also be sent to the app.
+Nightzuku guides users to run a process, Nightzuku server, with root or ADB first. When the app starts, the `binder` to Nightzuku server will also be sent to the app.
 
-The most important feature Shizuku provides is something like be a middle man to receive requests from the app, sent them to the system server, and send back the results. You can see the `transactRemote` method in `rikka.shizuku.server.ShizukuService` class, and `moe.shizuku.api.ShizukuBinderWrapper` class for the detail.
+The most important feature Nightzuku provides is something like be a middle man to receive requests from the app, sent them to the system server, and send back the results. You can see the `transactRemote` method in `rikka.shizuku.server.NightzukuService` class, and `moe.shizuku.api.NightzukuBinderWrapper` class for the detail.
 
 So, we reached our goal, to use system APIs with higher permission. And to the app, it is almost identical to the use of system APIs directly.
 
@@ -102,11 +98,7 @@ So, we reached our goal, to use system APIs with higher permission. And to the a
 
 https://github.com/RikkaApps/Shizuku-API
 
-### Migrating from pre-v11
 
-> Existing applications still works, of course.
-
-https://github.com/RikkaApps/Shizuku-API#migration-guide-for-existing-applications-use-shizuku-pre-v11
 
 ### Attention
 
@@ -114,7 +106,7 @@ https://github.com/RikkaApps/Shizuku-API#migration-guide-for-existing-applicatio
 
    ADB has limited permissions and different on various system versions. You can see permissions granted to ADB [here](https://github.com/aosp-mirror/platform_frameworks_base/blob/master/packages/Shell/AndroidManifest.xml).
 
-   Before calling the API, you can use `ShizukuService#getUid` to check if Shizuku is running user ADB, or use `ShizukuService#checkPermission` to check if the server has sufficient permissions.
+   Before calling the API, you can use `NightzukuService#getUid` to check if Nightzuku is running user ADB, or use `NightzukuService#checkPermission` to check if the server has sufficient permissions.
 
 2. Hidden API limitation from Android 9
 
@@ -122,15 +114,15 @@ https://github.com/RikkaApps/Shizuku-API#migration-guide-for-existing-applicatio
 
 3. Android 8.0 & ADB
 
-   At present, the way Shizuku service gets the app process is to combine `IActivityManager#registerProcessObserver` and `IActivityManager#registerUidObserver` (26+) to ensure that the app process will be sent when the app starts. However, on API 26, ADB lacks permissions to use `registerUidObserver`, so if you need to use Shizuku in a process that might not be started by an Activity, it is recommended to trigger the send binder by starting a transparent activity.
+   At present, the way Nightzuku service gets the app process is to combine `IActivityManager#registerProcessObserver` and `IActivityManager#registerUidObserver` (26+) to ensure that the app process will be sent when the app starts. However, on API 26, ADB lacks permissions to use `registerUidObserver`, so if you need to use Nightzuku in a process that might not be started by an Activity, it is recommended to trigger the send binder by starting a transparent activity.
 
 4. Direct use of `transactRemote` requires attention
 
    * The API may be different under different Android versions, please be sure to check it carefully. Also, the `android.app.IActivityManager` has the aidl form in API 26 and later, and `android.app.IActivityManager$Stub` exists only on API 26.
 
-   * `SystemServiceHelper.getTransactionCode` may not get the correct transaction code, such as `android.content.pm.IPackageManager$Stub.TRANSACTION_getInstalledPackages` does not exist on API 25 and there is `android.content.pm.IPackageManager$Stub.TRANSACTION_getInstalledPackages_47` (this situation has been dealt with, but it is not excluded that there may be other circumstances). This problem is not encountered with the `ShizukuBinderWrapper` method.
+   * `SystemServiceHelper.getTransactionCode` may not get the correct transaction code, such as `android.content.pm.IPackageManager$Stub.TRANSACTION_getInstalledPackages` does not exist on API 25 and there is `android.content.pm.IPackageManager$Stub.TRANSACTION_getInstalledPackages_47` (this situation has been dealt with, but it is not excluded that there may be other circumstances). This problem is not encountered with the `NightzukuBinderWrapper` method.
 
-## Developing Shizuku itself
+## Developing Nightzuku itself
 
 ### Build
 
@@ -145,6 +137,6 @@ All code files in this project are licensed under Apache 2.0
 
 Under Apache 2.0 section 6, specifically:
 
-* You are **FORBIDDEN** to use `manager/src/main/res/mipmap*/ic_launcher*.png` image files, unless for displaying Shizuku itself.
+* You are **FORBIDDEN** to use `manager/src/main/res/mipmap*/ic_launcher*.png` image files, unless for displaying Nightzuku itself.
 
-* You are **FORBIDDEN** to use `Shizuku` as app name or use `moe.shizuku.privileged.api` as application id or declare `moe.shizuku.manager.permission.*` permission.
+* You are **FORBIDDEN** to use `Nightzuku` as app name or use `moe.shizuku.privileged.api` as application id or declare `moe.shizuku.manager.permission.*` permission.

@@ -5,17 +5,17 @@ This guide is for module authors and testers. For the exact API contract, see
 
 ## What This System Is
 
-ADB Modules are ZIP packages installed into Shizuku private storage and executed through
-the active Shizuku server.
+ADB Modules are ZIP packages installed into Nightzuku private storage and executed through
+the active Nightzuku server.
 
-- ADB-started Shizuku: scripts run with ADB shell privileges.
-- Root-started Shizuku: scripts run with root privileges.
+- ADB-started Nightzuku: scripts run with ADB shell privileges.
+- Root-started Nightzuku: scripts run with root privileges.
 - Safe mode: manual actions only.
 - Full access: allows stronger module behavior.
 - Background actions: required before `service.sh` can run.
 
 This is a real module runner, not a visual stub. It installs ZIPs, parses metadata,
-stores module files, runs shell scripts through Shizuku, opens local WebUI, tracks enabled
+stores module files, runs shell scripts through Nightzuku, opens local WebUI, tracks enabled
 state, deletes modules, and writes last-run logs.
 
 It is not a Magisk/KSU systemless overlay implementation. There are no mount hooks,
@@ -91,7 +91,7 @@ usesShellBridge=true
 action=scripts/action.sh
 ```
 
-`usesShellBridge=true` is mandatory for WebUI pages that need `window.Shizuku`.
+`usesShellBridge=true` is mandatory for WebUI pages that need `window.Nightzuku`.
 
 ## Script Environment
 
@@ -117,9 +117,9 @@ Use `service.sh` for controlled background setup. It runs only when:
 - the module is enabled;
 - access mode is Full, or Custom with Service enabled;
 - background actions are enabled;
-- Shizuku binder is available.
+- Nightzuku binder is available.
 
-The manager auto-runs enabled services once per Shizuku binder session. Manual Service
+The manager auto-runs enabled services once per Nightzuku binder session. Manual Service
 button execution uses the same policy.
 
 ## Full Trust
