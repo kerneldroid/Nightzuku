@@ -2,7 +2,15 @@ package moe.shizuku.manager.settings
 
 import android.os.Bundle
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -10,7 +18,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import moe.shizuku.manager.R
 import moe.shizuku.manager.app.AppActivity
 import moe.shizuku.manager.module.ModuleSettings
@@ -27,51 +39,121 @@ class LabFeaturesActivity : AppActivity() {
             var connectorEnabled by remember { mutableStateOf(ModuleSettings.isConnectorEnabled()) }
             var showUnsafeDialog by remember { mutableStateOf(false) }
 
-            ShizukuExpressiveTheme {
-                ShizukuLazyScaffold(
-                    title = stringResource(R.string.lab_features_title),
-                    onNavigateUp = { finish() }
-                ) {
-                    item {
-                        SettingsGroup(title = stringResource(R.string.lab_features_summary)) {
-                            SwitchSettingsRow(
-                                icon = R.drawable.ic_baseline_link_24,
-                                title = stringResource(R.string.shizuku_connectors_title),
-                                summary = stringResource(R.string.shizuku_connectors_summary),
-                                checked = connectorEnabled,
-                                onCheckedChange = { enabled ->
-                                    if (enabled) {
-                                        showUnsafeDialog = true
-                                    } else {
-                                        connectorEnabled = false
-                                        ModuleSettings.setConnectorEnabled(false)
+            val isWatch = moe.shizuku.manager.utils.EnvironmentUtils.isWatch(this@LabFeaturesActivity)
+            if (isWatch) {
+                moe.shizuku.manager.ui.compose.WearShizukuTheme {
+                    moe.shizuku.manager.ui.compose.WearScreenScaffold { state ->
+                        androidx.wear.compose.foundation.lazy.TransformingLazyColumn(
+                            state = state,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 32.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            item {
+                                moe.shizuku.manager.ui.compose.WearScreenTitle(
+                                    icon = Icons.Rounded.Code,
+                                    title = stringResource(R.string.lab_features_title)
+                                )
+                            }
+                            item {
+                                androidx.wear.compose.material3.SwitchButton(
+                                    checked = connectorEnabled,
+                                    onCheckedChange = { enabled ->
+                                        if (enabled) {
+                                            showUnsafeDialog = true
+                                        } else {
+                                            connectorEnabled = false
+                                            ModuleSettings.setConnectorEnabled(false)
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    label = {
+                                        androidx.wear.compose.material3.Text(text = stringResource(R.string.shizuku_connectors_title))
+                                    },
+                                    secondaryLabel = {
+                                        androidx.wear.compose.material3.Text(text = stringResource(R.string.shizuku_connectors_summary))
+                                    },
+                                    icon = {
+                                        androidx.wear.compose.material3.Icon(
+                                            painter = painterResource(R.drawable.ic_baseline_link_24),
+                                            contentDescription = null
+                                        )
                                     }
-                                }
-                            )
+                                )
+                            }
                         }
                     }
-                }
 
-                if (showUnsafeDialog) {
-                    AlertDialog(
-                        onDismissRequest = { showUnsafeDialog = false },
-                        title = { Text(stringResource(R.string.unsafe_warning_title)) },
-                        text = { Text(stringResource(R.string.unsafe_warning_message)) },
-                        confirmButton = {
-                            TextButton(onClick = {
-                                showUnsafeDialog = false
-                                connectorEnabled = true
-                                ModuleSettings.setConnectorEnabled(true)
-                            }) {
-                                Text(stringResource(android.R.string.ok))
+                    if (showUnsafeDialog) {
+                        androidx.wear.compose.material3.AlertDialog(
+                            show = true,
+                            onDismissRequest = { showUnsafeDialog = false },
+                            title = { androidx.wear.compose.material3.Text(stringResource(R.string.unsafe_warning_title)) },
+                            text = { androidx.wear.compose.material3.Text(stringResource(R.string.unsafe_warning_message)) },
+                            confirmButton = {
+                                androidx.wear.compose.material3.Button(onClick = {
+                                    showUnsafeDialog = false
+                                    connectorEnabled = true
+                                    ModuleSettings.setConnectorEnabled(true)
+                                }) {
+                                    androidx.wear.compose.material3.Text(stringResource(android.R.string.ok))
+                                }
+                            },
+                            dismissButton = {
+                                androidx.wear.compose.material3.FilledTonalButton(onClick = { showUnsafeDialog = false }) {
+                                    androidx.wear.compose.material3.Text(stringResource(android.R.string.cancel))
+                                }
                             }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = { showUnsafeDialog = false }) {
-                                Text(stringResource(android.R.string.cancel))
+                        )
+                    }
+                }
+            } else {
+                ShizukuExpressiveTheme {
+                    ShizukuLazyScaffold(
+                        title = stringResource(R.string.lab_features_title),
+                        onNavigateUp = { finish() }
+                    ) {
+                        item {
+                            SettingsGroup(title = stringResource(R.string.lab_features_summary)) {
+                                SwitchSettingsRow(
+                                    icon = R.drawable.ic_baseline_link_24,
+                                    title = stringResource(R.string.shizuku_connectors_title),
+                                    summary = stringResource(R.string.shizuku_connectors_summary),
+                                    checked = connectorEnabled,
+                                    onCheckedChange = { enabled ->
+                                        if (enabled) {
+                                            showUnsafeDialog = true
+                                        } else {
+                                            connectorEnabled = false
+                                            ModuleSettings.setConnectorEnabled(false)
+                                        }
+                                    }
+                                )
                             }
                         }
-                    )
+                    }
+
+                    if (showUnsafeDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showUnsafeDialog = false },
+                            title = { Text(stringResource(R.string.unsafe_warning_title)) },
+                            text = { Text(stringResource(R.string.unsafe_warning_message)) },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    showUnsafeDialog = false
+                                    connectorEnabled = true
+                                    ModuleSettings.setConnectorEnabled(true)
+                                }) {
+                                    Text(stringResource(android.R.string.ok))
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showUnsafeDialog = false }) {
+                                    Text(stringResource(android.R.string.cancel))
+                                }
+                            }
+                        )
+                    }
                 }
             }
         }

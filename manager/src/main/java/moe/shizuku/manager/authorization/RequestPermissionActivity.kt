@@ -2,17 +2,20 @@ package moe.shizuku.manager.authorization
 
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.text.method.LinkMovementMethod
 import android.widget.TextView
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AlertDialog as AppCompatAlertDialog
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -102,7 +105,12 @@ class RequestPermissionActivity : AppActivity() {
         val uid = intent.getIntExtra("uid", -1)
         val pid = intent.getIntExtra("pid", -1)
         val requestCode = intent.getIntExtra("requestCode", -1)
-        val ai = intent.getParcelableExtra<ApplicationInfo>("applicationInfo")
+        val ai = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra("applicationInfo", ApplicationInfo::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra("applicationInfo")
+        }
         if (uid == -1 || pid == -1 || ai == null) {
             finish()
             return
@@ -119,52 +127,107 @@ class RequestPermissionActivity : AppActivity() {
         }
 
         setContent {
-            ShizukuExpressiveTheme {
-                AlertDialog(
-                    onDismissRequest = {},
-                    icon = {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_system_icon),
-                            contentDescription = null
-                        )
-                    },
-                    title = {
-                        Text(stringResource(R.string.app_name))
-                    },
-                    text = {
-                        Text(
-                            text = htmlToPlainText(
-                                getString(
-                                    R.string.permission_warning_template,
-                                    label,
-                                    getString(R.string.permission_group_description)
+            val isWatch = moe.shizuku.manager.utils.EnvironmentUtils.isWatch(this@RequestPermissionActivity)
+            if (isWatch) {
+                moe.shizuku.manager.ui.compose.WearShizukuTheme {
+                    androidx.wear.compose.material3.AlertDialog(
+                        show = true,
+                        onDismissRequest = {
+                            setResult(uid, pid, requestCode, allowed = false, onetime = true)
+                            finish()
+                        },
+                        icon = {
+                            androidx.wear.compose.material3.Icon(
+                                painter = painterResource(R.drawable.ic_system_icon),
+                                contentDescription = null
+                            )
+                        },
+                        title = {
+                            androidx.wear.compose.material3.Text(stringResource(R.string.app_name))
+                        },
+                        text = {
+                            androidx.wear.compose.material3.Text(
+                                text = htmlToPlainText(
+                                    getString(
+                                        R.string.permission_warning_template,
+                                        label,
+                                        getString(R.string.permission_group_description)
+                                    )
                                 )
                             )
-                        )
-                    },
-                    confirmButton = {
-                        Button(
-                            onClick = {
-                                setResult(uid, pid, requestCode, allowed = true, onetime = false)
-                                finish()
+                        },
+                        confirmButton = {
+                            androidx.wear.compose.material3.Button(
+                                onClick = {
+                                    setResult(uid, pid, requestCode, allowed = true, onetime = false)
+                                    finish()
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                androidx.wear.compose.material3.Text(stringResource(R.string.grant_dialog_button_allow_always))
                             }
-                        ) {
-                            Text(stringResource(R.string.grant_dialog_button_allow_always))
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(
-                            onClick = {
-                                setResult(uid, pid, requestCode, allowed = false, onetime = true)
-                                finish()
+                        },
+                        dismissButton = {
+                            androidx.wear.compose.material3.FilledTonalButton(
+                                onClick = {
+                                    setResult(uid, pid, requestCode, allowed = false, onetime = true)
+                                    finish()
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                androidx.wear.compose.material3.Text(stringResource(R.string.grant_dialog_button_deny))
                             }
-                        ) {
-                            Text(stringResource(R.string.grant_dialog_button_deny))
                         }
-                    },
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shape = MaterialTheme.shapes.extraLarge
-                )
+                    )
+                }
+            } else {
+                ShizukuExpressiveTheme {
+                    AlertDialog(
+                        onDismissRequest = {},
+                        icon = {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_system_icon),
+                                contentDescription = null
+                            )
+                        },
+                        title = {
+                            Text(stringResource(R.string.app_name))
+                        },
+                        text = {
+                            Text(
+                                text = htmlToPlainText(
+                                    getString(
+                                        R.string.permission_warning_template,
+                                        label,
+                                        getString(R.string.permission_group_description)
+                                    )
+                                )
+                            )
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    setResult(uid, pid, requestCode, allowed = true, onetime = false)
+                                    finish()
+                                }
+                            ) {
+                                Text(stringResource(R.string.grant_dialog_button_allow_always))
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(
+                                onClick = {
+                                    setResult(uid, pid, requestCode, allowed = false, onetime = true)
+                                    finish()
+                                }
+                            ) {
+                                Text(stringResource(R.string.grant_dialog_button_deny))
+                            }
+                        },
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = MaterialTheme.shapes.extraLarge
+                    )
+                }
             }
         }
     }

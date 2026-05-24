@@ -15,10 +15,22 @@ This ensures that the Android package manager and Google Play correctly identify
 
 ### 2. Native Wear Compose Material 3 UI
 The entire user interface for Wear OS has been rewritten using the official `androidx.wear.compose:compose-material3` library.
-* **TransformingLazyColumn:** All lists (Authorized Apps, ADB Modules, Settings) use the часовые-специфичные компоненты that automatically adapt to circular displays, scaling and curving elements as they scroll off the edges.
+* **TransformingLazyColumn:** All lists (Authorized Apps, ADB Modules, Settings) use the watch-specific components that automatically adapt to circular displays, scaling and curving elements as they scroll off the edges.
 * **Edge-to-Edge Components:** We use native Wear OS Material 3 buttons, cards, and switches that respect the circular screen geometry.
 * **Dynamic Color (Monet):** Full support for dynamic color schemes (Monet) on Wear OS 4+ devices, automatically matching the user's watch face or system theme.
 * **Optimized Layouts:** Removed the previous 0.8x scaling hack. The UI now natively adapts to small, high-density circular screens with proper paddings and touch targets.
+
+### 3. Native Wear Compose Material 3 Dialogs
+Legacy `MaterialAlertDialogBuilder` and XML dialogs have been replaced with native `androidx.wear.compose.material3.AlertDialog`.
+* **Visual Consistency:** Dialogs now feature a solid `MaterialTheme.colorScheme.background` (true black) instead of the previous white background issues.
+* **Scroll Support:** Dialog content is now scrollable, ensuring long messages or lists are fully accessible on round displays.
+* **Platform UI:** Uses native Wear OS Material 3 buttons and layouts.
+
+### 4. WebView Fallback for WearOS
+On WearOS devices (especially emulators or specialized builds) that lack a functional WebView provider, Nightzuku now implements a robust fallback.
+* **Crash Prevention:** Activity initialization is wrapped in a `try-catch` block to intercept `UnsupportedOperationException` from the system `WebViewFactory`.
+* **User Feedback:** Instead of crashing or showing a white screen, a native WearOS dialog informs the user that WebUI is unsupported on their hardware.
+
 
 ## Verification
 * The Nightzuku server successfully binds and operates on Wear OS 6.1 (API 36.1) emulators and real devices.

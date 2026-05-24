@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.USE_LOOPBACK_INTERFACE" />
     <uses-permission
         android:name="android.permission.NEARBY_WIFI_DEVICES"
         android:usesPermissionFlags="neverForLocation"
@@ -111,7 +112,7 @@
             android:label="@string/modules_title" />
         <activity
             android:name=".module.ModuleWebViewActivity"
-            android:exported="false"
+            android:exported="true"
             android:label="@string/modules_webui" />
         <activity
             android:name=".starter.StarterActivity"

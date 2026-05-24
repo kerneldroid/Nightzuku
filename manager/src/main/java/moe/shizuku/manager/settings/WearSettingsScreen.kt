@@ -12,20 +12,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Palette
-import androidx.compose.material.icons.rounded.PowerSettingsNew
-import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
-import androidx.wear.compose.foundation.lazy.itemsIndexed
-import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.Icon
-import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.RadioButton
 import androidx.wear.compose.material3.SwitchButton
 import androidx.wear.compose.material3.Text
 import moe.shizuku.manager.R
@@ -42,6 +36,10 @@ fun WearSettingsScreen(
     onBlackNightThemeChange: (Boolean) -> Unit,
     useSystemColor: Boolean,
     onUseSystemColorChange: (Boolean) -> Unit,
+    onLabFeaturesClick: () -> Unit,
+    moduleAccessMode: moe.shizuku.manager.module.ModuleSettings.AccessMode,
+    onModuleAccessModeClick: () -> Unit,
+    onCustomPermissionsClick: () -> Unit,
     // Dialog props
     showNightDialog: Boolean,
     nightLabels: List<String>,
@@ -50,93 +48,90 @@ fun WearSettingsScreen(
     onNightModeSelect: (Int) -> Unit,
     onNightDialogDismiss: () -> Unit
 ) {
+    val startOnBootTitle = stringResource(R.string.settings_start_on_boot)
+    val nightModeTitle = stringResource(rikka.core.R.string.dark_theme)
+    val blackThemeTitle = stringResource(R.string.settings_black_night_theme)
+    val systemColorTitle = stringResource(R.string.settings_use_system_color)
+    val accessModeTitle = stringResource(R.string.modules_access_mode)
+    val accessModeSummary = stringResource(moduleAccessMode.labelRes)
+    val customPermissionsTitle = stringResource(R.string.modules_custom_permissions)
+    val labFeaturesTitle = stringResource(R.string.lab_features_title)
+
     WearScreenScaffold { state ->
-        if (showNightDialog) {
-            TransformingLazyColumn(
-                state = state,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 32.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+        TransformingLazyColumn(
+            state = state,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 40.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            item {
+                WearScreenTitle(icon = Icons.Rounded.RestartAlt, title = stringResource(R.string.settings_title))
+            }
+
+            item {
+                SwitchButton(
+                    checked = startOnBoot,
+                    onCheckedChange = onStartOnBootChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(startOnBootTitle) },
+                    icon = { Icon(Icons.Rounded.RestartAlt, contentDescription = null) }
+                )
+            }
+
+            item {
+                androidx.wear.compose.material3.TitleCard(
+                    onClick = onNightModeClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    title = { Text(nightModeTitle) },
+                    subtitle = { Text(nightModeSummary) }
+                )
+            }
+
+            item {
+                SwitchButton(
+                    checked = blackNightTheme,
+                    onCheckedChange = onBlackNightThemeChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(blackThemeTitle) },
+                    icon = { Icon(Icons.Rounded.DarkMode, contentDescription = null) }
+                )
+            }
+
+            item {
+                SwitchButton(
+                    checked = useSystemColor,
+                    onCheckedChange = onUseSystemColorChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(systemColorTitle) },
+                    icon = { Icon(Icons.Rounded.Palette, contentDescription = null) }
+                )
+            }
+
+            item {
+                androidx.wear.compose.material3.TitleCard(
+                    onClick = onModuleAccessModeClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    title = { Text(accessModeTitle) },
+                    subtitle = { Text(accessModeSummary) }
+                )
+            }
+
+            if (moduleAccessMode == moe.shizuku.manager.module.ModuleSettings.AccessMode.CUSTOM) {
                 item {
-                    Text(
-                        text = stringResource(rikka.core.R.string.dark_theme),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary,
+                    androidx.wear.compose.material3.TitleCard(
+                        onClick = onCustomPermissionsClick,
                         modifier = Modifier.fillMaxWidth(),
-                        textAlign = TextAlign.Center
+                        title = { Text(customPermissionsTitle) }
                     )
-                }
-                itemsIndexed(nightLabels) { index, label ->
-                    RadioButton(
-                        selected = nightValues[index] == currentNightMode,
-                        onSelect = { onNightModeSelect(nightValues[index]) },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(label) }
-                    )
-                }
-                item {
-                    Button(
-                        onClick = onNightDialogDismiss,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(stringResource(android.R.string.cancel), modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
-                    }
                 }
             }
-        } else {
-            TransformingLazyColumn(
-                state = state,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 32.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                item {
-                    WearScreenTitle(icon = Icons.Rounded.Settings, title = stringResource(R.string.settings_title))
-                }
 
-                item {
-                    SwitchButton(
-                        checked = startOnBoot,
-                        onCheckedChange = onStartOnBootChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(stringResource(R.string.settings_start_on_boot)) },
-                        icon = { Icon(Icons.Rounded.PowerSettingsNew, contentDescription = null) }
-                    )
-                }
-
-                item {
-                    Button(
-                        onClick = onNightModeClick,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.DarkMode, contentDescription = null, modifier = Modifier.size(24.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text(text = nightModeSummary)
-                        }
-                    }
-                }
-
-                item {
-                    SwitchButton(
-                        checked = blackNightTheme,
-                        onCheckedChange = onBlackNightThemeChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(stringResource(R.string.settings_black_night_theme)) },
-                        icon = { Icon(Icons.Rounded.DarkMode, contentDescription = null) }
-                    )
-                }
-
-                item {
-                    SwitchButton(
-                        checked = useSystemColor,
-                        onCheckedChange = onUseSystemColorChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(stringResource(R.string.settings_use_system_color)) },
-                        icon = { Icon(Icons.Rounded.Palette, contentDescription = null) }
-                    )
-                }
+            item {
+                androidx.wear.compose.material3.TitleCard(
+                    onClick = onLabFeaturesClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    title = { Text(labFeaturesTitle) }
+                )
             }
         }
     }

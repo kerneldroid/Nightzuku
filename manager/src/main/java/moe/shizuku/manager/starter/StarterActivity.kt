@@ -4,8 +4,12 @@ import android.content.Context
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
@@ -85,29 +89,6 @@ class StarterActivity : AppActivity() {
                 }
                 binderReceivedListener = listener
                 Shizuku.addBinderReceivedListenerSticky(listener)
-            } else if (it.status == Status.ERROR) {
-                var message = 0
-                when (it.error) {
-                    is AdbKeyException -> {
-                        message = R.string.adb_error_key_store
-                    }
-                    is NotRootedException -> {
-                        message = R.string.start_with_root_failed
-                    }
-                    is ConnectException -> {
-                        message = R.string.cannot_connect_port
-                    }
-                    is SSLProtocolException -> {
-                        message = R.string.adb_pair_required
-                    }
-                }
-
-                if (message != 0) {
-                    MaterialAlertDialogBuilder(this)
-                        .setMessage(message)
-                        .setPositiveButton(android.R.string.ok, null)
-                        .show()
-                }
             }
         }
 
@@ -115,33 +96,73 @@ class StarterActivity : AppActivity() {
             val outputResource by viewModel.output.observeAsState()
             val output = outputResource?.data.orEmpty()
             val failed = outputResource?.status == Status.ERROR
-
-            ShizukuExpressiveTheme {
-                ShizukuLazyScaffold(
-                    title = stringResource(R.string.starter),
-                    onNavigateUp = { finish() },
-                    navigationIcon = R.drawable.ic_close_24
-                ) {
-                    item {
-                        ExpressiveCard(
-                            icon = if (startedWithRoot) R.drawable.ic_root_24dp else R.drawable.ic_adb_24dp,
-                            title = if (startedWithRoot) {
-                                HtmlText(R.string.home_root_title)
-                            } else {
-                                HtmlText(R.string.home_wireless_adb_title)
-                            },
-                            body = if (failed) {
-                                stringResource(R.string.notification_service_start_failed)
-                            } else {
-                                stringResource(R.string.notification_service_starting)
-                            },
-                            danger = failed
-                        )
+            var errorToShow by remember(outputResource) { 
+                mutableIntStateOf(if (outputResource?.status == Status.ERROR) {
+                    when (outputResource?.error) {
+                        is AdbKeyException -> R.string.adb_error_key_store
+                        is NotRootedException -> R.string.start_with_root_failed
+                        is ConnectException -> R.string.cannot_connect_port
+                        is SSLProtocolException -> R.string.adb_pair_required
+                        else -> 0
                     }
-                    item {
-                        MonospaceLog(
-                            text = output.ifBlank { stringResource(R.string.starting_root_shell) }
+                } else 0)
+            }
+
+            val isWatch = moe.shizuku.manager.utils.EnvironmentUtils.isWatch(this@StarterActivity)
+            if (isWatch) {
+                moe.shizuku.manager.ui.compose.WearShizukuTheme {
+                    Box {
+                        WearStarterScreen(
+                            output = output,
+                            failed = failed,
+                            startedWithRoot = startedWithRoot
                         )
+                        
+                        if (errorToShow != 0) {
+                            moe.shizuku.manager.home.HomeErrorDialog(
+                                message = stringResource(errorToShow),
+                                onDismiss = { errorToShow = 0 }
+                            )
+                        }
+                    }
+                }
+            } else {
+                ShizukuExpressiveTheme {
+                    Box {
+                        ShizukuLazyScaffold(
+                            title = stringResource(R.string.starter),
+                            onNavigateUp = { finish() },
+                            navigationIcon = R.drawable.ic_close_24
+                        ) {
+                            item {
+                                ExpressiveCard(
+                                    icon = if (startedWithRoot) R.drawable.ic_root_24dp else R.drawable.ic_adb_24dp,
+                                    title = if (startedWithRoot) {
+                                        HtmlText(R.string.home_root_title)
+                                    } else {
+                                        HtmlText(R.string.home_wireless_adb_title)
+                                    },
+                                    body = if (failed) {
+                                        stringResource(R.string.notification_service_start_failed)
+                                    } else {
+                                        stringResource(R.string.notification_service_starting)
+                                    },
+                                    danger = failed
+                                )
+                            }
+                            item {
+                                MonospaceLog(
+                                    text = output.ifBlank { stringResource(R.string.starting_root_shell) }
+                                )
+                            }
+                        }
+
+                        if (errorToShow != 0) {
+                            moe.shizuku.manager.home.HomeErrorDialog(
+                                message = stringResource(errorToShow),
+                                onDismiss = { errorToShow = 0 }
+                            )
+                        }
                     }
                 }
             }
