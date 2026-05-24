@@ -154,16 +154,30 @@ fun WearShizukuTheme(content: @Composable () -> Unit) {
     
     val fallbackColorScheme = androidx.wear.compose.material3.ColorScheme(
         primary = Color(if (dark) 0xFFB1B8DF else 0xFF3F51B5),
-        secondary = Color(if (dark) 0xFFB9C7E8 else 0xFF52669B),
-        tertiary = Color(if (dark) 0xFFE2B8C8 else 0xFF8C4A62),
-        background = Color(if (dark) 0xFF000000 else 0xFFF0F0F0),
-        surfaceContainer = Color(if (dark) 0xFF0B0B0B else 0xFFFFFFFF),
         onPrimary = Color(if (dark) 0xFF1D244D else 0xFFFFFFFF),
+        primaryContainer = Color(if (dark) 0xFF353C5E else 0xFFDDE1FF),
+        onPrimaryContainer = Color(if (dark) 0xFFDDE1FF else 0xFF001453),
+        secondary = Color(if (dark) 0xFFB9C7E8 else 0xFF52669B),
         onSecondary = Color(if (dark) 0xFF24304D else 0xFFFFFFFF),
+        secondaryContainer = Color(if (dark) 0xFF3A4665 else 0xFFDCE2FF),
+        onSecondaryContainer = Color(if (dark) 0xFFDCE2FF else 0xFF0D1D34),
+        tertiary = Color(if (dark) 0xFFE2B8C8 else 0xFF8C4A62),
+        onTertiary = Color(if (dark) 0xFF422332 else 0xFFFFFFFF),
+        tertiaryContainer = Color(if (dark) 0xFF5B3948 else 0xFFFFD9E6),
+        onTertiaryContainer = Color(if (dark) 0xFFFFD9E6 else 0xFF3A071E),
+        background = Color(if (dark) 0xFF000000 else 0xFFF0F0F0),
         onBackground = Color(if (dark) 0xFFE4E1E9 else 0xFF1B1B1F),
+        surfaceContainerLow = Color(if (dark) 0xFF000000 else 0xFFF7F7F7),
+        surfaceContainer = Color(if (dark) 0xFF0B0B0B else 0xFFFFFFFF),
+        surfaceContainerHigh = Color(if (dark) 0xFF141414 else 0xFFEBEBEB),
         onSurface = Color(if (dark) 0xFFE4E1E9 else 0xFF1B1B1F),
-        error = Color(0xFFFFB4AB),
-        onError = Color(0xFF690005)
+        onSurfaceVariant = Color(if (dark) 0xFFC7C5D0 else 0xFF47464F),
+        outline = Color(if (dark) 0xFF918F9A else 0xFF777680),
+        outlineVariant = Color(if (dark) 0xFF47464F else 0xFFC7C5D0),
+        error = Color(if (dark) 0xFFFFB4AB else 0xFFBA1A1A),
+        onError = Color(if (dark) 0xFF690005 else 0xFFFFFFFF),
+        errorContainer = Color(if (dark) 0xFF93000A else 0xFFFFDAD6),
+        onErrorContainer = Color(if (dark) 0xFFFFDAD6 else 0xFF410002)
     )
 
     val colorScheme = if (ThemeHelper.isUsingSystemColor() && Build.VERSION.SDK_INT >= 31) {
@@ -175,18 +189,29 @@ fun WearShizukuTheme(content: @Composable () -> Unit) {
     val finalColorScheme = if (dark && ThemeHelper.isBlackNightTheme(context)) {
         colorScheme.copy(
             background = Color.Black,
+            onBackground = Color.White,
             surfaceContainerLow = Color.Black,
             surfaceContainer = Color(0xFF0B0B0B),
-            surfaceContainerHigh = Color(0xFF141414)
+            surfaceContainerHigh = Color(0xFF141414),
+            onSurface = Color.White,
+            onSurfaceVariant = Color(0xFFE0E0E0),
+            outline = Color(0xFF999999),
+            onPrimary = Color.Black,
+            onSecondary = Color.Black
         )
     } else {
         colorScheme
     }
 
     androidx.wear.compose.material3.MaterialTheme(
-        colorScheme = finalColorScheme,
-        content = content
-    )
+        colorScheme = finalColorScheme
+    ) {
+        CompositionLocalProvider(
+            androidx.compose.material3.LocalContentColor provides finalColorScheme.onSurface,
+            androidx.wear.compose.material3.LocalContentColor provides finalColorScheme.onSurface,
+            content = content
+        )
+    }
 }
 
 @Composable
@@ -375,7 +400,7 @@ fun ExpressiveButtons(buttons: List<ExpressiveButtonSpec>) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        buttons.forEach { button ->
+        for (button in buttons) {
             if (button.primary) {
                 Button(
                     enabled = button.enabled,

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -94,6 +95,7 @@ class ApplicationManagementActivity : AppActivity() {
             val packagesResource by viewModel.packages.observeAsState()
             val packages = packagesResource?.data.orEmpty()
             val tick = permissionTick.intValue
+            var showAdbLimitedDialog by remember { mutableStateOf(false) }
 
             val isWatch = moe.shizuku.manager.utils.EnvironmentUtils.isWatch(this@ApplicationManagementActivity)
             if (isWatch) {
@@ -110,110 +112,126 @@ class ApplicationManagementActivity : AppActivity() {
                         )
                     }
                 }
-                WearApplicationManagementScreen(
-                    apps = apps,
-                    onToggle = { app ->
-                        try {
-                            if (app.granted) {
-                                moe.shizuku.manager.authorization.AuthorizationManager.revoke(app.packageName, app.uid)
-                            } else {
-                                moe.shizuku.manager.authorization.AuthorizationManager.grant(app.packageName, app.uid)
+                Box(modifier = Modifier.fillMaxSize()) {
+                    WearApplicationManagementScreen(
+                        apps = apps,
+                        onToggle = { app ->
+                            try {
+                                if (app.granted) {
+                                    moe.shizuku.manager.authorization.AuthorizationManager.revoke(app.packageName, app.uid)
+                                } else {
+                                    moe.shizuku.manager.authorization.AuthorizationManager.grant(app.packageName, app.uid)
+                                }
+                                permissionTick.intValue++
+                                viewModel.load(onlyCount = true)
+                            } catch (_: SecurityException) {
+                                showAdbLimitedDialog = true
                             }
-                            permissionTick.intValue++
-                            viewModel.load(onlyCount = true)
-                        } catch (_: SecurityException) {
-                            showAdbLimitedDialog()
                         }
+                    )
+
+                    if (showAdbLimitedDialog) {
+                        moe.shizuku.manager.home.HomeAdbLimitedDialog(
+                            onDismiss = { showAdbLimitedDialog = false }
+                        )
                     }
-                )
+                }
 
                 }
             } else {
                 ShizukuExpressiveTheme {
-                ShizukuLazyScaffold(
-                    title = stringResource(R.string.home_app_management_title),
-                    onNavigateUp = { finish() },
-                    actions = {
-                        if (packages.isNotEmpty()) {
-                            var menuExpanded by remember { mutableStateOf(false) }
+                Box(modifier = Modifier.fillMaxSize()) {
+                    ShizukuLazyScaffold(
+                        title = stringResource(R.string.home_app_management_title),
+                        onNavigateUp = { finish() },
+                        actions = {
+                            if (packages.isNotEmpty()) {
+                                var menuExpanded by remember { mutableStateOf(false) }
 
-                            Box {
-                                IconButton(onClick = { menuExpanded = true }) {
-                                    ShizukuIcon(R.drawable.ic_more_vert_24)
+                                Box {
+                                    IconButton(onClick = { menuExpanded = true }) {
+                                        ShizukuIcon(R.drawable.ic_more_vert_24)
+                                    }
+                                    DropdownMenu(
+                                        expanded = menuExpanded,
+                                        onDismissRequest = { menuExpanded = false }
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.app_management_select_all)) },
+                                            onClick = {
+                                                menuExpanded = false
+                                                selectAll(packages, true)
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.app_management_deselect_all)) },
+                                            onClick = {
+                                                menuExpanded = false
+                                                selectAll(packages, false)
+                                            }
+                                        )
+                                    }
                                 }
-                                DropdownMenu(
-                                    expanded = menuExpanded,
-                                    onDismissRequest = { menuExpanded = false }
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.app_management_select_all)) },
-                                        onClick = {
-                                            menuExpanded = false
-                                            selectAll(packages, true)
-                                        }
+                            }
+                        }
+                    ) {
+                        when {
+                            packagesResource == null -> {
+                                item {
+                                    Box(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        LoadingIndicator(Modifier.size(36.dp))
+                                    }
+                                }
+                            }
+                            packages.isEmpty() -> {
+                                item {
+                                    ExpressiveCard(
+                                        icon = R.drawable.ic_system_icon,
+                                        title = stringResource(R.string.home_app_management_title),
+                                        body = stringResource(R.string.home_app_management_empty)
                                     )
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.app_management_deselect_all)) },
-                                        onClick = {
-                                            menuExpanded = false
-                                            selectAll(packages, false)
-                                        }
-                                    )
                                 }
                             }
-                        }
-                    }
-                ) {
-                    when {
-                        packagesResource == null -> {
-                            item {
-                                Box(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    LoadingIndicator(Modifier.size(36.dp))
-                                }
-                            }
-                        }
-                        packages.isEmpty() -> {
-                            item {
-                                ExpressiveCard(
-                                    icon = R.drawable.ic_system_icon,
-                                    title = stringResource(R.string.home_app_management_title),
-                                    body = stringResource(R.string.home_app_management_empty)
-                                )
-                            }
-                        }
-                        else -> {
-                            item {
-                                Surface(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = MaterialTheme.shapes.extraLarge,
-                                    color = MaterialTheme.colorScheme.surfaceContainer,
-                                    tonalElevation = 1.dp
-                                ) {
-                                    Column {
-                                        packages.forEachIndexed { index, packageInfo ->
-                                            AppPermissionRow(
-                                                packageInfo = packageInfo,
-                                                tick = tick,
-                                                onLimitedAdb = ::showAdbLimitedDialog,
-                                                onPermissionChanged = {
-                                                    permissionTick.intValue++
-                                                    viewModel.load(onlyCount = true)
-                                                }
-                                            )
-                                            if (index != packages.lastIndex) {
-                                                HorizontalDivider(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    color = MaterialTheme.colorScheme.outlineVariant
+                            else -> {
+                                item {
+                                    Surface(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = MaterialTheme.shapes.extraLarge,
+                                        color = MaterialTheme.colorScheme.surfaceContainer,
+                                        tonalElevation = 1.dp
+                                    ) {
+                                        Column {
+                                            packages.forEachIndexed { index, packageInfo ->
+                                                AppPermissionRow(
+                                                    packageInfo = packageInfo,
+                                                    tick = tick,
+                                                    onLimitedAdb = { showAdbLimitedDialog = true },
+                                                    onPermissionChanged = {
+                                                        permissionTick.intValue++
+                                                        viewModel.load(onlyCount = true)
+                                                    }
                                                 )
+                                                if (index != packages.lastIndex) {
+                                                    HorizontalDivider(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        color = MaterialTheme.colorScheme.outlineVariant
+                                                    )
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
                         }
+                    }
+
+                    if (showAdbLimitedDialog) {
+                        moe.shizuku.manager.home.HomeAdbLimitedDialog(
+                            onDismiss = { showAdbLimitedDialog = false }
+                        )
                     }
                 }
             }
@@ -251,14 +269,6 @@ class ApplicationManagementActivity : AppActivity() {
     }
 
     private fun showAdbLimitedDialog() {
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.app_management_dialog_adb_is_limited_title)
-            .setMessage(
-                getString(R.string.app_management_dialog_adb_is_limited_message, Helps.ADB.get())
-                    .toHtml(HtmlCompat.FROM_HTML_OPTION_TRIM_WHITESPACE)
-            )
-            .setPositiveButton(android.R.string.ok, null)
-            .show()
     }
 }
 

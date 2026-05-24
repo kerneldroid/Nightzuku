@@ -170,8 +170,68 @@ class ModulesActivity : AppActivity() {
                         }
                     },
                     onDelete = { module -> deleteTarget = module },
+                    onTrustChange = { module, trusted ->
+                        scope.launch {
+                            ModuleSettings.setModuleTrusted(module.id, trusted)
+                            AdbModuleManager.setEnabled(module, trusted)
+                            reload()
+                        }
+                    },
+                    onOpenWebUi = { module ->
+                        startActivity(
+                            Intent(this@ModulesActivity, ModuleWebViewActivity::class.java)
+                                .putExtra(ModuleWebViewActivity.EXTRA_MODULE_ID, module.id)
+                        )
+                    },
                     onInstallZip = { zipLauncher.launch(MODULE_MIME_TYPES) }
                 )
+
+                output?.let { (title, text) ->
+                    androidx.wear.compose.material3.AlertDialog(
+                        show = true,
+                        onDismissRequest = { output = null },
+                        title = { androidx.wear.compose.material3.Text(title) },
+                        text = { 
+                            androidx.wear.compose.material3.Text(
+                                text = text,
+                                style = androidx.wear.compose.material3.MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(8.dp)
+                            )
+                        },
+                        confirmButton = {
+                            androidx.wear.compose.material3.Button(onClick = { output = null }) {
+                                androidx.wear.compose.material3.Text(stringResource(android.R.string.ok))
+                            }
+                        }
+                    )
+                }
+
+                deleteTarget?.let { module ->
+                    androidx.wear.compose.material3.AlertDialog(
+                        show = true,
+                        onDismissRequest = { deleteTarget = null },
+                        title = { androidx.wear.compose.material3.Text(stringResource(R.string.modules_delete_title)) },
+                        text = { androidx.wear.compose.material3.Text(stringResource(R.string.modules_delete_message, module.name)) },
+                        confirmButton = {
+                            androidx.wear.compose.material3.Button(
+                                onClick = {
+                                    scope.launch {
+                                        AdbModuleManager.delete(module)
+                                        deleteTarget = null
+                                        reload()
+                                    }
+                                }
+                            ) {
+                                androidx.wear.compose.material3.Text(stringResource(R.string.modules_delete))
+                            }
+                        },
+                        dismissButton = {
+                            androidx.wear.compose.material3.FilledTonalButton(onClick = { deleteTarget = null }) {
+                                androidx.wear.compose.material3.Text(stringResource(android.R.string.cancel))
+                            }
+                        }
+                    )
+                }
 
                 }
             } else {
