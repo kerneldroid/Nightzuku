@@ -16,6 +16,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import androidx.wear.compose.material3.Card as WearCard
+import androidx.wear.compose.material3.MaterialTheme as WearMaterialTheme
+import androidx.wear.compose.material3.Text as WearText
 import moe.shizuku.manager.R
 import moe.shizuku.manager.ui.compose.WearScreenScaffold
 import moe.shizuku.manager.ui.compose.WearScreenTitle
@@ -50,14 +53,14 @@ fun WearStarterScreen(
                 )
             }
             item {
-                androidx.wear.compose.material3.Card(
+                WearCard(
                     onClick = {},
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    androidx.wear.compose.material3.Text(
+                    WearText(
                         text = bodyText,
-                        style = androidx.wear.compose.material3.MaterialTheme.typography.bodyMedium,
-                        color = if (failed) androidx.wear.compose.material3.MaterialTheme.colorScheme.error else androidx.wear.compose.material3.MaterialTheme.colorScheme.onSurface
+                        style = WearMaterialTheme.typography.bodyMedium,
+                        color = if (failed) WearMaterialTheme.colorScheme.error else WearMaterialTheme.colorScheme.onSurface
                     )
                 }
             }
@@ -66,16 +69,16 @@ fun WearStarterScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(
-                            color = androidx.wear.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh,
-                            shape = androidx.wear.compose.material3.MaterialTheme.shapes.large
+                            color = WearMaterialTheme.colorScheme.surfaceContainerHigh,
+                            shape = WearMaterialTheme.shapes.large
                         )
                 ) {
-                    androidx.wear.compose.material3.Text(
+                    WearText(
                         text = output.ifBlank { fallbackText },
                         modifier = Modifier.padding(12.dp),
-                        style = androidx.wear.compose.material3.MaterialTheme.typography.bodySmall,
+                        style = WearMaterialTheme.typography.bodySmall,
                         fontFamily = FontFamily.Monospace,
-                        color = androidx.wear.compose.material3.MaterialTheme.colorScheme.onSurface,
+                        color = WearMaterialTheme.colorScheme.onSurface,
                     )
                 }
             }

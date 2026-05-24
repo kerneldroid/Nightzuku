@@ -95,6 +95,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.text.HtmlCompat
+import androidx.wear.compose.material3.ColorScheme as WearColorScheme
+import androidx.wear.compose.material3.Icon as WearIcon
+import androidx.wear.compose.material3.LocalContentColor as WearLocalContentColor
+import androidx.wear.compose.material3.MaterialTheme as WearMaterialTheme
+import androidx.wear.compose.material3.ScreenScaffold as WearScaffold
+import androidx.wear.compose.material3.Text as WearText
+import androidx.wear.compose.material3.TimeText as WearTimeText
+import androidx.wear.compose.material3.dynamicColorScheme as WearDynamicColorScheme
 import moe.shizuku.manager.R
 import moe.shizuku.manager.app.ThemeHelper
 
@@ -152,7 +160,7 @@ fun WearShizukuTheme(content: @Composable () -> Unit) {
     val context = LocalContext.current
     val dark = isSystemInDarkTheme()
     
-    val fallbackColorScheme = androidx.wear.compose.material3.ColorScheme(
+    val fallbackColorScheme = WearColorScheme(
         primary = Color(if (dark) 0xFFB1B8DF else 0xFF3F51B5),
         onPrimary = Color(if (dark) 0xFF1D244D else 0xFFFFFFFF),
         primaryContainer = Color(if (dark) 0xFF353C5E else 0xFFDDE1FF),
@@ -181,7 +189,7 @@ fun WearShizukuTheme(content: @Composable () -> Unit) {
     )
 
     val colorScheme = if (ThemeHelper.isUsingSystemColor() && Build.VERSION.SDK_INT >= 31) {
-        androidx.wear.compose.material3.dynamicColorScheme(context) ?: fallbackColorScheme
+        WearDynamicColorScheme(context) ?: fallbackColorScheme
     } else {
         fallbackColorScheme
     }
@@ -203,12 +211,12 @@ fun WearShizukuTheme(content: @Composable () -> Unit) {
         colorScheme
     }
 
-    androidx.wear.compose.material3.MaterialTheme(
+    WearMaterialTheme(
         colorScheme = finalColorScheme
     ) {
         CompositionLocalProvider(
             androidx.compose.material3.LocalContentColor provides finalColorScheme.onSurface,
-            androidx.wear.compose.material3.LocalContentColor provides finalColorScheme.onSurface,
+            WearLocalContentColor provides finalColorScheme.onSurface,
             content = content
         )
     }
@@ -219,9 +227,9 @@ fun WearScreenScaffold(
     content: @Composable (androidx.wear.compose.foundation.lazy.TransformingLazyColumnState) -> Unit
 ) {
     val state = androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState()
-    androidx.wear.compose.material3.ScreenScaffold(
+    WearScaffold(
         scrollState = state,
-        timeText = { androidx.wear.compose.material3.TimeText() }
+        timeText = { WearTimeText() }
     ) {
         content(state)
     }
@@ -236,17 +244,17 @@ fun WearScreenTitle(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.padding(bottom = 8.dp)
     ) {
-        androidx.wear.compose.material3.Icon(
+        WearIcon(
             imageVector = icon,
             contentDescription = null,
             modifier = Modifier.size(24.dp),
-            tint = androidx.wear.compose.material3.MaterialTheme.colorScheme.primary
+            tint = WearMaterialTheme.colorScheme.primary
         )
         Spacer(Modifier.width(8.dp))
-        androidx.wear.compose.material3.Text(
+        WearText(
             text = title,
-            style = androidx.wear.compose.material3.MaterialTheme.typography.titleMedium,
-            color = androidx.wear.compose.material3.MaterialTheme.colorScheme.primary
+            style = WearMaterialTheme.typography.titleMedium,
+            color = WearMaterialTheme.colorScheme.primary
         )
     }
 }

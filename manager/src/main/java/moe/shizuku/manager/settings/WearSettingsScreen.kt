@@ -19,9 +19,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
-import androidx.wear.compose.material3.Icon
-import androidx.wear.compose.material3.SwitchButton
-import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.Icon as WearIcon
+import androidx.wear.compose.material3.SwitchButton as WearSwitchButton
+import androidx.wear.compose.material3.Text as WearText
+import androidx.wear.compose.material3.TitleCard as WearTitleCard
 import moe.shizuku.manager.R
 import moe.shizuku.manager.ui.compose.WearScreenScaffold
 import moe.shizuku.manager.ui.compose.WearScreenTitle
@@ -69,68 +70,68 @@ fun WearSettingsScreen(
             }
 
             item {
-                SwitchButton(
+                WearSwitchButton(
                     checked = startOnBoot,
                     onCheckedChange = onStartOnBootChange,
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text(startOnBootTitle) },
-                    icon = { Icon(Icons.Rounded.RestartAlt, contentDescription = null) }
+                    label = { WearText(startOnBootTitle) },
+                    icon = { WearIcon(Icons.Rounded.RestartAlt, contentDescription = null) }
                 )
             }
 
             item {
-                androidx.wear.compose.material3.TitleCard(
+                WearTitleCard(
                     onClick = onNightModeClick,
                     modifier = Modifier.fillMaxWidth(),
-                    title = { Text(nightModeTitle) },
-                    subtitle = { Text(nightModeSummary) }
+                    title = { WearText(nightModeTitle) },
+                    subtitle = { WearText(nightModeSummary) }
                 )
             }
 
             item {
-                SwitchButton(
+                WearSwitchButton(
                     checked = blackNightTheme,
                     onCheckedChange = onBlackNightThemeChange,
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text(blackThemeTitle) },
-                    icon = { Icon(Icons.Rounded.DarkMode, contentDescription = null) }
+                    label = { WearText(blackThemeTitle) },
+                    icon = { WearIcon(Icons.Rounded.DarkMode, contentDescription = null) }
                 )
             }
 
             item {
-                SwitchButton(
+                WearSwitchButton(
                     checked = useSystemColor,
                     onCheckedChange = onUseSystemColorChange,
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text(systemColorTitle) },
-                    icon = { Icon(Icons.Rounded.Palette, contentDescription = null) }
+                    label = { WearText(systemColorTitle) },
+                    icon = { WearIcon(Icons.Rounded.Palette, contentDescription = null) }
                 )
             }
 
             item {
-                androidx.wear.compose.material3.TitleCard(
+                WearTitleCard(
                     onClick = onModuleAccessModeClick,
                     modifier = Modifier.fillMaxWidth(),
-                    title = { Text(accessModeTitle) },
-                    subtitle = { Text(accessModeSummary) }
+                    title = { WearText(accessModeTitle) },
+                    subtitle = { WearText(accessModeSummary) }
                 )
             }
 
             if (moduleAccessMode == moe.shizuku.manager.module.ModuleSettings.AccessMode.CUSTOM) {
                 item {
-                    androidx.wear.compose.material3.TitleCard(
+                    WearTitleCard(
                         onClick = onCustomPermissionsClick,
                         modifier = Modifier.fillMaxWidth(),
-                        title = { Text(customPermissionsTitle) }
+                        title = { WearText(customPermissionsTitle) }
                     )
                 }
             }
 
             item {
-                androidx.wear.compose.material3.TitleCard(
+                WearTitleCard(
                     onClick = onLabFeaturesClick,
                     modifier = Modifier.fillMaxWidth(),
-                    title = { Text(labFeaturesTitle) }
+                    title = { WearText(labFeaturesTitle) }
                 )
             }
         }

@@ -76,6 +76,11 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import moe.shizuku.manager.R
 import moe.shizuku.manager.app.AppActivity
+import androidx.wear.compose.material3.AlertDialog as WearAlertDialog
+import androidx.wear.compose.material3.Button as WearButton
+import androidx.wear.compose.material3.FilledTonalButton as WearFilledTonalButton
+import androidx.wear.compose.material3.MaterialTheme as WearMaterialTheme
+import androidx.wear.compose.material3.Text as WearText
 import moe.shizuku.manager.ui.compose.MonospaceLog
 import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
 import moe.shizuku.manager.ui.compose.ShizukuIcon
@@ -187,33 +192,33 @@ class ModulesActivity : AppActivity() {
                 )
 
                 output?.let { (title, text) ->
-                    androidx.wear.compose.material3.AlertDialog(
+                    WearAlertDialog(
                         show = true,
                         onDismissRequest = { output = null },
-                        title = { androidx.wear.compose.material3.Text(title) },
+                        title = { WearText(title) },
                         text = { 
-                            androidx.wear.compose.material3.Text(
+                            WearText(
                                 text = text,
-                                style = androidx.wear.compose.material3.MaterialTheme.typography.bodySmall,
+                                style = WearMaterialTheme.typography.bodySmall,
                                 modifier = Modifier.padding(8.dp)
                             )
                         },
                         confirmButton = {
-                            androidx.wear.compose.material3.Button(onClick = { output = null }) {
-                                androidx.wear.compose.material3.Text(stringResource(android.R.string.ok))
+                            WearButton(onClick = { output = null }) {
+                                WearText(stringResource(android.R.string.ok))
                             }
                         }
                     )
                 }
 
                 deleteTarget?.let { module ->
-                    androidx.wear.compose.material3.AlertDialog(
+                    WearAlertDialog(
                         show = true,
                         onDismissRequest = { deleteTarget = null },
-                        title = { androidx.wear.compose.material3.Text(stringResource(R.string.modules_delete_title)) },
-                        text = { androidx.wear.compose.material3.Text(stringResource(R.string.modules_delete_message, module.name)) },
+                        title = { WearText(stringResource(R.string.modules_delete_title)) },
+                        text = { WearText(stringResource(R.string.modules_delete_message, module.name)) },
                         confirmButton = {
-                            androidx.wear.compose.material3.Button(
+                            WearButton(
                                 onClick = {
                                     scope.launch {
                                         AdbModuleManager.delete(module)
@@ -222,12 +227,12 @@ class ModulesActivity : AppActivity() {
                                     }
                                 }
                             ) {
-                                androidx.wear.compose.material3.Text(stringResource(R.string.modules_delete))
+                                WearText(stringResource(R.string.modules_delete))
                             }
                         },
                         dismissButton = {
-                            androidx.wear.compose.material3.FilledTonalButton(onClick = { deleteTarget = null }) {
-                                androidx.wear.compose.material3.Text(stringResource(android.R.string.cancel))
+                            WearFilledTonalButton(onClick = { deleteTarget = null }) {
+                                WearText(stringResource(android.R.string.cancel))
                             }
                         }
                     )

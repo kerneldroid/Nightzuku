@@ -63,6 +63,12 @@ import rikka.shizuku.manager.ShizukuLocales
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.wear.compose.material3.Button as WearButton
+import androidx.wear.compose.material3.CheckboxButton as WearCheckboxButton
+import androidx.wear.compose.material3.FilledTonalButton as WearFilledTonalButton
+import androidx.wear.compose.material3.MaterialTheme as WearMaterialTheme
+import androidx.wear.compose.material3.RadioButton as WearRadioButton
+import androidx.wear.compose.material3.Text as WearText
 import java.util.Locale
 
 class SettingsActivity : AppActivity() {
@@ -531,7 +537,7 @@ private fun WearChoiceDialog(
     onSelect: (Int) -> Unit
 ) {
     moe.shizuku.manager.ui.compose.WearShizukuTheme {
-        androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize().background(androidx.wear.compose.material3.MaterialTheme.colorScheme.background)) {
+        androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize().background(WearMaterialTheme.colorScheme.background)) {
             moe.shizuku.manager.ui.compose.WearScreenScaffold { state ->
                 androidx.wear.compose.foundation.lazy.TransformingLazyColumn(
                     state = state,
@@ -540,32 +546,32 @@ private fun WearChoiceDialog(
                     modifier = Modifier.fillMaxSize()
                 ) {
                 item {
-                    androidx.wear.compose.material3.Text(
+                    WearText(
                         text = title, 
                         textAlign = TextAlign.Center, 
                         modifier = Modifier.fillMaxWidth(),
-                        color = androidx.wear.compose.material3.MaterialTheme.colorScheme.primary,
-                        style = androidx.wear.compose.material3.MaterialTheme.typography.titleMedium
+                        color = WearMaterialTheme.colorScheme.primary,
+                        style = WearMaterialTheme.typography.titleMedium
                     )
                 }
                 for (index in choices.indices) {
                     val choiceTitle = choices[index].title
                     val isSelected = index == selectedIndex
                     item {
-                        androidx.wear.compose.material3.RadioButton(
+                        WearRadioButton(
                             selected = isSelected,
                             onSelect = { onSelect(index) },
                             modifier = Modifier.fillMaxWidth(),
-                            label = { androidx.wear.compose.material3.Text(choiceTitle) }
+                            label = { WearText(choiceTitle) }
                         )
                     }
                 }
                 item {
-                    androidx.wear.compose.material3.FilledTonalButton(
+                    WearFilledTonalButton(
                         onClick = onDismiss,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        androidx.wear.compose.material3.Text(stringResource(android.R.string.cancel))
+                        WearText(stringResource(android.R.string.cancel))
                     }
                 }
             }
@@ -591,7 +597,7 @@ private fun WearCustomPermissionsDialog(
     val cancelText = stringResource(android.R.string.cancel)
 
     moe.shizuku.manager.ui.compose.WearShizukuTheme {
-        androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize().background(androidx.wear.compose.material3.MaterialTheme.colorScheme.background)) {
+        androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize().background(WearMaterialTheme.colorScheme.background)) {
             moe.shizuku.manager.ui.compose.WearScreenScaffold { state ->
                 androidx.wear.compose.foundation.lazy.TransformingLazyColumn(
                     state = state,
@@ -600,62 +606,62 @@ private fun WearCustomPermissionsDialog(
                     modifier = Modifier.fillMaxSize()
                 ) {
                 item {
-                    androidx.wear.compose.material3.Text(
+                    WearText(
                         text = title, 
                         textAlign = TextAlign.Center, 
                         modifier = Modifier.fillMaxWidth(),
-                        color = androidx.wear.compose.material3.MaterialTheme.colorScheme.primary,
-                        style = androidx.wear.compose.material3.MaterialTheme.typography.titleMedium
+                        color = WearMaterialTheme.colorScheme.primary,
+                        style = WearMaterialTheme.typography.titleMedium
                     )
                 }
                 item {
-                    androidx.wear.compose.material3.CheckboxButton(
+                    WearCheckboxButton(
                         checked = draft.action,
                         onCheckedChange = { draft = draft.copy(action = it) },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { androidx.wear.compose.material3.Text(actionText) }
+                        label = { WearText(actionText) }
                     )
                 }
                 item {
-                    androidx.wear.compose.material3.CheckboxButton(
+                    WearCheckboxButton(
                         checked = draft.service,
                         onCheckedChange = { draft = draft.copy(service = it) },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { androidx.wear.compose.material3.Text(serviceText) }
+                        label = { WearText(serviceText) }
                     )
                 }
                 item {
-                    androidx.wear.compose.material3.CheckboxButton(
+                    WearCheckboxButton(
                         checked = draft.webBridge,
                         onCheckedChange = { enabled -> draft = if (enabled) draft.copy(webBridge = true, webNetwork = false) else draft.copy(webBridge = false) },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { androidx.wear.compose.material3.Text(webBridgeText) }
+                        label = { WearText(webBridgeText) }
                     )
                 }
                 item {
-                    androidx.wear.compose.material3.CheckboxButton(
+                    WearCheckboxButton(
                         checked = draft.webNetwork,
                         onCheckedChange = { enabled -> draft = if (enabled) draft.copy(webNetwork = true, webBridge = false) else draft.copy(webNetwork = false) },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { androidx.wear.compose.material3.Text(webNetworkText) }
+                        label = { WearText(webNetworkText) }
                     )
                 }
                 item {
-                    androidx.wear.compose.material3.CheckboxButton(
+                    WearCheckboxButton(
                         checked = draft.webDownload,
                         onCheckedChange = { draft = draft.copy(webDownload = it) },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { androidx.wear.compose.material3.Text(webDownloadText) }
+                        label = { WearText(webDownloadText) }
                     )
                 }
                 item {
-                    androidx.wear.compose.material3.Button(onClick = { onSave(draft) }, modifier = Modifier.fillMaxWidth()) {
-                        androidx.wear.compose.material3.Text(okText)
+                    WearButton(onClick = { onSave(draft) }, modifier = Modifier.fillMaxWidth()) {
+                        WearText(okText)
                     }
                 }
                 item {
-                    androidx.wear.compose.material3.FilledTonalButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                        androidx.wear.compose.material3.Text(cancelText)
+                    WearFilledTonalButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                        WearText(cancelText)
                     }
                 }
             }

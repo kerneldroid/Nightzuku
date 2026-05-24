@@ -36,6 +36,11 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.wear.compose.material3.AlertDialog as WearAlertDialog
+import androidx.wear.compose.material3.Button as WearButton
+import androidx.wear.compose.material3.FilledTonalButton as WearFilledTonalButton
+import androidx.wear.compose.material3.MaterialTheme as WearMaterialTheme
+import androidx.wear.compose.material3.Text as WearText
 import androidx.wear.compose.material3.ExperimentalWearMaterial3Api
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -62,20 +67,20 @@ fun HomeAboutDialog(
 
     if (isWatch) {
         moe.shizuku.manager.ui.compose.WearShizukuTheme {
-            androidx.wear.compose.material3.AlertDialog(
+            WearAlertDialog(
                 show = true,
                 onDismissRequest = onDismiss,
-                title = { androidx.wear.compose.material3.Text(stringResource(R.string.app_name)) },
-                text = { androidx.wear.compose.material3.Text(versionName ?: "") }
+                title = { WearText(stringResource(R.string.app_name)) },
+                text = { WearText(versionName ?: "") }
             ) {
                 item {
-                    androidx.wear.compose.material3.Button(onClick = onSourceCode, modifier = Modifier.fillMaxWidth()) {
-                        androidx.wear.compose.material3.Text(stringResource(R.string.about_source_code_button))
+                    WearButton(onClick = onSourceCode, modifier = Modifier.fillMaxWidth()) {
+                        WearText(stringResource(R.string.about_source_code_button))
                     }
                 }
                 item {
-                    androidx.wear.compose.material3.FilledTonalButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                        androidx.wear.compose.material3.Text(stringResource(android.R.string.ok))
+                    WearFilledTonalButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                        WearText(stringResource(android.R.string.ok))
                     }
                 }
             }
@@ -109,20 +114,20 @@ fun HomeStopDialog(
 
     if (isWatch) {
         moe.shizuku.manager.ui.compose.WearShizukuTheme {
-            androidx.wear.compose.material3.AlertDialog(
+            WearAlertDialog(
                 show = true,
                 onDismissRequest = onDismiss,
-                title = { androidx.wear.compose.material3.Text(stringResource(R.string.action_stop)) },
-                text = { androidx.wear.compose.material3.Text(stringResource(R.string.dialog_stop_message)) }
+                title = { WearText(stringResource(R.string.action_stop)) },
+                text = { WearText(stringResource(R.string.dialog_stop_message)) }
             ) {
                 item {
-                    androidx.wear.compose.material3.Button(onClick = { onConfirm(); onDismiss() }, modifier = Modifier.fillMaxWidth()) {
-                        androidx.wear.compose.material3.Text(stringResource(android.R.string.ok))
+                    WearButton(onClick = { onConfirm(); onDismiss() }, modifier = Modifier.fillMaxWidth()) {
+                        WearText(stringResource(android.R.string.ok))
                     }
                 }
                 item {
-                    androidx.wear.compose.material3.FilledTonalButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                        androidx.wear.compose.material3.Text(stringResource(android.R.string.cancel))
+                    WearFilledTonalButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                        WearText(stringResource(android.R.string.cancel))
                     }
                 }
             }
@@ -158,27 +163,27 @@ fun HomeAdbCommandDialog(
 
     if (isWatch) {
         moe.shizuku.manager.ui.compose.WearShizukuTheme {
-            androidx.wear.compose.material3.AlertDialog(
+            WearAlertDialog(
                 show = true,
                 onDismissRequest = onDismiss,
-                title = { androidx.wear.compose.material3.Text(stringResource(R.string.home_adb_button_view_command)) },
+                title = { WearText(stringResource(R.string.home_adb_button_view_command)) },
                 text = { 
-                    androidx.wear.compose.material3.Text(command, style = androidx.wear.compose.material3.MaterialTheme.typography.bodySmall) 
+                    WearText(command, style = WearMaterialTheme.typography.bodySmall) 
                 }
             ) {
                 item {
-                    androidx.wear.compose.material3.Button(onClick = { onCopy(); onDismiss() }, modifier = Modifier.fillMaxWidth()) {
-                        androidx.wear.compose.material3.Text(stringResource(R.string.home_adb_dialog_view_command_copy_button))
+                    WearButton(onClick = { onCopy(); onDismiss() }, modifier = Modifier.fillMaxWidth()) {
+                        WearText(stringResource(R.string.home_adb_dialog_view_command_copy_button))
                     }
                 }
                 item {
-                    androidx.wear.compose.material3.Button(onClick = { onSend(); onDismiss() }, modifier = Modifier.fillMaxWidth()) {
-                        androidx.wear.compose.material3.Text(stringResource(R.string.home_adb_dialog_view_command_button_send))
+                    WearButton(onClick = { onSend(); onDismiss() }, modifier = Modifier.fillMaxWidth()) {
+                        WearText(stringResource(R.string.home_adb_dialog_view_command_button_send))
                     }
                 }
                 item {
-                    androidx.wear.compose.material3.FilledTonalButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                        androidx.wear.compose.material3.Text(stringResource(android.R.string.cancel))
+                    WearFilledTonalButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                        WearText(stringResource(android.R.string.cancel))
                     }
                 }
             }
@@ -250,40 +255,40 @@ fun HomeAdbDiscoveryDialog(
 
     if (isWatch) {
         moe.shizuku.manager.ui.compose.WearShizukuTheme {
-            androidx.wear.compose.material3.AlertDialog(
+            WearAlertDialog(
                 show = true,
                 onDismissRequest = onDismiss,
-                title = { androidx.wear.compose.material3.Text(stringResource(R.string.dialog_adb_discovery)) },
+                title = { WearText(stringResource(R.string.dialog_adb_discovery)) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        androidx.wear.compose.material3.Text(stringResource(R.string.dialog_adb_discovery_message))
+                        WearText(stringResource(R.string.dialog_adb_discovery_message))
                         if (currentPort in 1..65535) {
-                            androidx.wear.compose.material3.Text("Discovered port: $currentPort", color = androidx.wear.compose.material3.MaterialTheme.colorScheme.primary)
+                            WearText("Discovered port: $currentPort", color = WearMaterialTheme.colorScheme.primary)
                         }
                     }
                 }
             ) {
                 if (currentPort in 1..65535) {
                     item {
-                        androidx.wear.compose.material3.Button(onClick = { onStart(currentPort) }, modifier = Modifier.fillMaxWidth()) {
-                            androidx.wear.compose.material3.Text("Start ($currentPort)")
+                        WearButton(onClick = { onStart(currentPort) }, modifier = Modifier.fillMaxWidth()) {
+                            WearText("Start ($currentPort)")
                         }
                     }
                 } else if (manualPort != -1) {
                     item {
-                        androidx.wear.compose.material3.Button(onClick = { onStart(manualPort) }, modifier = Modifier.fillMaxWidth()) {
-                            androidx.wear.compose.material3.Text("Start ($manualPort)")
+                        WearButton(onClick = { onStart(manualPort) }, modifier = Modifier.fillMaxWidth()) {
+                            WearText("Start ($manualPort)")
                         }
                     }
                 }
                 item {
-                    androidx.wear.compose.material3.Button(onClick = openDevSettings, modifier = Modifier.fillMaxWidth()) {
-                        androidx.wear.compose.material3.Text(stringResource(R.string.development_settings))
+                    WearButton(onClick = openDevSettings, modifier = Modifier.fillMaxWidth()) {
+                        WearText(stringResource(R.string.development_settings))
                     }
                 }
                 item {
-                    androidx.wear.compose.material3.FilledTonalButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                        androidx.wear.compose.material3.Text(stringResource(android.R.string.cancel))
+                    WearFilledTonalButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                        WearText(stringResource(android.R.string.cancel))
                     }
                 }
             }
@@ -335,15 +340,15 @@ fun HomeWadbNotEnabledDialog(onDismiss: () -> Unit) {
 
     if (isWatch) {
         moe.shizuku.manager.ui.compose.WearShizukuTheme {
-            androidx.wear.compose.material3.AlertDialog(
+            WearAlertDialog(
                 show = true,
                 onDismissRequest = onDismiss,
-                title = { androidx.wear.compose.material3.Text(stringResource(R.string.dialog_wireless_adb_not_enabled)) },
+                title = { WearText(stringResource(R.string.dialog_wireless_adb_not_enabled)) },
                 text = { }
             ) {
                 item {
-                    androidx.wear.compose.material3.Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                        androidx.wear.compose.material3.Text(stringResource(android.R.string.ok))
+                    WearButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                        WearText(stringResource(android.R.string.ok))
                     }
                 }
             }
@@ -362,12 +367,18 @@ fun HomeWadbNotEnabledDialog(onDismiss: () -> Unit) {
     }
 }
 
+private sealed class PairingStatus {
+    object Idle : PairingStatus()
+    object Success : PairingStatus()
+    data class Error(val throwable: Throwable) : PairingStatus()
+}
+
 @Composable
 fun HomeAdbPairDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
     val isWatch = EnvironmentUtils.isWatch(context)
     
-    val result = remember { MutableLiveData<Throwable?>() }
+    val result = remember { MutableLiveData<PairingStatus>(PairingStatus.Idle) }
     val port = remember { MutableLiveData<Int>() }
     
     DisposableEffect(Unit) {
@@ -377,7 +388,7 @@ fun HomeAdbPairDialog(onDismiss: () -> Unit) {
     }
 
     val discoveredPort by port.observeAsState(-1)
-    val pairResult by result.observeAsState(Unit)
+    val pairStatus by result.observeAsState(PairingStatus.Idle)
 
     var portText by remember { mutableStateOf("") }
     var pairingCode by remember { mutableStateOf("") }
@@ -389,17 +400,21 @@ fun HomeAdbPairDialog(onDismiss: () -> Unit) {
         if (discoveredPort in 1..65535) portText = discoveredPort.toString()
     }
 
-    LaunchedEffect(pairResult) {
-        if (pairResult == null) {
-            onDismiss()
-        } else if (pairResult is Throwable) {
-            isPairing = false
-            val t = pairResult as Throwable
-            when (t) {
-                is ConnectException -> portError = context.getString(R.string.cannot_connect_port)
-                is AdbInvalidPairingCodeException -> pairingCodeError = context.getString(R.string.paring_code_is_wrong)
-                else -> pairingCodeError = t.message
+    LaunchedEffect(pairStatus) {
+        when (pairStatus) {
+            is PairingStatus.Success -> {
+                onDismiss()
             }
+            is PairingStatus.Error -> {
+                isPairing = false
+                val t = (pairStatus as PairingStatus.Error).throwable
+                when (t) {
+                    is ConnectException -> portError = context.getString(R.string.cannot_connect_port)
+                    is AdbInvalidPairingCodeException -> pairingCodeError = context.getString(R.string.paring_code_is_wrong)
+                    else -> pairingCodeError = t.message
+                }
+            }
+            PairingStatus.Idle -> {}
         }
     }
 
@@ -413,10 +428,13 @@ fun HomeAdbPairDialog(onDismiss: () -> Unit) {
                 try {
                     val key = AdbKey(PreferenceAdbKeyStore(prefs), "shizuku")
                     AdbPairingClient("127.0.0.1", p, pairingCode, key).runCatching { start() }
-                        .onSuccess { if (it) result.postValue(null) else result.postValue(Exception("Pairing failed")) }
-                        .onFailure { result.postValue(it) }
+                        .onSuccess {
+                            if (it) result.postValue(PairingStatus.Success)
+                            else result.postValue(PairingStatus.Error(Exception("Pairing failed")))
+                        }
+                        .onFailure { result.postValue(PairingStatus.Error(it)) }
                 } catch (e: Throwable) {
-                    result.postValue(AdbKeyException(e))
+                    result.postValue(PairingStatus.Error(AdbKeyException(e)))
                 }
             }
         }
@@ -424,41 +442,45 @@ fun HomeAdbPairDialog(onDismiss: () -> Unit) {
 
     if (isWatch) {
         moe.shizuku.manager.ui.compose.WearShizukuTheme {
-            androidx.wear.compose.material3.AlertDialog(
+            WearAlertDialog(
                 show = true,
                 onDismissRequest = onDismiss,
-                title = { androidx.wear.compose.material3.Text(stringResource(R.string.dialog_adb_pairing_title)) },
+                title = { WearText(stringResource(R.string.dialog_adb_pairing_title)) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             value = pairingCode,
                             onValueChange = { pairingCode = it.filter(Char::isDigit).take(6) },
-                            label = { Text("Code") },
+                            label = { Text(stringResource(R.string.dialog_adb_pairing_paring_code)) },
                             modifier = Modifier.fillMaxWidth(),
+                            isError = pairingCodeError != null,
+                            supportingText = pairingCodeError?.let { { Text(it) } },
                             enabled = !isPairing
                         )
                         OutlinedTextField(
                             value = portText,
                             onValueChange = { portText = it.filter(Char::isDigit).take(5) },
-                            label = { Text("Port") },
+                            label = { Text(stringResource(R.string.dialog_adb_port)) },
                             modifier = Modifier.fillMaxWidth(),
+                            isError = portError != null,
+                            supportingText = portError?.let { { Text(it) } },
                             enabled = !isPairing
                         )
                     }
                 }
             ) {
                 item {
-                    androidx.wear.compose.material3.Button(
+                    WearButton(
                         onClick = onPair,
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !isPairing
                     ) {
-                        androidx.wear.compose.material3.Text(stringResource(android.R.string.ok))
+                        WearText(stringResource(android.R.string.ok))
                     }
                 }
                 item {
-                    androidx.wear.compose.material3.FilledTonalButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                        androidx.wear.compose.material3.Text(stringResource(android.R.string.cancel))
+                    WearFilledTonalButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                        WearText(stringResource(android.R.string.cancel))
                     }
                 }
             }
@@ -511,15 +533,15 @@ fun HomeAdbLimitedDialog(onDismiss: () -> Unit) {
 
     if (isWatch) {
         moe.shizuku.manager.ui.compose.WearShizukuTheme {
-            androidx.wear.compose.material3.AlertDialog(
+            WearAlertDialog(
                 show = true,
                 onDismissRequest = onDismiss,
-                title = { androidx.wear.compose.material3.Text(stringResource(R.string.app_management_dialog_adb_is_limited_title)) },
-                text = { androidx.wear.compose.material3.Text(message) }
+                title = { WearText(stringResource(R.string.app_management_dialog_adb_is_limited_title)) },
+                text = { WearText(message) }
             ) {
                 item {
-                    androidx.wear.compose.material3.Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                        androidx.wear.compose.material3.Text(stringResource(android.R.string.ok))
+                    WearButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                        WearText(stringResource(android.R.string.ok))
                     }
                 }
             }
@@ -545,15 +567,15 @@ fun HomeErrorDialog(message: String, onDismiss: () -> Unit) {
 
     if (isWatch) {
         moe.shizuku.manager.ui.compose.WearShizukuTheme {
-            androidx.wear.compose.material3.AlertDialog(
+            WearAlertDialog(
                 show = true,
                 onDismissRequest = onDismiss,
-                title = { androidx.wear.compose.material3.Text(stringResource(R.string.starter)) },
-                text = { androidx.wear.compose.material3.Text(message) }
+                title = { WearText(stringResource(R.string.starter)) },
+                text = { WearText(message) }
             ) {
                 item {
-                    androidx.wear.compose.material3.Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                        androidx.wear.compose.material3.Text(stringResource(android.R.string.ok))
+                    WearButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                        WearText(stringResource(android.R.string.ok))
                     }
                 }
             }

@@ -26,11 +26,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
-import androidx.wear.compose.material3.Button
-import androidx.wear.compose.material3.Card
-import androidx.wear.compose.material3.Icon
-import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.Button as WearButton
+import androidx.wear.compose.material3.Card as WearCard
+import androidx.wear.compose.material3.Icon as WearIcon
+import androidx.wear.compose.material3.MaterialTheme as WearMaterialTheme
+import androidx.wear.compose.material3.Text as WearText
 import moe.shizuku.manager.R
 import moe.shizuku.manager.model.ServiceStatus
 import moe.shizuku.manager.ui.compose.WearScreenScaffold
@@ -79,15 +79,15 @@ internal fun WearHomeScreen(
             }
 
             item {
-                Card(
+                WearCard(
                     onClick = {},
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column {
-                        Text(
+                        WearText(
                             text = if (running) stringResource(R.string.home_status_service_is_running, stringResource(R.string.app_name)) 
                                    else stringResource(R.string.home_status_service_not_running, stringResource(R.string.app_name)),
-                            style = MaterialTheme.typography.titleMedium
+                            style = WearMaterialTheme.typography.titleMedium
                         )
                     }
                 }
@@ -95,54 +95,54 @@ internal fun WearHomeScreen(
             
             if (running) {
                 item {
-                    Button(
+                    WearButton(
                         onClick = onManageApps,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.Apps, contentDescription = null, modifier = Modifier.size(24.dp))
+                            WearIcon(Icons.Rounded.Apps, contentDescription = null, modifier = Modifier.size(24.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text(text = stringResource(R.string.home_app_management_title))
+                            WearText(text = stringResource(R.string.home_app_management_title))
                         }
                     }
                 }
                 item {
-                    Button(
+                    WearButton(
                         onClick = onModules,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.Extension, contentDescription = null, modifier = Modifier.size(24.dp))
+                            WearIcon(Icons.Rounded.Extension, contentDescription = null, modifier = Modifier.size(24.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text(text = stringResource(R.string.modules_title))
+                            WearText(text = stringResource(R.string.modules_title))
                         }
                     }
                 }
             } else {
                 if (isRooted) {
                     item {
-                        Button(
+                        WearButton(
                             onClick = onStartRoot,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(24.dp))
+                                WearIcon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(24.dp))
                                 Spacer(Modifier.width(8.dp))
-                                Text(text = stringResource(R.string.home_root_button_start))
+                                WearText(text = stringResource(R.string.home_root_button_start))
                             }
                         }
                     }
                 }
                 if (canUseWirelessAdb) {
                     item {
-                        Button(
+                        WearButton(
                             onClick = onStartWirelessAdb,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Rounded.Usb, contentDescription = null, modifier = Modifier.size(24.dp))
+                                WearIcon(Icons.Rounded.Usb, contentDescription = null, modifier = Modifier.size(24.dp))
                                 Spacer(Modifier.width(8.dp))
-                                Text(text = stringResource(R.string.home_wireless_adb_title))
+                                WearText(text = stringResource(R.string.home_wireless_adb_title))
                             }
                         }
                     }
@@ -150,54 +150,54 @@ internal fun WearHomeScreen(
             }
             
             item {
-                Button(
+                WearButton(
                     onClick = onSettings,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Settings, contentDescription = null, modifier = Modifier.size(24.dp))
+                        WearIcon(Icons.Rounded.Settings, contentDescription = null, modifier = Modifier.size(24.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text(text = stringResource(R.string.settings_title))
+                        WearText(text = stringResource(R.string.settings_title))
                     }
                 }
             }
             
             item {
-                Button(
+                WearButton(
                     onClick = onRefresh,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(24.dp))
+                        WearIcon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(24.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text(text = stringResource(R.string.home_refresh))
+                        WearText(text = stringResource(R.string.home_refresh))
                     }
                 }
             }
             
             item {
-                Button(
+                WearButton(
                     onClick = onAbout,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Info, contentDescription = null, modifier = Modifier.size(24.dp))
+                        WearIcon(Icons.Rounded.Info, contentDescription = null, modifier = Modifier.size(24.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text(text = stringResource(R.string.action_about))
+                        WearText(text = stringResource(R.string.action_about))
                     }
                 }
             }
             
             if (running) {
                 item {
-                    Button(
+                    WearButton(
                         onClick = onStop,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.Stop, contentDescription = null, modifier = Modifier.size(24.dp))
+                            WearIcon(Icons.Rounded.Stop, contentDescription = null, modifier = Modifier.size(24.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text(text = stringResource(R.string.action_stop))
+                            WearText(text = stringResource(R.string.action_stop))
                         }
                     }
                 }

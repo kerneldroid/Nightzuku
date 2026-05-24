@@ -36,15 +36,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
-import androidx.wear.compose.material3.Button
-import androidx.wear.compose.material3.ButtonDefaults
-import androidx.wear.compose.material3.CheckboxButton
-import androidx.wear.compose.material3.Icon
-import androidx.wear.compose.material3.IconButton
-import androidx.wear.compose.material3.IconButtonDefaults
-import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.Text
-import androidx.wear.compose.material3.TitleCard
+import androidx.wear.compose.material3.Button as WearButton
+import androidx.wear.compose.material3.ButtonDefaults as WearButtonDefaults
+import androidx.wear.compose.material3.CheckboxButton as WearCheckboxButton
+import androidx.wear.compose.material3.Icon as WearIcon
+import androidx.wear.compose.material3.IconButton as WearIconButton
+import androidx.wear.compose.material3.IconButtonDefaults as WearIconButtonDefaults
+import androidx.wear.compose.material3.MaterialTheme as WearMaterialTheme
+import androidx.wear.compose.material3.Text as WearText
+import androidx.wear.compose.material3.TitleCard as WearTitleCard
+import androidx.wear.compose.material3.CardDefaults as WearCardDefaults
 import moe.shizuku.manager.R
 import moe.shizuku.manager.ui.compose.WearScreenScaffold
 import moe.shizuku.manager.ui.compose.WearScreenTitle
@@ -74,30 +75,30 @@ fun WearModulesScreen(
             }
             
             item {
-                Button(
+                WearButton(
                     onClick = onInstallZip,
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.filledTonalButtonColors()
+                    colors = WearButtonDefaults.filledTonalButtonColors()
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(Icons.Rounded.FileUpload, contentDescription = null, modifier = Modifier.size(20.dp))
+                        WearIcon(Icons.Rounded.FileUpload, contentDescription = null, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text(text = stringResource(R.string.modules_install_zip))
+                        WearText(text = stringResource(R.string.modules_install_zip))
                     }
                 }
             }
 
             if (modules.isEmpty()) {
                 item {
-                    Text(
+                    WearText(
                         text = stringResource(R.string.modules_empty_title),
                         modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
                         textAlign = TextAlign.Center,
-                        style = MaterialTheme.typography.bodyMedium
+                        style = WearMaterialTheme.typography.bodyMedium
                     )
                 }
             }
@@ -107,34 +108,34 @@ fun WearModulesScreen(
                 val trusted = ModuleSettings.isModuleTrusted(module.id)
                 var expanded by remember { mutableStateOf(false) }
                 
-                val containerColor = if (trusted) MaterialTheme.colorScheme.tertiaryContainer 
-                                    else MaterialTheme.colorScheme.surfaceContainer
-                val contentColor = if (trusted) MaterialTheme.colorScheme.onTertiaryContainer 
-                                  else MaterialTheme.colorScheme.onSurface
-                val iconTint = if (trusted) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
+                val containerColor = if (trusted) WearMaterialTheme.colorScheme.tertiaryContainer 
+                                    else WearMaterialTheme.colorScheme.surfaceContainer
+                val contentColor = if (trusted) WearMaterialTheme.colorScheme.onTertiaryContainer 
+                                  else WearMaterialTheme.colorScheme.onSurface
+                val iconTint = if (trusted) WearMaterialTheme.colorScheme.tertiary else WearMaterialTheme.colorScheme.primary
 
-                TitleCard(
+                WearTitleCard(
                     onClick = { expanded = !expanded },
                     title = {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Icon(
+                            WearIcon(
                                 imageVector = Icons.Rounded.Extension,
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp),
                                 tint = iconTint
                             )
                             Spacer(Modifier.width(6.dp))
-                            Text(
+                            WearText(
                                 text = module.name,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f),
                                 fontWeight = FontWeight.Bold
                             )
-                            CheckboxButton(
+                            WearCheckboxButton(
                                 checked = module.enabled,
                                 onCheckedChange = { onToggle(module) },
                                 modifier = Modifier.size(32.dp),
@@ -145,16 +146,16 @@ fun WearModulesScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .animateContentSize(),
-                    colors = androidx.wear.compose.material3.CardDefaults.cardColors(
+                    colors = WearCardDefaults.cardColors(
                         containerColor = containerColor,
                         contentColor = contentColor
                     )
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
-                        Text(
+                        WearText(
                             text = "v${module.version ?: "1.0"}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (trusted) contentColor.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
+                            style = WearMaterialTheme.typography.labelSmall,
+                            color = if (trusted) contentColor.copy(alpha = 0.8f) else WearMaterialTheme.colorScheme.onSurfaceVariant
                         )
                         
                         AnimatedVisibility(visible = module.enabled && !isBusy && expanded) {
@@ -166,59 +167,59 @@ fun WearModulesScreen(
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 if (module.hasWebUi) {
-                                    IconButton(
+                                    WearIconButton(
                                         onClick = { onOpenWebUi(module) },
-                                        modifier = Modifier.size(IconButtonDefaults.DefaultButtonSize)
+                                        modifier = Modifier.size(WearIconButtonDefaults.DefaultButtonSize)
                                     ) {
-                                        Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null)
+                                        WearIcon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null)
                                     }
                                 }
                                 if (module.hasAction) {
-                                    IconButton(
+                                    WearIconButton(
                                         onClick = { onRunAction(module) },
-                                        modifier = Modifier.size(IconButtonDefaults.DefaultButtonSize)
+                                        modifier = Modifier.size(WearIconButtonDefaults.DefaultButtonSize)
                                     ) {
-                                        Icon(Icons.Rounded.PlayArrow, contentDescription = null)
+                                        WearIcon(Icons.Rounded.PlayArrow, contentDescription = null)
                                     }
                                 }
                                 if (module.hasService) {
-                                    IconButton(
+                                    WearIconButton(
                                         onClick = { onRunService(module) },
-                                        modifier = Modifier.size(IconButtonDefaults.DefaultButtonSize)
+                                        modifier = Modifier.size(WearIconButtonDefaults.DefaultButtonSize)
                                     ) {
-                                        Icon(Icons.Rounded.Terminal, contentDescription = null)
+                                        WearIcon(Icons.Rounded.Terminal, contentDescription = null)
                                     }
                                 }
                                 
-                                IconButton(
+                                WearIconButton(
                                     onClick = { onTrustChange(module, !trusted) },
-                                    modifier = Modifier.size(IconButtonDefaults.DefaultButtonSize),
-                                    colors = if (trusted) IconButtonDefaults.iconButtonColors(
-                                        containerColor = MaterialTheme.colorScheme.primary,
-                                        contentColor = MaterialTheme.colorScheme.onPrimary
-                                    ) else IconButtonDefaults.filledTonalIconButtonColors()
+                                    modifier = Modifier.size(WearIconButtonDefaults.DefaultButtonSize),
+                                    colors = if (trusted) WearIconButtonDefaults.iconButtonColors(
+                                        containerColor = WearMaterialTheme.colorScheme.primary,
+                                        contentColor = WearMaterialTheme.colorScheme.onPrimary
+                                    ) else WearIconButtonDefaults.filledTonalIconButtonColors()
                                 ) {
-                                    Icon(Icons.Rounded.Security, contentDescription = null)
+                                    WearIcon(Icons.Rounded.Security, contentDescription = null)
                                 }
 
-                                IconButton(
+                                WearIconButton(
                                     onClick = { onDelete(module) },
-                                    modifier = Modifier.size(IconButtonDefaults.DefaultButtonSize),
-                                    colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                    modifier = Modifier.size(WearIconButtonDefaults.DefaultButtonSize),
+                                    colors = WearIconButtonDefaults.filledTonalIconButtonColors(
+                                        containerColor = WearMaterialTheme.colorScheme.errorContainer,
+                                        contentColor = WearMaterialTheme.colorScheme.onErrorContainer
                                     )
                                 ) {
-                                    Icon(Icons.Rounded.Delete, contentDescription = null)
+                                    WearIcon(Icons.Rounded.Delete, contentDescription = null)
                                 }
                             }
                         }
 
                         if (isBusy) {
-                            Text(
+                            WearText(
                                 text = stringResource(R.string.modules_running),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
+                                style = WearMaterialTheme.typography.labelSmall,
+                                color = WearMaterialTheme.colorScheme.primary,
                                 modifier = Modifier.padding(top = 8.dp)
                             )
                         }
