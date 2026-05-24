@@ -23,6 +23,10 @@ import moe.shizuku.manager.app.AppActivity
 import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
 import moe.shizuku.manager.ui.compose.ShizukuScaffold
 import androidx.compose.ui.res.stringResource
+import androidx.wear.compose.material3.MaterialTheme as WearMaterialTheme
+import androidx.wear.compose.material3.Text as WearText
+import androidx.wear.compose.material3.Button as WearButton
+import androidx.wear.compose.material3.FilledTonalButton as WearFilledTonalButton
 import moe.shizuku.manager.R
 import java.io.File
 import java.util.concurrent.CountDownLatch
@@ -58,7 +62,7 @@ class ModuleWebViewActivity : AppActivity() {
                 moe.shizuku.manager.ui.compose.WearShizukuTheme {
                     var webViewCrashError by remember { mutableStateOf<String?>(null) }
 
-                    androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize().background(androidx.wear.compose.material3.MaterialTheme.colorScheme.background)) {
+                    androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize().background(WearMaterialTheme.colorScheme.background)) {
                         if (webViewCrashError == null) {
                             AndroidView(
                                 factory = { context ->
@@ -133,36 +137,36 @@ class ModuleWebViewActivity : AppActivity() {
                             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
                         ) {
                             moe.shizuku.manager.ui.compose.WearShizukuTheme {
-                                androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize().background(androidx.wear.compose.material3.MaterialTheme.colorScheme.background)) {
+                                androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize().background(WearMaterialTheme.colorScheme.background)) {
                                     moe.shizuku.manager.ui.compose.WearScreenScaffold { scrollState ->
                                         androidx.wear.compose.foundation.lazy.TransformingLazyColumn(
                                             state = scrollState,
                                             contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 32.dp, bottom = 32.dp, start = 8.dp, end = 8.dp),
                                             verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
-                                            modifier = Modifier.fillMaxSize().background(androidx.wear.compose.material3.MaterialTheme.colorScheme.background)
+                                            modifier = Modifier.fillMaxSize().background(WearMaterialTheme.colorScheme.background)
                                         ) {
                                             item {
-                                                androidx.wear.compose.material3.Text(
+                                                WearText(
                                                     text = "WebView Error",
                                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                                     modifier = Modifier.fillMaxWidth(),
-                                                    color = androidx.wear.compose.material3.MaterialTheme.colorScheme.error,
-                                                    style = androidx.wear.compose.material3.MaterialTheme.typography.titleMedium
+                                                    color = WearMaterialTheme.colorScheme.error,
+                                                    style = WearMaterialTheme.typography.titleMedium
                                                 )
                                             }
                                             item {
-                                                androidx.wear.compose.material3.Text(
+                                                WearText(
                                                     text = "WebView is not supported or crashed during initialization on this WearOS device.\n\n$errorMsg",
                                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                                     modifier = Modifier.fillMaxWidth()
                                                 )
                                             }
                                             item {
-                                                androidx.wear.compose.material3.Button(
+                                                WearButton(
                                                     onClick = { finish() },
                                                     modifier = Modifier.fillMaxWidth()
                                                 ) {
-                                                    androidx.wear.compose.material3.Text(okText)
+                                                    WearText(okText)
                                                 }
                                             }
                                         }
@@ -189,26 +193,26 @@ class ModuleWebViewActivity : AppActivity() {
                                     state = scrollState,
                                     contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 32.dp, bottom = 32.dp, start = 8.dp, end = 8.dp),
                                     verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
-                                    modifier = Modifier.fillMaxSize().background(androidx.wear.compose.material3.MaterialTheme.colorScheme.background)
+                                    modifier = Modifier.fillMaxSize().background(WearMaterialTheme.colorScheme.background)
                                 ) {
                                     item {
-                                        androidx.wear.compose.material3.Text(
+                                        WearText(
                                             text = warningTitle,
                                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                             modifier = androidx.compose.ui.Modifier.fillMaxWidth(),
-                                            color = androidx.wear.compose.material3.MaterialTheme.colorScheme.primary,
-                                            style = androidx.wear.compose.material3.MaterialTheme.typography.titleMedium
+                                            color = WearMaterialTheme.colorScheme.primary,
+                                            style = WearMaterialTheme.typography.titleMedium
                                         )
                                     }
                                     item {
-                                        androidx.wear.compose.material3.Text(
+                                        WearText(
                                             text = request.command,
                                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                             modifier = androidx.compose.ui.Modifier.fillMaxWidth()
                                         )
                                     }
                                     item {
-                                        androidx.wear.compose.material3.Button(
+                                        WearButton(
                                             onClick = {
                                                 pendingDecision?.invoke(true)
                                                 pendingCommand = null
@@ -216,11 +220,11 @@ class ModuleWebViewActivity : AppActivity() {
                                             },
                                             modifier = androidx.compose.ui.Modifier.fillMaxWidth()
                                         ) {
-                                            androidx.wear.compose.material3.Text(okText)
+                                            WearText(okText)
                                         }
                                     }
                                     item {
-                                        androidx.wear.compose.material3.FilledTonalButton(
+                                        WearFilledTonalButton(
                                             onClick = {
                                                 pendingDecision?.invoke(false)
                                                 pendingCommand = null
@@ -228,7 +232,7 @@ class ModuleWebViewActivity : AppActivity() {
                                             },
                                             modifier = androidx.compose.ui.Modifier.fillMaxWidth()
                                         ) {
-                                            androidx.wear.compose.material3.Text(cancelText)
+                                            WearText(cancelText)
                                         }
                                     }
                                 }

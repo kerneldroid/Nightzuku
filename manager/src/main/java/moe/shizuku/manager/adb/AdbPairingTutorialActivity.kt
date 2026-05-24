@@ -22,6 +22,11 @@ import androidx.compose.material.icons.rounded.Usb
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Text
+import androidx.wear.compose.material3.Button as WearButton
+import androidx.wear.compose.material3.Card as WearCard
+import androidx.wear.compose.material3.CardDefaults as WearCardDefaults
+import androidx.wear.compose.material3.MaterialTheme as WearMaterialTheme
+import androidx.wear.compose.material3.Text as WearText
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -69,68 +74,68 @@ class AdbPairingTutorialActivity : AppActivity() {
                             }
                             if (notificationEnabled) {
                                 item {
-                                    androidx.wear.compose.material3.Card(
+                                    WearCard(
                                         onClick = {},
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        androidx.wear.compose.material3.Text(
+                                        WearText(
                                             text = stringResource(R.string.adb_pairing_tutorial_content_notification),
-                                            style = androidx.wear.compose.material3.MaterialTheme.typography.bodyMedium
+                                            style = WearMaterialTheme.typography.bodyMedium
                                         )
                                     }
                                 }
                             } else {
                                 item {
-                                    androidx.wear.compose.material3.Card(
+                                    WearCard(
                                         onClick = ::openNotificationSettings,
                                         modifier = Modifier.fillMaxWidth(),
-                                        colors = androidx.wear.compose.material3.CardDefaults.cardColors(
-                                            containerColor = androidx.wear.compose.material3.MaterialTheme.colorScheme.errorContainer
+                                        colors = WearCardDefaults.cardColors(
+                                            containerColor = WearMaterialTheme.colorScheme.errorContainer
                                         )
                                     ) {
-                                        androidx.wear.compose.material3.Text(
+                                        WearText(
                                             text = stringResource(R.string.adb_pairing_tutorial_content_notification_blocked),
-                                            style = androidx.wear.compose.material3.MaterialTheme.typography.bodyMedium
+                                            style = WearMaterialTheme.typography.bodyMedium
                                         )
                                     }
                                 }
                             }
                             if (notificationEnabled) {
                                 item {
-                                    androidx.wear.compose.material3.Card(
+                                    WearCard(
                                         onClick = ::openDeveloperOptions,
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Column {
-                                            androidx.wear.compose.material3.Text(
+                                            WearText(
                                                 text = "1. " + stringResource(R.string.adb_pairing_tutorial_content_steps),
-                                                style = androidx.wear.compose.material3.MaterialTheme.typography.labelMedium
+                                                style = WearMaterialTheme.typography.labelMedium
                                             )
-                                            androidx.wear.compose.material3.Text(
+                                            WearText(
                                                 text = stringResource(R.string.development_settings),
-                                                style = androidx.wear.compose.material3.MaterialTheme.typography.bodySmall,
-                                                color = androidx.wear.compose.material3.MaterialTheme.colorScheme.primary
+                                                style = WearMaterialTheme.typography.bodySmall,
+                                                color = WearMaterialTheme.colorScheme.primary
                                             )
                                         }
                                     }
                                 }
                                 item {
-                                    androidx.wear.compose.material3.Card(
+                                    WearCard(
                                         onClick = {},
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        androidx.wear.compose.material3.Text(
+                                        WearText(
                                             text = "2. " + stringResource(R.string.adb_pairing_tutorial_content_enter_pairing_code),
-                                            style = androidx.wear.compose.material3.MaterialTheme.typography.labelMedium
+                                            style = WearMaterialTheme.typography.labelMedium
                                         )
                                     }
                                 }
                                 item {
-                                    androidx.wear.compose.material3.Button(
+                                    WearButton(
                                         onClick = { finish() },
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        androidx.wear.compose.material3.Text(stringResource(android.R.string.ok))
+                                        WearText(stringResource(android.R.string.ok))
                                     }
                                 }
                             }

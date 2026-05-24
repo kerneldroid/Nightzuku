@@ -14,6 +14,9 @@ import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Text
+import androidx.wear.compose.material3.Card as WearCard
+import androidx.wear.compose.material3.MaterialTheme as WearMaterialTheme
+import androidx.wear.compose.material3.Text as WearText
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -94,53 +97,53 @@ class ShellTutorialActivity : AppActivity() {
                                 )
                             }
                             item {
-                                androidx.wear.compose.material3.Card(
+                                WearCard(
                                     onClick = { CustomTabsHelper.launchUrlOrCopy(this@ShellTutorialActivity, Helps.RISH.get()) },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    androidx.wear.compose.material3.Text(
+                                    WearText(
                                         text = HtmlText(R.string.rish_description, shName),
-                                        style = androidx.wear.compose.material3.MaterialTheme.typography.bodyMedium
+                                        style = WearMaterialTheme.typography.bodyMedium
                                     )
                                 }
                             }
                             item {
-                                androidx.wear.compose.material3.Card(
+                                WearCard(
                                     onClick = { openDocumentsTree.launch(null) },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     androidx.compose.foundation.layout.Column {
-                                        androidx.wear.compose.material3.Text(
+                                        WearText(
                                             text = "1. " + HtmlText(R.string.terminal_tutorial_1, shName, dexName),
-                                            style = androidx.wear.compose.material3.MaterialTheme.typography.labelMedium
+                                            style = WearMaterialTheme.typography.labelMedium
                                         )
-                                        androidx.wear.compose.material3.Text(
+                                        WearText(
                                             text = stringResource(R.string.terminal_export_files),
-                                            style = androidx.wear.compose.material3.MaterialTheme.typography.bodySmall,
-                                            color = androidx.wear.compose.material3.MaterialTheme.colorScheme.primary
+                                            style = WearMaterialTheme.typography.bodySmall,
+                                            color = WearMaterialTheme.colorScheme.primary
                                         )
                                     }
                                 }
                             }
                             item {
-                                androidx.wear.compose.material3.Card(
+                                WearCard(
                                     onClick = {},
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    androidx.wear.compose.material3.Text(
+                                    WearText(
                                         text = "2. " + HtmlText(R.string.terminal_tutorial_2, shName),
-                                        style = androidx.wear.compose.material3.MaterialTheme.typography.labelMedium
+                                        style = WearMaterialTheme.typography.labelMedium
                                     )
                                 }
                             }
                             item {
-                                androidx.wear.compose.material3.Card(
+                                WearCard(
                                     onClick = {},
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    androidx.wear.compose.material3.Text(
+                                    WearText(
                                         text = "3. " + HtmlText(R.string.terminal_tutorial_3, "sh $shName"),
-                                        style = androidx.wear.compose.material3.MaterialTheme.typography.labelMedium
+                                        style = WearMaterialTheme.typography.labelMedium
                                     )
                                 }
                             }

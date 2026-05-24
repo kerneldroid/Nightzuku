@@ -20,10 +20,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
-import androidx.wear.compose.material3.Icon
-import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.Text
-import androidx.wear.compose.material3.SwitchButton
+import androidx.wear.compose.material3.Icon as WearIcon
+import androidx.wear.compose.material3.MaterialTheme as WearMaterialTheme
+import androidx.wear.compose.material3.Text as WearText
+import androidx.wear.compose.material3.SwitchButton as WearSwitchButton
 import moe.shizuku.manager.R
 import moe.shizuku.manager.ui.compose.WearScreenScaffold
 import moe.shizuku.manager.ui.compose.WearScreenTitle
@@ -53,7 +53,7 @@ fun WearApplicationManagementScreen(
 
             if (apps.isEmpty()) {
                 item {
-                    Text(
+                    WearText(
                         text = stringResource(R.string.home_app_management_empty),
                         modifier = Modifier.fillMaxWidth(),
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -62,19 +62,19 @@ fun WearApplicationManagementScreen(
             }
 
             items(apps, key = { it.packageName }) { app ->
-                SwitchButton(
+                WearSwitchButton(
                     checked = app.granted,
                     onCheckedChange = { onToggle(app) },
                     modifier = Modifier.fillMaxWidth(),
                     label = {
-                        Text(
+                        WearText(
                             text = app.label,
                             maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
                     },
                     secondaryLabel = {
-                        Text(
+                        WearText(
                             text = app.packageName,
                             maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis

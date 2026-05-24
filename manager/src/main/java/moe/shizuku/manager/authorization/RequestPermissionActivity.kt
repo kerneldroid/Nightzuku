@@ -15,6 +15,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.wear.compose.material3.AlertDialog as WearAlertDialog
+import androidx.wear.compose.material3.Button as WearButton
+import androidx.wear.compose.material3.FilledTonalButton as WearFilledTonalButton
+import androidx.wear.compose.material3.Icon as WearIcon
+import androidx.wear.compose.material3.Text as WearText
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -130,23 +135,23 @@ class RequestPermissionActivity : AppActivity() {
             val isWatch = moe.shizuku.manager.utils.EnvironmentUtils.isWatch(this@RequestPermissionActivity)
             if (isWatch) {
                 moe.shizuku.manager.ui.compose.WearShizukuTheme {
-                    androidx.wear.compose.material3.AlertDialog(
+                    WearAlertDialog(
                         show = true,
                         onDismissRequest = {
                             setResult(uid, pid, requestCode, allowed = false, onetime = true)
                             finish()
                         },
                         icon = {
-                            androidx.wear.compose.material3.Icon(
+                            WearIcon(
                                 painter = painterResource(R.drawable.ic_system_icon),
                                 contentDescription = null
                             )
                         },
                         title = {
-                            androidx.wear.compose.material3.Text(stringResource(R.string.app_name))
+                            WearText(stringResource(R.string.app_name))
                         },
                         text = {
-                            androidx.wear.compose.material3.Text(
+                            WearText(
                                 text = htmlToPlainText(
                                     getString(
                                         R.string.permission_warning_template,
@@ -157,25 +162,25 @@ class RequestPermissionActivity : AppActivity() {
                             )
                         },
                         confirmButton = {
-                            androidx.wear.compose.material3.Button(
+                            WearButton(
                                 onClick = {
                                     setResult(uid, pid, requestCode, allowed = true, onetime = false)
                                     finish()
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                androidx.wear.compose.material3.Text(stringResource(R.string.grant_dialog_button_allow_always))
+                                WearText(stringResource(R.string.grant_dialog_button_allow_always))
                             }
                         },
                         dismissButton = {
-                            androidx.wear.compose.material3.FilledTonalButton(
+                            WearFilledTonalButton(
                                 onClick = {
                                     setResult(uid, pid, requestCode, allowed = false, onetime = true)
                                     finish()
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                androidx.wear.compose.material3.Text(stringResource(R.string.grant_dialog_button_deny))
+                                WearText(stringResource(R.string.grant_dialog_button_deny))
                             }
                         }
                     )

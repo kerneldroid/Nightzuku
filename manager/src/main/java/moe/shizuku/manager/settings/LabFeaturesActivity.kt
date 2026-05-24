@@ -23,6 +23,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.wear.compose.material3.SwitchButton as WearSwitchButton
+import androidx.wear.compose.material3.Text as WearText
+import androidx.wear.compose.material3.Icon as WearIcon
+import androidx.wear.compose.material3.AlertDialog as WearAlertDialog
+import androidx.wear.compose.material3.Button as WearButton
+import androidx.wear.compose.material3.FilledTonalButton as WearFilledTonalButton
 import moe.shizuku.manager.R
 import moe.shizuku.manager.app.AppActivity
 import moe.shizuku.manager.module.ModuleSettings
@@ -56,7 +62,7 @@ class LabFeaturesActivity : AppActivity() {
                                 )
                             }
                             item {
-                                androidx.wear.compose.material3.SwitchButton(
+                                WearSwitchButton(
                                     checked = connectorEnabled,
                                     onCheckedChange = { enabled ->
                                         if (enabled) {
@@ -68,13 +74,13 @@ class LabFeaturesActivity : AppActivity() {
                                     },
                                     modifier = Modifier.fillMaxWidth(),
                                     label = {
-                                        androidx.wear.compose.material3.Text(text = stringResource(R.string.shizuku_connectors_title))
+                                        WearText(text = stringResource(R.string.shizuku_connectors_title))
                                     },
                                     secondaryLabel = {
-                                        androidx.wear.compose.material3.Text(text = stringResource(R.string.shizuku_connectors_summary))
+                                        WearText(text = stringResource(R.string.shizuku_connectors_summary))
                                     },
                                     icon = {
-                                        androidx.wear.compose.material3.Icon(
+                                        WearIcon(
                                             painter = painterResource(R.drawable.ic_baseline_link_24),
                                             contentDescription = null
                                         )
@@ -85,23 +91,23 @@ class LabFeaturesActivity : AppActivity() {
                     }
 
                     if (showUnsafeDialog) {
-                        androidx.wear.compose.material3.AlertDialog(
+                        WearAlertDialog(
                             show = true,
                             onDismissRequest = { showUnsafeDialog = false },
-                            title = { androidx.wear.compose.material3.Text(stringResource(R.string.unsafe_warning_title)) },
-                            text = { androidx.wear.compose.material3.Text(stringResource(R.string.unsafe_warning_message)) },
+                            title = { WearText(stringResource(R.string.unsafe_warning_title)) },
+                            text = { WearText(stringResource(R.string.unsafe_warning_message)) },
                             confirmButton = {
-                                androidx.wear.compose.material3.Button(onClick = {
+                                WearButton(onClick = {
                                     showUnsafeDialog = false
                                     connectorEnabled = true
                                     ModuleSettings.setConnectorEnabled(true)
                                 }) {
-                                    androidx.wear.compose.material3.Text(stringResource(android.R.string.ok))
+                                    WearText(stringResource(android.R.string.ok))
                                 }
                             },
                             dismissButton = {
-                                androidx.wear.compose.material3.FilledTonalButton(onClick = { showUnsafeDialog = false }) {
-                                    androidx.wear.compose.material3.Text(stringResource(android.R.string.cancel))
+                                WearFilledTonalButton(onClick = { showUnsafeDialog = false }) {
+                                    WearText(stringResource(android.R.string.cancel))
                                 }
                             }
                         )
