@@ -177,6 +177,7 @@
             android:directBootAware="true"
             android:enabled="true"
             android:exported="true"
+            android:permission="moe.shizuku.manager.permission.API_V23"
             tools:ignore="ExportedReceiver">
             <intent-filter>
                 <action android:name="rikka.shizuku.intent.action.REQUEST_BINDER" />
@@ -195,7 +196,8 @@
         <provider
             android:name=".connector.ShizukuConnectorProvider"
             android:authorities="${applicationId}.connector"
-            android:exported="true" />
+            android:exported="true"
+            android:permission="moe.shizuku.manager.permission.API_V23" />
     </application>
 
 </manifest>

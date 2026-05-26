@@ -489,6 +489,11 @@ public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuCl
     @Override
     public boolean onTransact(int code, Parcel data, Parcel reply, int flags) throws RemoteException {
         if (code == ServerConstants.BINDER_TRANSACTION_getApplications) {
+            if (UserHandleCompat.getAppId(Binder.getCallingUid()) != managerAppId
+                    && checkCallingPermission() != PackageManager.PERMISSION_GRANTED) {
+                reply.writeException(new SecurityException("Permission denied"));
+                return true;
+            }
             data.enforceInterface(ShizukuApiConstants.BINDER_DESCRIPTOR);
             int userId = data.readInt();
             ParcelableListSlice<PackageInfo> result = getApplications(userId);

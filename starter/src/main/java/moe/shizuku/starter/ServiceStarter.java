@@ -41,21 +41,23 @@ public class ServiceStarter {
         }
     }
 
-    private static final String USER_SERVICE_CMD_FORMAT = "(CLASSPATH='%s' %s%s /system/bin " +
-            "--nice-name='%s' moe.shizuku.starter.ServiceStarter " +
-            "--token='%s' --package='%s' --class='%s' --uid=%d%s)&";
-
-
-
     @SuppressWarnings("FieldCanBeLocal")
     private static IBinder shizukuBinder;
 
+    private static String escapeShellArg(String arg) {
+        if (arg == null) return "''";
+        return "'" + arg.replace("'", "'\\''") + "'";
+    }
+
     public static String commandForUserService(String appProcess, String managerApkPath, String token, String packageName, String classname, String processNameSuffix, int callingUid, boolean debug) {
         String processName = String.format("%s:%s", packageName, processNameSuffix);
-        return String.format(Locale.ENGLISH, USER_SERVICE_CMD_FORMAT,
-                managerApkPath, appProcess, debug ? (" " + DEBUG_ARGS) : "",
-                processName,
-                token, packageName, classname, callingUid, debug ? (" " + "--debug-name=" + processName) : "");
+        return String.format(Locale.ENGLISH, "(CLASSPATH=%s %s%s /system/bin " +
+                        "--nice-name=%s moe.shizuku.starter.ServiceStarter " +
+                        "--token=%s --package=%s --class=%s --uid=%d%s)&",
+                escapeShellArg(managerApkPath), appProcess, debug ? (" " + DEBUG_ARGS) : "",
+                escapeShellArg(processName),
+                escapeShellArg(token), escapeShellArg(packageName), escapeShellArg(classname), callingUid, 
+                debug ? (" " + "--debug-name=" + escapeShellArg(processName)) : "");
     }
 
     public static void main(String[] args) {
