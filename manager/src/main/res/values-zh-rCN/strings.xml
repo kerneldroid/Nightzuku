@@ -1,0 +1,29 @@
+<resources>
+    <!-- Home - Status -->
+    <string name="home_status_service_is_running">Nightzuku 正在运行</string>
+    <string name="home_status_service_not_running">Nightzuku 未运行</string>
+
+    <!-- Application management -->
+    <string name="home_app_management_title">应用管理</string>
+    <plurals name="home_app_management_authorized_apps_count">
+        <item quantity="other">已授权 %d 个应用</item>
+    </plurals>
+
+    <!-- Terminal -->
+    <string name="home_terminal_title">在终端中使用 Nightzuku</string>
+
+    <!-- Settings -->
+    <string name="settings_title">设置</string>
+    <string name="settings_language">语言</string>
+    <string name="settings_user_interface">外观</string>
+    <string name="settings_startup">启动</string>
+    <string name="settings_start_on_boot">开机自启动 (Root)</string>
+    <string name="settings_start_on_boot_summary">对于已 Root 的设备，Nightzuku 可以在开机时自动启动</string>
+
+    <!-- ADB -->
+    <string name="development_settings">开发者选项</string>
+    <string name="dialog_adb_discovery_message">请在“开发者选项”中启用“无线调试”。</string>
+
+    <!-- Lab Features -->
+    <string name="lab_features_title">实验室功能</string>
+</resources>
