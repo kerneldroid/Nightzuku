@@ -2,6 +2,7 @@
     androidx.compose.foundation.ExperimentalFoundationApi::class,
     androidx.compose.foundation.layout.ExperimentalLayoutApi::class,
     androidx.compose.material3.ExperimentalMaterial3Api::class,
+    androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class,
     androidx.tv.material3.ExperimentalTvMaterial3Api::class
 )
 
@@ -200,7 +201,7 @@ class ModulesActivity : AppActivity() {
 
                 output?.let { (title, text) ->
                     WearAlertDialog(
-                        show = true,
+                        visible = true,
                         onDismissRequest = { output = null },
                         title = { WearText(title) },
                         text = {
@@ -220,7 +221,7 @@ class ModulesActivity : AppActivity() {
 
                 deleteTarget?.let { module ->
                     WearAlertDialog(
-                        show = true,
+                        visible = true,
                         onDismissRequest = { deleteTarget = null },
                         title = { WearText(stringResource(R.string.modules_delete_title)) },
                         text = { WearText(stringResource(R.string.modules_delete_message, module.name)) },

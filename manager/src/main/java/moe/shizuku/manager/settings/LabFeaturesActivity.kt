@@ -92,7 +92,7 @@ class LabFeaturesActivity : AppActivity() {
 
                     if (showUnsafeDialog) {
                         WearAlertDialog(
-                            show = true,
+                            visible = true,
                             onDismissRequest = { showUnsafeDialog = false },
                             title = { WearText(stringResource(R.string.unsafe_warning_title)) },
                             text = { WearText(stringResource(R.string.unsafe_warning_message)) },

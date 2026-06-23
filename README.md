@@ -24,6 +24,7 @@ Upstream project reference: <https://github.com/RikkaApps/Shizuku>
 - [Nightzuku Connectors API](docs/nightzuku-connectors.md)
 - [Android 17 Compatibility](docs/android-17-compatibility.md)
 - [Wear OS Compatibility](docs/wearos-compatibility.md)
+- [Wear OS Pairing Guide](docs/wearos-pairing.md)
 - [Android TV Support](docs/android-tv-support.md)
 
 ## Background

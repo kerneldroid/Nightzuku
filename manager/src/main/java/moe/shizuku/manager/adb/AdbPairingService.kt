@@ -34,6 +34,7 @@ class AdbPairingService : Service() {
         private const val stopAction = "stop"
         private const val replyAction = "reply"
         private const val remoteInputResultKey = "paring_code"
+        private const val hostKey = "paring_host"
         private const val portKey = "paring_code"
 
         fun startIntent(context: Context): Intent {
@@ -44,20 +45,22 @@ class AdbPairingService : Service() {
             return Intent(context, AdbPairingService::class.java).setAction(stopAction)
         }
 
-        private fun replyIntent(context: Context, port: Int): Intent {
-            return Intent(context, AdbPairingService::class.java).setAction(replyAction).putExtra(portKey, port)
+        private fun replyIntent(context: Context, host: String, port: Int): Intent {
+            return Intent(context, AdbPairingService::class.java)
+                .setAction(replyAction)
+                .putExtra(hostKey, host)
+                .putExtra(portKey, port)
         }
     }
 
     private var adbMdns: AdbMdns? = null
 
-    private val observer = Observer<Int> { port ->
-        Log.i(tag, "Pairing service port: $port")
+    private val observer = Observer<Pair<String, Int>> { pair ->
+        val (host, port) = pair
+        Log.i(tag, "Pairing service host: $host, port: $port")
         if (port <= 0) return@Observer
 
-
-
-        val notification = createInputNotification(port)
+        val notification = createInputNotification(host, port)
 
         getSystemService(NotificationManager::class.java).notify(notificationId, notification)
     }
@@ -86,9 +89,10 @@ class AdbPairingService : Service() {
             }
             replyAction -> {
                 val code = RemoteInput.getResultsFromIntent(intent)?.getCharSequence(remoteInputResultKey) ?: ""
+                val host = intent.getStringExtra(hostKey) ?: ""
                 val port = intent.getIntExtra(portKey, -1)
                 if (port != -1) {
-                    onInput(code.toString(), port)
+                    onInput(code.toString(), host, port)
                 } else {
                     onStart()
                 }
@@ -140,10 +144,8 @@ class AdbPairingService : Service() {
         return searchingNotification
     }
 
-    private fun onInput(code: String, port: Int): Notification {
+    private fun onInput(code: String, host: String, port: Int): Notification {
         GlobalScope.launch(Dispatchers.IO) {
-            val host = "127.0.0.1"
-
             val key = try {
                 AdbKey(PreferenceAdbKeyStore(ShizukuSettings.getPreferences()), "shizuku")
             } catch (e: Throwable) {
@@ -265,7 +267,7 @@ class AdbPairingService : Service() {
         val pendingIntent = PendingIntent.getForegroundService(
             this,
             replyRequestId,
-            replyIntent(this, -1),
+            replyIntent(this, "", -1),
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
                 PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             else
@@ -281,14 +283,14 @@ class AdbPairingService : Service() {
             .build()
     }
 
-    private fun replyNotificationAction(port: Int): Notification.Action {
+    private fun replyNotificationAction(host: String, port: Int): Notification.Action {
 
         val action = replyNotificationAction
 
         PendingIntent.getForegroundService(
             this,
             replyRequestId,
-            replyIntent(this, port),
+            replyIntent(this, host, port),
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
                 PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             else
@@ -307,12 +309,12 @@ class AdbPairingService : Service() {
             .build()
     }
 
-    private fun createInputNotification(port: Int): Notification {
+    private fun createInputNotification(host: String, port: Int): Notification {
         return Notification.Builder(this, notificationChannel)
             .setColor(getColor(R.color.notification))
             .setContentTitle(getString(R.string.notification_adb_pairing_service_found_title))
             .setSmallIcon(R.drawable.ic_system_icon)
-            .addAction(replyNotificationAction(port))
+            .addAction(replyNotificationAction(host, port))
             .build()
     }
 

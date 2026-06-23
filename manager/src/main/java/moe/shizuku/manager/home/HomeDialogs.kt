@@ -1,6 +1,5 @@
 @file:OptIn(
     androidx.compose.material3.ExperimentalMaterial3Api::class,
-    androidx.wear.compose.material3.ExperimentalWearMaterial3Api::class,
     androidx.tv.material3.ExperimentalTvMaterial3Api::class
 )
 
@@ -45,7 +44,6 @@ import androidx.wear.compose.material3.Button as WearButton
 import androidx.wear.compose.material3.FilledTonalButton as WearFilledTonalButton
 import androidx.wear.compose.material3.MaterialTheme as WearMaterialTheme
 import androidx.wear.compose.material3.Text as WearText
-import androidx.wear.compose.material3.ExperimentalWearMaterial3Api
 import androidx.tv.material3.MaterialTheme as TvMaterialTheme
 import androidx.tv.material3.Text as TvText
 import androidx.tv.material3.Button as TvButton
@@ -79,7 +77,7 @@ fun HomeAboutDialog(
     if (isWatch) {
         moe.shizuku.manager.ui.compose.WearShizukuTheme {
             WearAlertDialog(
-                show = true,
+                visible = true,
                 onDismissRequest = onDismiss,
                 title = { WearText(stringResource(R.string.app_name)) },
                 text = { WearText(versionName ?: "") }
@@ -147,7 +145,7 @@ fun HomeStopDialog(
     if (isWatch) {
         moe.shizuku.manager.ui.compose.WearShizukuTheme {
             WearAlertDialog(
-                show = true,
+                visible = true,
                 onDismissRequest = onDismiss,
                 title = { WearText(stringResource(R.string.action_stop)) },
                 text = { WearText(stringResource(R.string.dialog_stop_message)) }
@@ -217,7 +215,7 @@ fun HomeAdbCommandDialog(
     if (isWatch) {
         moe.shizuku.manager.ui.compose.WearShizukuTheme {
             WearAlertDialog(
-                show = true,
+                visible = true,
                 onDismissRequest = onDismiss,
                 title = { WearText(stringResource(R.string.home_adb_button_view_command)) },
                 text = {
@@ -301,11 +299,11 @@ fun HomeAdbCommandDialog(
 @Composable
 fun HomeAdbDiscoveryDialog(
     onDismiss: () -> Unit,
-    onStart: (Int) -> Unit
+    onStart: (String, Int) -> Unit
 ) {
     val context = LocalContext.current
     val isWatch = EnvironmentUtils.isWatch(context)
-    val portState = remember { mutableIntStateOf(-1) }
+    val serviceState = remember { mutableStateOf<Pair<String, Int>?>(null) }
 
     val openDevSettings = {
         val intent = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
@@ -316,7 +314,7 @@ fun HomeAdbDiscoveryDialog(
 
     DisposableEffect(Unit) {
         val adbMdns = AdbMdns(context, AdbMdns.TLS_CONNECT) {
-            portState.intValue = it
+            serviceState.value = it
         }
         adbMdns.start()
 
@@ -332,14 +330,15 @@ fun HomeAdbDiscoveryDialog(
         }
     }
 
-    val currentPort = portState.intValue
+    val currentPort = serviceState.value?.second ?: -1
+    val currentHost = serviceState.value?.first ?: ""
     val manualPort = remember { EnvironmentUtils.getAdbTcpPort() }
     val isTv = EnvironmentUtils.isTV(context)
 
     if (isWatch) {
         moe.shizuku.manager.ui.compose.WearShizukuTheme {
             WearAlertDialog(
-                show = true,
+                visible = true,
                 onDismissRequest = onDismiss,
                 title = { WearText(stringResource(R.string.dialog_adb_discovery)) },
                 text = {
@@ -353,13 +352,13 @@ fun HomeAdbDiscoveryDialog(
             ) {
                 if (currentPort in 1..65535) {
                     item {
-                        WearButton(onClick = { onStart(currentPort) }, modifier = Modifier.fillMaxWidth()) {
+                        WearButton(onClick = { onStart(currentHost, currentPort) }, modifier = Modifier.fillMaxWidth()) {
                             WearText("Start ($currentPort)")
                         }
                     }
                 } else if (manualPort != -1) {
                     item {
-                        WearButton(onClick = { onStart(manualPort) }, modifier = Modifier.fillMaxWidth()) {
+                        WearButton(onClick = { onStart("127.0.0.1", manualPort) }, modifier = Modifier.fillMaxWidth()) {
                             WearText("Start ($manualPort)")
                         }
                     }
@@ -396,11 +395,11 @@ fun HomeAdbDiscoveryDialog(
                 confirmButton = {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (currentPort in 1..65535) {
-                            TvButton(onClick = { onStart(currentPort) }) {
+                            TvButton(onClick = { onStart(currentHost, currentPort) }) {
                                 TvText("Start ($currentPort)")
                             }
                         } else if (manualPort != -1) {
-                            TvButton(onClick = { onStart(manualPort) }) {
+                            TvButton(onClick = { onStart("127.0.0.1", manualPort) }) {
                                 TvText("Start ($manualPort)")
                             }
                         }
@@ -434,7 +433,7 @@ fun HomeAdbDiscoveryDialog(
             confirmButton = {
                 Row {
                     if (manualPort != -1) {
-                        TextButton(onClick = { onStart(manualPort) }) {
+                        TextButton(onClick = { onStart("127.0.0.1", manualPort) }) {
                             Text(manualPort.toString())
                         }
                     }
@@ -453,7 +452,7 @@ fun HomeAdbDiscoveryDialog(
 
     LaunchedEffect(currentPort) {
         if (currentPort in 1..65535) {
-            onStart(currentPort)
+            onStart(currentHost, currentPort)
         }
     }
 }
@@ -467,7 +466,7 @@ fun HomeWadbNotEnabledDialog(onDismiss: () -> Unit) {
     if (isWatch) {
         moe.shizuku.manager.ui.compose.WearShizukuTheme {
             WearAlertDialog(
-                show = true,
+                visible = true,
                 onDismissRequest = onDismiss,
                 title = { WearText(stringResource(R.string.dialog_wireless_adb_not_enabled)) },
                 text = { }
@@ -521,15 +520,17 @@ fun HomeAdbPairDialog(onDismiss: () -> Unit) {
     val isTv = EnvironmentUtils.isTV(context)
 
     val result = remember { MutableLiveData<PairingStatus>(PairingStatus.Idle) }
-    val port = remember { MutableLiveData<Int>() }
+    val serviceInfo = remember { MutableLiveData<Pair<String, Int>>() }
 
     DisposableEffect(Unit) {
-        val adbMdns = AdbMdns(context, AdbMdns.TLS_PAIRING) { port.postValue(it) }
+        val adbMdns = AdbMdns(context, AdbMdns.TLS_PAIRING) { serviceInfo.postValue(it) }
         adbMdns.start()
         onDispose { adbMdns.stop() }
     }
 
-    val discoveredPort by port.observeAsState(-1)
+    val discoveredService by serviceInfo.observeAsState()
+    val discoveredPort = discoveredService?.second ?: -1
+    val discoveredHost = discoveredService?.first ?: ""
     val pairStatus by result.observeAsState(PairingStatus.Idle)
 
     var portText by remember { mutableStateOf("") }
@@ -569,7 +570,8 @@ fun HomeAdbPairDialog(onDismiss: () -> Unit) {
             scope.launch(Dispatchers.IO) {
                 try {
                     val key = AdbKey(PreferenceAdbKeyStore(prefs), "shizuku")
-                    AdbPairingClient("127.0.0.1", p, pairingCode, key).runCatching { start() }
+                    val host = if (p == discoveredPort && discoveredHost.isNotEmpty()) discoveredHost else "127.0.0.1"
+                    AdbPairingClient(host, p, pairingCode, key).runCatching { start() }
                         .onSuccess {
                             if (it) result.postValue(PairingStatus.Success)
                             else result.postValue(PairingStatus.Error(Exception("Pairing failed")))
@@ -585,7 +587,7 @@ fun HomeAdbPairDialog(onDismiss: () -> Unit) {
     if (isWatch) {
         moe.shizuku.manager.ui.compose.WearShizukuTheme {
             WearAlertDialog(
-                show = true,
+                visible = true,
                 onDismissRequest = onDismiss,
                 title = { WearText(stringResource(R.string.dialog_adb_pairing_title)) },
                 text = {
@@ -718,7 +720,7 @@ fun HomeAdbLimitedDialog(onDismiss: () -> Unit) {
     if (isWatch) {
         moe.shizuku.manager.ui.compose.WearShizukuTheme {
             WearAlertDialog(
-                show = true,
+                visible = true,
                 onDismissRequest = onDismiss,
                 title = { WearText(stringResource(R.string.app_management_dialog_adb_is_limited_title)) },
                 text = { WearText(message) }
@@ -768,7 +770,7 @@ fun HomeErrorDialog(message: String, onDismiss: () -> Unit) {
     if (isWatch) {
         moe.shizuku.manager.ui.compose.WearShizukuTheme {
             WearAlertDialog(
-                show = true,
+                visible = true,
                 onDismissRequest = onDismiss,
                 title = { WearText(stringResource(R.string.starter)) },
                 text = { WearText(message) }

@@ -66,12 +66,12 @@ class BootCompleteReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             val latch = CountDownLatch(1)
-            val adbMdns = AdbMdns(context, AdbMdns.TLS_CONNECT) { port ->
+            val adbMdns = AdbMdns(context, AdbMdns.TLS_CONNECT) { (host, port) ->
                 if (port <= 0) return@AdbMdns
                 try {
                     val keystore = PreferenceAdbKeyStore(ShizukuSettings.getPreferences())
                     val key = AdbKey(keystore, "shizuku")
-                    val client = AdbClient("127.0.0.1", port, key)
+                    val client = AdbClient(host, port, key)
                     client.connect()
                     client.shellCommand(Starter.internalCommand, null)
                     client.close()
