@@ -258,8 +258,8 @@ abstract class HomeActivity : AppActivity() {
                     if (showAdbDiscoveryDialog) {
                         HomeAdbDiscoveryDialog(
                             onDismiss = { showAdbDiscoveryDialog = false },
-                            onStart = { port ->
-                                startAndDismiss(port)
+                            onStart = { host, port ->
+                                startAndDismiss(host, port)
                                 showAdbDiscoveryDialog = false
                             }
                         )
@@ -284,8 +284,7 @@ abstract class HomeActivity : AppActivity() {
         Shizuku.addBinderDeadListener(binderDeadListener)
     }
 
-    private fun startAndDismiss(port: Int) {
-        val host = "127.0.0.1"
+    private fun startAndDismiss(host: String, port: Int) {
         val intent = Intent(this, StarterActivity::class.java).apply {
             putExtra(StarterActivity.EXTRA_IS_ROOT, false)
             putExtra(StarterActivity.EXTRA_HOST, host)

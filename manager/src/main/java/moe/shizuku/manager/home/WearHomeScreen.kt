@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
@@ -143,6 +144,20 @@ internal fun WearHomeScreen(
                                 WearIcon(Icons.Rounded.Usb, contentDescription = null, modifier = Modifier.size(24.dp))
                                 Spacer(Modifier.width(8.dp))
                                 WearText(text = stringResource(R.string.home_wireless_adb_title))
+                            }
+                        }
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        item {
+                            WearButton(
+                                onClick = onPairWirelessAdb,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    WearIcon(Icons.Rounded.Link, contentDescription = null, modifier = Modifier.size(24.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    WearText(text = stringResource(R.string.adb_pairing))
+                                }
                             }
                         }
                     }

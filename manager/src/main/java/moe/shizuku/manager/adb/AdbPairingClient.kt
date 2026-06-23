@@ -27,17 +27,17 @@ private const val kPairingPacketHeaderSize = 6
 
 private class PeerInfo(
         val type: Byte,
-        data: ByteArray) {
+        dataBytes: ByteArray) {
 
     val data = ByteArray(kMaxPeerInfoSize - 1)
 
     init {
-        data.copyInto(this.data, 0, 0, data.size.coerceAtMost(kMaxPeerInfoSize - 1))
+        dataBytes.copyInto(this.data, 0, 0, dataBytes.size.coerceAtMost(kMaxPeerInfoSize - 1))
     }
 
     enum class Type(val value: Byte) {
         ADB_RSA_PUB_KEY(0.toByte()),
-        ADB_DEVICE_GUID(0.toByte()),
+        ADB_DEVICE_GUID(1.toByte()),
     }
 
     fun writeTo(buffer: ByteBuffer) {

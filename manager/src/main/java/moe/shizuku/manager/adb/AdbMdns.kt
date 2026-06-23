@@ -15,7 +15,7 @@ import java.net.ServerSocket
 @RequiresApi(Build.VERSION_CODES.R)
 class AdbMdns(
     context: Context, private val serviceType: String,
-    private val observer: Observer<Int>
+    private val observer: Observer<Pair<String, Int>>
 ) {
 
     private var registered = false
@@ -53,27 +53,28 @@ class AdbMdns(
     }
 
     private fun onServiceLost(info: NsdServiceInfo) {
-        if (info.serviceName == serviceName) observer.onChanged(-1)
+        if (info.serviceName == serviceName) observer.onChanged("" to -1)
     }
 
     private fun onServiceResolved(resolvedService: NsdServiceInfo) {
+        val host = resolvedService.host?.hostAddress ?: return
         if (running && NetworkInterface.getNetworkInterfaces()
                 .asSequence()
                 .any { networkInterface ->
                     networkInterface.inetAddresses
                         .asSequence()
-                        .any { resolvedService.host.hostAddress == it.hostAddress }
+                        .any { host == it.hostAddress }
                 }
-            && isPortAvailable(resolvedService.port)
+            && isPortAvailable(host, resolvedService.port)
         ) {
             serviceName = resolvedService.serviceName
-            observer.onChanged(resolvedService.port)
+            observer.onChanged(host to resolvedService.port)
         }
     }
 
-    private fun isPortAvailable(port: Int) = try {
+    private fun isPortAvailable(host: String, port: Int) = try {
         ServerSocket().use {
-            it.bind(InetSocketAddress("127.0.0.1", port), 1)
+            it.bind(InetSocketAddress(host, port), 1)
             false
         }
     } catch (e: IOException) {

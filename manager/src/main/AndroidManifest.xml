@@ -4,6 +4,8 @@
 
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.USE_LOOPBACK_INTERFACE" />
     <uses-permission
@@ -157,7 +159,7 @@
             android:name=".adb.AdbPairingService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="shortService" />
+            android:foregroundServiceType="connectedDevice" />
 
         <receiver
             android:name=".receiver.BootCompleteReceiver"

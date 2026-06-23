@@ -136,7 +136,7 @@ class RequestPermissionActivity : AppActivity() {
             if (isWatch) {
                 moe.shizuku.manager.ui.compose.WearShizukuTheme {
                     WearAlertDialog(
-                        show = true,
+                        visible = true,
                         onDismissRequest = {
                             setResult(uid, pid, requestCode, allowed = false, onetime = true)
                             finish()
