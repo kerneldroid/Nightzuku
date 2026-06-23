@@ -321,6 +321,30 @@ fun WearScreenTitle(
 }
 
 @Composable
+fun WearScreenTitle(
+    @androidx.annotation.DrawableRes icon: Int,
+    title: String
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(bottom = 8.dp)
+    ) {
+        WearIcon(
+            painter = painterResource(icon),
+            contentDescription = null,
+            modifier = Modifier.size(24.dp),
+            tint = WearMaterialTheme.colorScheme.primary
+        )
+        Spacer(Modifier.width(8.dp))
+        WearText(
+            text = title,
+            style = WearMaterialTheme.typography.titleMedium,
+            color = WearMaterialTheme.colorScheme.primary
+        )
+    }
+}
+
+@Composable
 fun ShizukuScaffold(
     title: String,
     modifier: Modifier = Modifier,

@@ -27,6 +27,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
+import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Button as WearButton
 import androidx.wear.compose.material3.Card as WearCard
 import androidx.wear.compose.material3.Icon as WearIcon
@@ -67,6 +70,7 @@ internal fun WearHomeScreen(
     val status = serviceResource?.data ?: ServiceStatus()
     val running = status.isRunning
     val canUseWirelessAdb = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R || EnvironmentUtils.getAdbTcpPort() > 0
+    val transformationSpec = rememberTransformationSpec()
 
     WearScreenScaffold { state ->
         TransformingLazyColumn(
@@ -76,13 +80,16 @@ internal fun WearHomeScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             item {
-                WearScreenTitle(icon = Icons.Rounded.PlayArrow, title = stringResource(R.string.app_name))
+                WearScreenTitle(icon = R.drawable.ic_system_icon, title = stringResource(R.string.app_name))
             }
 
             item {
                 WearCard(
                     onClick = {},
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec)
                 ) {
                     Column {
                         WearText(
@@ -98,7 +105,10 @@ internal fun WearHomeScreen(
                 item {
                     WearButton(
                         onClick = onManageApps,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec),
+                        transformation = SurfaceTransformation(transformationSpec)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             WearIcon(Icons.Rounded.Apps, contentDescription = null, modifier = Modifier.size(24.dp))
@@ -110,7 +120,10 @@ internal fun WearHomeScreen(
                 item {
                     WearButton(
                         onClick = onModules,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec),
+                        transformation = SurfaceTransformation(transformationSpec)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             WearIcon(Icons.Rounded.Extension, contentDescription = null, modifier = Modifier.size(24.dp))
@@ -124,7 +137,10 @@ internal fun WearHomeScreen(
                     item {
                         WearButton(
                             onClick = onStartRoot,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .transformedHeight(this, transformationSpec),
+                            transformation = SurfaceTransformation(transformationSpec)
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 WearIcon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(24.dp))
@@ -138,7 +154,10 @@ internal fun WearHomeScreen(
                     item {
                         WearButton(
                             onClick = onStartWirelessAdb,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .transformedHeight(this, transformationSpec),
+                            transformation = SurfaceTransformation(transformationSpec)
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 WearIcon(Icons.Rounded.Usb, contentDescription = null, modifier = Modifier.size(24.dp))
@@ -151,7 +170,10 @@ internal fun WearHomeScreen(
                         item {
                             WearButton(
                                 onClick = onPairWirelessAdb,
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .transformedHeight(this, transformationSpec),
+                                transformation = SurfaceTransformation(transformationSpec)
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     WearIcon(Icons.Rounded.Link, contentDescription = null, modifier = Modifier.size(24.dp))
@@ -167,7 +189,10 @@ internal fun WearHomeScreen(
             item {
                 WearButton(
                     onClick = onSettings,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         WearIcon(Icons.Rounded.Settings, contentDescription = null, modifier = Modifier.size(24.dp))
@@ -180,7 +205,10 @@ internal fun WearHomeScreen(
             item {
                 WearButton(
                     onClick = onRefresh,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         WearIcon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(24.dp))
@@ -193,7 +221,10 @@ internal fun WearHomeScreen(
             item {
                 WearButton(
                     onClick = onAbout,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         WearIcon(Icons.Rounded.Info, contentDescription = null, modifier = Modifier.size(24.dp))
@@ -207,7 +238,10 @@ internal fun WearHomeScreen(
                 item {
                     WearButton(
                         onClick = onStop,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec),
+                        transformation = SurfaceTransformation(transformationSpec)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             WearIcon(Icons.Rounded.Stop, contentDescription = null, modifier = Modifier.size(24.dp))

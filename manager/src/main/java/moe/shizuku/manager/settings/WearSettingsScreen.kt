@@ -19,6 +19,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
+import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Icon as WearIcon
 import androidx.wear.compose.material3.SwitchButton as WearSwitchButton
 import androidx.wear.compose.material3.Text as WearText
@@ -58,6 +61,8 @@ fun WearSettingsScreen(
     val customPermissionsTitle = stringResource(R.string.modules_custom_permissions)
     val labFeaturesTitle = stringResource(R.string.lab_features_title)
 
+    val transformationSpec = rememberTransformationSpec()
+
     WearScreenScaffold { state ->
         TransformingLazyColumn(
             state = state,
@@ -73,7 +78,10 @@ fun WearSettingsScreen(
                 WearSwitchButton(
                     checked = startOnBoot,
                     onCheckedChange = onStartOnBootChange,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
                     label = { WearText(startOnBootTitle) },
                     icon = { WearIcon(Icons.Rounded.RestartAlt, contentDescription = null) }
                 )
@@ -82,7 +90,10 @@ fun WearSettingsScreen(
             item {
                 WearTitleCard(
                     onClick = onNightModeClick,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
                     title = { WearText(nightModeTitle) },
                     subtitle = { WearText(nightModeSummary) }
                 )
@@ -92,7 +103,10 @@ fun WearSettingsScreen(
                 WearSwitchButton(
                     checked = blackNightTheme,
                     onCheckedChange = onBlackNightThemeChange,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
                     label = { WearText(blackThemeTitle) },
                     icon = { WearIcon(Icons.Rounded.DarkMode, contentDescription = null) }
                 )
@@ -102,7 +116,10 @@ fun WearSettingsScreen(
                 WearSwitchButton(
                     checked = useSystemColor,
                     onCheckedChange = onUseSystemColorChange,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
                     label = { WearText(systemColorTitle) },
                     icon = { WearIcon(Icons.Rounded.Palette, contentDescription = null) }
                 )
@@ -111,7 +128,10 @@ fun WearSettingsScreen(
             item {
                 WearTitleCard(
                     onClick = onModuleAccessModeClick,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
                     title = { WearText(accessModeTitle) },
                     subtitle = { WearText(accessModeSummary) }
                 )
@@ -121,7 +141,10 @@ fun WearSettingsScreen(
                 item {
                     WearTitleCard(
                         onClick = onCustomPermissionsClick,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec),
+                        transformation = SurfaceTransformation(transformationSpec),
                         title = { WearText(customPermissionsTitle) }
                     )
                 }
@@ -130,7 +153,10 @@ fun WearSettingsScreen(
             item {
                 WearTitleCard(
                     onClick = onLabFeaturesClick,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
                     title = { WearText(labFeaturesTitle) }
                 )
             }

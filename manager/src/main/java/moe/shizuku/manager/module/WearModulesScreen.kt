@@ -35,6 +35,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
+import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.material3.Button as WearButton
 import androidx.wear.compose.material3.ButtonDefaults as WearButtonDefaults
@@ -63,6 +66,8 @@ fun WearModulesScreen(
     onTrustChange: (AdbModule, Boolean) -> Unit,
     onInstallZip: () -> Unit
 ) {
+    val transformationSpec = rememberTransformationSpec()
+
     WearScreenScaffold { state ->
         TransformingLazyColumn(
             state = state,
@@ -77,7 +82,10 @@ fun WearModulesScreen(
             item {
                 WearButton(
                     onClick = onInstallZip,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
                     colors = WearButtonDefaults.filledTonalButtonColors()
                 ) {
                     Row(
@@ -145,7 +153,9 @@ fun WearModulesScreen(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
                         .animateContentSize(),
+                    transformation = SurfaceTransformation(transformationSpec),
                     colors = WearCardDefaults.cardColors(
                         containerColor = containerColor,
                         contentColor = contentColor
