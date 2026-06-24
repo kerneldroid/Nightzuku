@@ -67,14 +67,56 @@ public class ShizukuShellLoader {
             am = ActivityManagerNative.asInterface(amBinder);
         }
 
-
-
-
-
-
         try {
-            am.broadcastIntent(null, intent, null, null, 0, null, null,
-                    null, -1, null, true, false, 0);
+            if (Build.VERSION.SDK_INT >= 36) {
+                // Android 16 blocks broadcast delivery from app_process to receivers
+                // in other apps, even with setPackage. broadcastIntentWithFeature returns 0
+                // (accepted) but onReceive() is never called. Use startActivity instead —
+                // ShellRequestHandlerActivity handles the same binder exchange.
+                Intent activityIntent = new Intent("rikka.shizuku.intent.action.REQUEST_BINDER")
+                        .setPackage(BuildConfig.MANAGER_APPLICATION_ID)
+                        .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        .putExtra("data", data);
+                am.startActivityAsUser(null, callingPackage, activityIntent, null, null, null, 0, 0, null, null, Os.getuid() / 100000);
+            } else if (Build.VERSION.SDK_INT >= 30) {
+                // Android 11-15: broadcastIntentWithFeature via reflection.
+                // The old broadcastIntent AIDL transaction code no longer exists.
+                // Use dynamic lookup since the signature keeps changing across SDK versions.
+                java.lang.reflect.Method method = findBroadcastMethod(am);
+                if (method == null) {
+                    throw new RuntimeException("Cannot find broadcastIntentWithFeature on " + am.getClass());
+                }
+                Class<?>[] paramTypes = method.getParameterTypes();
+                Object[] args = new Object[paramTypes.length];
+                // Fill known prefix: (IApplicationThread caller, String callingFeatureId, Intent intent)
+                args[0] = null; // caller
+                args[1] = null; // callingFeatureId
+                args[2] = intent;
+                int intIndex = 0;
+                int booleanIndex = 0;
+                for (int i = 3; i < paramTypes.length; i++) {
+                    Class<?> t = paramTypes[i];
+                    if (t == boolean.class) {
+                        args[i] = booleanIndex++ == 0; // serialized=true, sticky=false
+                    } else if (t == int.class) {
+                        args[i] = isAppOpParameter(paramTypes, i, intIndex) ? -1 : 0;
+                        intIndex++;
+                    } else if (t == long.class) {
+                        args[i] = 0L;
+                    } else {
+                        args[i] = null;
+                    }
+                }
+                try {
+                    method.invoke(am, args);
+                } catch (ReflectiveOperationException e) {
+                    throw new RuntimeException("broadcastIntentWithFeature invocation failed", e);
+                }
+            } else {
+                am.broadcastIntent(null, intent, null, null, 0, null, null,
+                        null, -1, null, true, false, 0);
+            }
         } catch (Throwable e) {
             if ((Build.VERSION.SDK_INT != Build.VERSION_CODES.O && Build.VERSION.SDK_INT != Build.VERSION_CODES.O_MR1)
                     || !Objects.equals(e.getMessage(), "Calling application did not provide package name")) {
@@ -168,5 +210,32 @@ public class ShizukuShellLoader {
         System.err.println(message);
         System.err.flush();
         System.exit(1);
+    }
+
+    /**
+     * Dynamically find broadcastIntentWithFeature on IActivityManager.
+     * The signature changes across Android versions (extra params added in 12, 14, 16, 17).
+     * Matches by method name and picks the overload with most parameters.
+     */
+    private static java.lang.reflect.Method findBroadcastMethod(Object am) {
+        java.lang.reflect.Method best = null;
+        for (java.lang.reflect.Method m : am.getClass().getMethods()) {
+            if ("broadcastIntentWithFeature".equals(m.getName())) {
+                if (best == null || m.getParameterTypes().length > best.getParameterTypes().length) {
+                    best = m;
+                }
+            }
+        }
+        return best;
+    }
+
+    private static boolean isAppOpParameter(Class<?>[] paramTypes, int index, int intIndex) {
+        // broadcastIntentWithFeature keeps the old broadcastIntent argument order:
+        // resultCode=0, appOp=-1, userId=0. On recent Android releases appOp is
+        // the int directly followed by the options Bundle.
+        if (index + 1 < paramTypes.length && paramTypes[index + 1] == Bundle.class) {
+            return true;
+        }
+        return intIndex == 1 && index + 1 < paramTypes.length && paramTypes[index + 1] != String.class;
     }
 }
