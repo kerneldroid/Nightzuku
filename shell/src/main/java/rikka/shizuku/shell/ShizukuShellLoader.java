@@ -18,6 +18,7 @@ import android.text.TextUtils;
 import java.io.File;
 import java.util.Objects;
 
+import rikka.shizuku.shell.BuildConfig;
 import dalvik.system.BaseDexClassLoader;
 import rikka.hidden.compat.PackageManagerApis;
 import stub.dalvik.system.VMRuntimeHidden;
@@ -54,7 +55,7 @@ public class ShizukuShellLoader {
         data.putBinder("binder", receiverBinder);
 
         Intent intent = new Intent("rikka.shizuku.intent.action.REQUEST_BINDER")
-                .setPackage("moe.shizuku.privileged.api")
+                .setPackage(BuildConfig.MANAGER_APPLICATION_ID)
                 .addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
                 .putExtra("data", data);
 
