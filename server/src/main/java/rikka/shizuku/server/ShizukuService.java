@@ -55,6 +55,7 @@ import rikka.shizuku.server.api.IContentProviderUtils;
 import rikka.shizuku.server.util.Android17Compat;
 import rikka.shizuku.server.util.HandlerUtil;
 import rikka.shizuku.server.util.UserHandleCompat;
+import rikka.shizuku.common.util.InstalledPackagesCompat;
 
 public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuClientManager, ShizukuConfigManager> {
 
@@ -65,49 +66,6 @@ public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuCl
         Looper.prepareMainLooper();
         new ShizukuService();
         Looper.loop();
-    }
-
-    private static void runCompatTest() {
-        Log.i("ShizukuCompatTest", "Starting hardcore compatibility test...");
-        int userId = 0;
-        String pkg = MANAGER_APPLICATION_ID;
-        String perm = android.Manifest.permission.WRITE_SECURE_SETTINGS;
-
-        try {
-            Log.i("ShizukuCompatTest", "1. Testing getInstalledPackages...");
-            List<PackageInfo> pkgs = Android17Compat.getInstalledPackages(0, userId);
-            Log.i("ShizukuCompatTest", "   Found " + pkgs.size() + " packages.");
-
-            Log.i("ShizukuCompatTest", "2. Testing getPackageInfo...");
-            PackageInfo pi = Android17Compat.getPackageInfo(pkg, 0, userId);
-            Log.i("ShizukuCompatTest", "   Result: " + (pi != null ? "SUCCESS" : "FAIL"));
-
-            Log.i("ShizukuCompatTest", "3. Testing getApplicationInfo...");
-            ApplicationInfo ai = Android17Compat.getApplicationInfo(pkg, 0, userId);
-            Log.i("ShizukuCompatTest", "   Result: " + (ai != null ? "SUCCESS" : "FAIL"));
-
-            Log.i("ShizukuCompatTest", "4. Testing checkPermission (String, String, int)...");
-            int res1 = Android17Compat.checkPermission(perm, pkg, userId);
-            Log.i("ShizukuCompatTest", "   Result code: " + res1);
-
-            if (ai != null) {
-                Log.i("ShizukuCompatTest", "5. Testing checkPermission (String, int)...");
-                int res2 = Android17Compat.checkPermission(perm, ai.uid);
-                Log.i("ShizukuCompatTest", "   Result code: " + res2);
-            }
-
-            Log.i("ShizukuCompatTest", "6. Testing grantRuntimePermission...");
-            Android17Compat.grantRuntimePermission(pkg, perm, userId);
-            Log.i("ShizukuCompatTest", "   SUCCESS (no crash)");
-
-            Log.i("ShizukuCompatTest", "7. Testing revokeRuntimePermission...");
-            Android17Compat.revokeRuntimePermission(pkg, perm, userId);
-            Log.i("ShizukuCompatTest", "   SUCCESS (no crash)");
-
-            Log.i("ShizukuCompatTest", "HARDCORE TEST PASSED ON ANDROID 17!");
-        } catch (Throwable t) {
-            Log.e("ShizukuCompatTest", "HARDCORE TEST FAILED!", t);
-        }
     }
 
     private static void waitSystemService(String name) {
@@ -460,7 +418,7 @@ public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuCl
         }
 
         for (int user : users) {
-            for (PackageInfo pi : Android17Compat.getInstalledPackages(PackageManager.GET_META_DATA | PackageManager.GET_PERMISSIONS, user)) {
+            for (PackageInfo pi : InstalledPackagesCompat.getInstalledPackagesNoThrow(PackageManager.GET_META_DATA | PackageManager.GET_PERMISSIONS, user)) {
                 if (Objects.equals(MANAGER_APPLICATION_ID, pi.packageName)) continue;
                 if (pi.applicationInfo == null) continue;
 
@@ -512,7 +470,7 @@ public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuCl
 
     private static void sendBinderToClient(Binder binder, int userId) {
         try {
-            for (PackageInfo pi : Android17Compat.getInstalledPackages(PackageManager.GET_PERMISSIONS, userId)) {
+            for (PackageInfo pi : InstalledPackagesCompat.getInstalledPackagesNoThrow(PackageManager.GET_PERMISSIONS, userId)) {
                 if (pi == null || pi.requestedPermissions == null)
                     continue;
 

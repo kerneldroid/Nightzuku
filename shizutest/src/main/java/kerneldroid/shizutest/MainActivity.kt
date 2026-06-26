@@ -334,21 +334,17 @@ class MainActivity : ComponentActivity() {
         val packageManagerInstance = asInterfaceMethod.invoke(null, binder)
 
         val methods = packageManagerInstance.javaClass.methods
-        val getInstalledPackagesMethod = methods.firstOrNull { it.name == "getInstalledPackages" }
+        val getInstalledPackagesMethod = methods
+            .filter { it.name == "getInstalledPackages" && it.parameterTypes.isNotEmpty() && it.parameterTypes[0] == Long::class.javaPrimitiveType }
+            .maxByOrNull { it.parameterTypes.size }
             ?: throw IllegalStateException("Method getInstalledPackages not found in PackageManager interface")
 
-        val parameterTypes = getInstalledPackagesMethod.parameterTypes
-        val result = when (parameterTypes.size) {
-            2 -> getInstalledPackagesMethod.invoke(packageManagerInstance, 0, 0)
-            3 -> getInstalledPackagesMethod.invoke(packageManagerInstance, 0, 0, 0)
-            else -> {
-                val args = Array(parameterTypes.size) { 0 }
-                getInstalledPackagesMethod.invoke(packageManagerInstance, *args)
-            }
-        }
+        val paramCount = getInstalledPackagesMethod.parameterTypes.size
+        val args = Array(paramCount) { 0 }
+        val result = getInstalledPackagesMethod.invoke(packageManagerInstance, *args)
 
         val getListMethod = result.javaClass.getMethod("getList")
-        val list = getListMethod.invoke(result) as List<*>
+        val list = (getListMethod.invoke(result) as? List<Any>) ?: emptyList<Any>()
         return list.size
     }
 

@@ -3,7 +3,6 @@ package moe.shizuku.manager.utils
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
-import android.content.pm.ParceledListSlice
 import android.os.IBinder
 import android.os.RemoteException
 import android.os.ServiceManager
@@ -13,6 +12,7 @@ import rikka.hidden.compat.UserManagerApis
 import rikka.hidden.compat.util.SystemServiceBinder
 import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuBinderWrapper
+import rikka.shizuku.common.util.InstalledPackagesCompat
 import java.lang.reflect.Method
 
 object ShizukuSystemApis {
@@ -25,8 +25,6 @@ object ShizukuSystemApis {
     private var getPackageInfoMethod: Method? = null
     @Volatile
     private var getApplicationInfoMethod: Method? = null
-    @Volatile
-    private var getListMethod: Method? = null
 
     @Volatile
     private var sPermissionManager: Any? = null
@@ -187,34 +185,15 @@ object ShizukuSystemApis {
         )
     }
 
-    @Suppress("UNCHECKED_CAST")
     fun getInstalledPackages(flags: Long, userId: Int): List<PackageInfo> {
         if (!Shizuku.pingBinder()) {
             return ArrayList()
         }
         try {
-            val listSlice: ParceledListSlice<PackageInfo>? =
-                PackageManagerApis.getInstalledPackages(flags, userId)
-            return if (listSlice != null) {
-                listSlice.list
-            } else ArrayList()
-        } catch (e: NoSuchMethodError) {
-            try {
-                val pm = getPackageManager()
-                val result = invokeCompat(getInstalledPackagesMethod, pm, flags, userId)
-                if (result != null) {
-                    if (getListMethod == null) {
-                        synchronized(this) {
-                            if (getListMethod == null) {
-                                getListMethod = result.javaClass.getMethod("getList")
-                            }
-                        }
-                    }
-                    return (getListMethod!!.invoke(result) as List<PackageInfo>)
-                }
-            } catch (t: Throwable) {}
-            return ArrayList()
+            return InstalledPackagesCompat.getInstalledPackages(flags, userId)
         } catch (tr: RemoteException) {
+            throw RuntimeException(tr.message, tr)
+        } catch (tr: ReflectiveOperationException) {
             throw RuntimeException(tr.message, tr)
         }
     }
