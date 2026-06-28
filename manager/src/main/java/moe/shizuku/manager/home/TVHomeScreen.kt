@@ -29,7 +29,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.core.text.HtmlCompat
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.tv.material3.Button as TvButton
 import androidx.tv.material3.ExperimentalTvMaterial3Api
@@ -38,7 +37,6 @@ import androidx.tv.material3.Surface as TvSurface
 import androidx.tv.material3.SurfaceDefaults as TvSurfaceDefaults
 import androidx.tv.material3.ClickableSurfaceDefaults as TvClickableSurfaceDefaults
 import androidx.tv.material3.Text as TvText
-import moe.shizuku.manager.BuildConfig
 import moe.shizuku.manager.Helps
 import moe.shizuku.manager.R
 import moe.shizuku.manager.model.ServiceStatus
@@ -459,49 +457,4 @@ private fun TvHomeCard(
             }
         }
     }
-}
-
-
-private fun htmlToPlainText(value: String): String {
-    return HtmlCompat.fromHtml(value, HtmlCompat.FROM_HTML_MODE_LEGACY).toString().trim()
-}
-
-private fun buildServiceSummary(context: android.content.Context, status: ServiceStatus): String {
-    if (!status.isRunning) return ""
-    val user = if (status.uid == 0) "root" else "adb"
-    val version = "${status.apiVersion}.${status.patchVersion}"
-    val latestVersion = "${Shizuku.getLatestServiceVersion()}.${ShizukuApiConstants.SERVER_PATCH_VERSION}"
-    val raw = if (status.apiVersion != Shizuku.getLatestServiceVersion() ||
-        status.patchVersion != ShizukuApiConstants.SERVER_PATCH_VERSION
-    ) {
-        context.getString(R.string.home_status_service_version_update, user, version, latestVersion)
-    } else {
-        context.getString(R.string.home_status_service_version, user, version)
-    }
-    return htmlToPlainText(raw)
-}
-
-private fun buildDiagnostics(
-    context: android.content.Context,
-    status: ServiceStatus,
-    grantedCount: Int,
-    localNetworkPermissionState: LocalNetworkPermissionState
-): String {
-    val versionName = context.packageManager.getPackageInfo(context.packageName, 0).versionName
-    val localNetwork = if (localNetworkPermissionState.required) {
-        "${localNetworkPermissionState.label}: " + if (localNetworkPermissionState.granted) "granted" else "missing"
-    } else {
-        "not required"
-    }
-    return buildString {
-        appendLine("App: ${context.getString(R.string.app_name)} $versionName (${BuildConfig.VERSION_CODE})")
-        appendLine("Android: ${Build.VERSION.RELEASE} / SDK ${Build.VERSION.SDK_INT} / ${Build.VERSION.CODENAME}")
-        appendLine("Service: ${if (status.isRunning) "running" else "stopped"}")
-        appendLine("Server uid: ${status.uid}")
-        appendLine("Server API: ${status.apiVersion}.${status.patchVersion}")
-        appendLine("SELinux: ${status.seContext ?: "unknown"}")
-        appendLine("ADB permission: ${if (status.permission) "full" else "limited"}")
-        appendLine("Authorized apps: $grantedCount")
-        appendLine("Local network: $localNetwork")
-    }.trim()
 }

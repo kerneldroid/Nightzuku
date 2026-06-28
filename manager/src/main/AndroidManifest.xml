@@ -57,7 +57,7 @@
 
     <application
         android:name=".ShizukuApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:autoRevokePermissions="allowed"
         android:banner="@drawable/ic_launcher"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -112,7 +112,7 @@
             android:label="@string/modules_title" />
         <activity
             android:name=".module.ModuleWebViewActivity"
-            android:exported="true"
+            android:exported="false"
             android:label="@string/modules_webui" />
         <activity
             android:name=".starter.StarterActivity"
@@ -135,6 +135,7 @@
             android:directBootAware="true"
             android:excludeFromRecents="true"
             android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"
             android:theme="@style/GrantPermissions">
             <intent-filter>
                 <action android:name="rikka.shizuku.intent.action.REQUEST_BINDER" />
