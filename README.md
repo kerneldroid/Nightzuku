@@ -26,6 +26,7 @@ Upstream project reference: <https://github.com/RikkaApps/Shizuku>
 - [Wear OS Compatibility](docs/wearos-compatibility.md)
 - [Wear OS Pairing Guide](docs/wearos-pairing.md)
 - [Android TV Support](docs/android-tv-support.md)
+- [NightDog Watchdog](docs/nightdog.md)
 
 ## Background
 

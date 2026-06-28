@@ -4,6 +4,7 @@ import android.os.FileObserver
 import android.util.Log
 import java.io.File
 import java.util.*
+import java.util.concurrent.CopyOnWriteArrayList
 
 interface ApkChangedListener {
     fun onApkChanged()
@@ -49,7 +50,7 @@ object ApkChangedObservers {
 
 class ApkChangedObserver(private val path: String) : FileObserver(path, DELETE) {
 
-    private val listeners = mutableSetOf<ApkChangedListener>()
+    private val listeners = CopyOnWriteArrayList<ApkChangedListener>()
 
     fun addListener(listener: ApkChangedListener): Boolean {
         return listeners.add(listener)

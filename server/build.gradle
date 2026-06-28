@@ -22,6 +22,7 @@ dependencies {
     implementation project(':starter')
     implementation project(':rish')
     implementation project(':server-shared')
+    implementation project(':nightdog')
     implementation libs.hidden.compat
     compileOnly libs.hidden.stub
 }

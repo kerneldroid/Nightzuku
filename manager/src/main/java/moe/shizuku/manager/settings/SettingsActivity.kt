@@ -228,6 +228,9 @@ class SettingsActivity : AppActivity() {
                         onRecommandActionChange = { enabled ->
                             ModuleSettings.setRecommandForAction(enabled)
                             recommandAction = enabled
+                        },
+                        onLabFeaturesClick = {
+                            startActivity(android.content.Intent(this@SettingsActivity, LabFeaturesActivity::class.java))
                         }
                     )
                 }
