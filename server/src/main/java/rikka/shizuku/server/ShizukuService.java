@@ -56,6 +56,7 @@ import rikka.shizuku.server.util.Android17Compat;
 import rikka.shizuku.server.util.HandlerUtil;
 import rikka.shizuku.server.util.UserHandleCompat;
 import rikka.shizuku.common.util.InstalledPackagesCompat;
+import rikka.shizuku.nightdog.NightDog;
 
 public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuClientManager, ShizukuConfigManager> {
 
@@ -121,6 +122,21 @@ public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuCl
 
         BinderSender.register(this);
 
+        // Initialize NightDog watchdog (AOSP Watchdog.java pattern)
+        LOGGER.i("Initializing NightDog watchdog...");
+        NightDog.INSTANCE.start(60000L, 60000L);
+        LOGGER.i("NightDog watchdog initialized");
+
+        // Push heartbeat from main thread every 5s
+        // If main thread is stuck, beat() won't be called → NightDog detects timeout
+        mainHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                NightDog.INSTANCE.beat();
+                mainHandler.postDelayed(this, 5000L);
+            }
+        });
+
         mainHandler.post(() -> {
             sendBinderToClient();
             sendBinderToManager();
@@ -173,6 +189,7 @@ public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuCl
     public void exit() {
         enforceManagerPermission("exit");
         LOGGER.i("exit");
+        NightDog.INSTANCE.stop();
         System.exit(0);
     }
 

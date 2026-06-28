@@ -173,6 +173,7 @@ dependencies {
     implementation project(':api')
     implementation project(':provider')
     implementation project(':common')
+    compileOnly project(':nightdog')
 
     implementation libs.hidden.compat
     compileOnly libs.hidden.stub

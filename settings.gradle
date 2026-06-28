@@ -43,6 +43,7 @@ dependencyResolutionManagement {
 include ':server', ':starter', ':shell'
 include ':manager'
 include ':common'
+include ':nightdog'
 include ':shizutest'
 
 def root = "api"

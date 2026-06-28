@@ -260,6 +260,9 @@ With %1$s, in any terminal app, you can connect to and interact with the shell r
     <string name="lab_features_summary">Experimental features</string>
     <string name="shizuku_connectors_title">Nightzuku Connectors</string>
     <string name="shizuku_connectors_summary">Allow plugins to activate Nightzuku</string>
+    <string name="nightdog_title">NightDog Beta</string>
+    <string name="nightdog_summary">Lightweight system monitor with zero energy consumption</string>
+    <string name="nightdog_description">NightDog monitors server health using inotify (zero polling). Runs as shell process.</string>
     <string name="unsafe_warning_title">Warning</string>
     <string name="unsafe_warning_message">Enabling this feature is UNSAFE. Are you sure?</string>
 </resources>
