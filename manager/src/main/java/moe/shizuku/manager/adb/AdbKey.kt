@@ -95,7 +95,6 @@ class AdbKey(private val adbKeyStore: AdbKeyStore, name: String) {
         this.certificate = CertificateFactory.getInstance("X.509")
                 .generateCertificate(ByteArrayInputStream(x509Certificate.encoded)) as X509Certificate
 
-        Log.d(TAG, privateKey.toString())
     }
 
     val adbPublicKey: ByteArray by unsafeLazy {
