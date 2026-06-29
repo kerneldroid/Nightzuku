@@ -60,6 +60,90 @@ def registerShellDexCopyTask(String variantName) {
 registerShellDexCopyTask("debug")
 registerShellDexCopyTask("release")
 
+tasks.register("copyTapiScript") {
+    def srcFile = file("src/main/assets/tapi")
+    def dstDir = rootProject.layout.projectDirectory.dir("manager/src/main/assets")
+
+    inputs.file(srcFile)
+    outputs.file(dstDir.file("tapi"))
+
+    doLast {
+        copy {
+            from srcFile
+            into dstDir
+        }
+    }
+}
+
+def registerTapiDexBuildTask(String variantName) {
+    def capitalized = variantName.capitalize()
+    tasks.register("build${capitalized}TapiDex") {
+        dependsOn(":tapi:assemble${capitalized}")
+
+        def aarDir = rootProject.layout.projectDirectory.dir("api/tapi/build/outputs/aar")
+        def outputDir = rootProject.layout.projectDirectory.dir("manager/src/main/assets")
+
+        doLast {
+            def aarFile = file("${aarDir}/tapi-${variantName}.aar")
+            if (!aarFile.exists()) {
+                throw new GradleException("TAPI ${variantName} AAR was not found at ${aarFile}")
+            }
+
+            def tmpDir = file("${layout.buildDirectory.get()}/tmp/tapi-dex-${variantName}")
+            tmpDir.mkdirs()
+
+            copy {
+                from zipTree(aarFile)
+                into tmpDir
+                include 'classes.jar'
+            }
+
+            def classesJar = file("${tmpDir}/classes.jar")
+            if (!classesJar.exists()) {
+                throw new GradleException("classes.jar not found in TAPI AAR")
+            }
+
+            def sdkDir
+            def sdkPath = System.getenv('ANDROID_HOME') ?: System.getenv('ANDROID_SDK_ROOT')
+            if (sdkPath != null && !sdkPath.isBlank()) {
+                sdkDir = file(sdkPath)
+            } else {
+                def localProperties = rootProject.file('local.properties')
+                if (localProperties.exists()) {
+                    def props = new Properties()
+                    localProperties.withInputStream { props.load(it) }
+                    sdkDir = file(props['sdk.dir'])
+                } else {
+                    throw new GradleException("Android SDK not found. Set ANDROID_HOME or sdk.dir in local.properties")
+                }
+            }
+            def buildToolsVersion = android.buildToolsVersion
+            def d8 = file("${sdkDir}/build-tools/${buildToolsVersion}/d8")
+
+            def process = new ProcessBuilder(d8.path, '--output', tmpDir.path, classesJar.path)
+                .redirectErrorStream(true)
+                .start()
+            process.waitFor()
+
+            def dexFile = file("${tmpDir}/classes.dex")
+            if (!dexFile.exists()) {
+                throw new GradleException("D8 did not produce classes.dex")
+            }
+
+            copy {
+                from dexFile
+                into outputDir
+                rename { 'tapi.dex' }
+            }
+
+            tmpDir.deleteDir()
+        }
+    }
+}
+
+registerTapiDexBuildTask("debug")
+registerTapiDexBuildTask("release")
+
 dependencies {
     implementation libs.hidden.compat
     compileOnly libs.hidden.stub

@@ -36,7 +36,9 @@ import moe.shizuku.manager.ui.compose.SettingsGroup
 import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
 import moe.shizuku.manager.ui.compose.ShizukuLazyScaffold
 import moe.shizuku.manager.ui.compose.SwitchSettingsRow
-import rikka.shizuku.nightdog.NightDog
+import moe.shizuku.tapi.TapiAutoGrant
+import moe.shizuku.tapi.TapiSettings
+import rikka.shizuku.Shizuku
 
 class LabFeaturesActivity : AppActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -44,9 +46,11 @@ class LabFeaturesActivity : AppActivity() {
 
         setContent {
             var connectorEnabled by remember { mutableStateOf(ModuleSettings.isConnectorEnabled()) }
-            var nightDogEnabled by remember { mutableStateOf(NightDog.isStarted()) }
+            var nightDogEnabled by remember { mutableStateOf(try { Shizuku.getNightDogEnabled() } catch (_: Throwable) { false }) }
             var showUnsafeDialog by remember { mutableStateOf(false) }
             var showNightDogDialog by remember { mutableStateOf(false) }
+            var tapiEnabled by remember { mutableStateOf(TapiSettings.isEnabled()) }
+            var showTapiDialog by remember { mutableStateOf(false) }
 
             val isWatch = moe.shizuku.manager.utils.EnvironmentUtils.isWatch(this@LabFeaturesActivity)
             if (isWatch) {
@@ -97,7 +101,7 @@ class LabFeaturesActivity : AppActivity() {
                                         if (enabled) {
                                             showNightDogDialog = true
                                         } else {
-                                            NightDog.stop()
+                                            Shizuku.setNightDogEnabled(false)
                                             nightDogEnabled = false
                                         }
                                     },
@@ -107,6 +111,33 @@ class LabFeaturesActivity : AppActivity() {
                                     },
                                     secondaryLabel = {
                                         WearText(text = stringResource(R.string.nightdog_summary))
+                                    },
+                                    icon = {
+                                        WearIcon(
+                                            painter = painterResource(R.drawable.ic_baseline_link_24),
+                                            contentDescription = null
+                                        )
+                                    }
+                                )
+                            }
+                            item {
+                                WearSwitchButton(
+                                    checked = tapiEnabled,
+                                    onCheckedChange = { enabled ->
+                                        if (enabled) {
+                                            showTapiDialog = true
+                                        } else {
+                                            TapiSettings.setEnabled(false)
+                                            tapiEnabled = false
+                                            TapiAutoGrant.onLabFeatureDisabled(this@LabFeaturesActivity)
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    label = {
+                                        WearText(text = stringResource(R.string.tapi_title))
+                                    },
+                                    secondaryLabel = {
+                                        WearText(text = stringResource(R.string.tapi_summary))
                                     },
                                     icon = {
                                         WearIcon(
@@ -152,13 +183,37 @@ class LabFeaturesActivity : AppActivity() {
                                 WearButton(onClick = {
                                     showNightDogDialog = false
                                     nightDogEnabled = true
-                                    NightDog.start()
+                                    Shizuku.setNightDogEnabled(true)
                                 }) {
                                     WearText(stringResource(android.R.string.ok))
                                 }
                             },
                             dismissButton = {
                                 WearFilledTonalButton(onClick = { showNightDogDialog = false }) {
+                                    WearText(stringResource(android.R.string.cancel))
+                                }
+                            }
+                        )
+                    }
+
+                    if (showTapiDialog) {
+                        WearAlertDialog(
+                            visible = true,
+                            onDismissRequest = { showTapiDialog = false },
+                            title = { WearText(stringResource(R.string.tapi_title)) },
+                            text = { WearText(stringResource(R.string.tapi_description)) },
+                            confirmButton = {
+                                WearButton(onClick = {
+                                    showTapiDialog = false
+                                    TapiSettings.setEnabled(true)
+                                    tapiEnabled = true
+                                    TapiAutoGrant.onLabFeatureEnabled(this@LabFeaturesActivity)
+                                }) {
+                                    WearText(stringResource(android.R.string.ok))
+                                }
+                            },
+                            dismissButton = {
+                                WearFilledTonalButton(onClick = { showTapiDialog = false }) {
                                     WearText(stringResource(android.R.string.cancel))
                                 }
                             }
@@ -196,8 +251,23 @@ class LabFeaturesActivity : AppActivity() {
                                         if (enabled) {
                                             showNightDogDialog = true
                                         } else {
-                                            NightDog.stop()
+                                            Shizuku.setNightDogEnabled(false)
                                             nightDogEnabled = false
+                                        }
+                                    }
+                                )
+                                SwitchSettingsRow(
+                                    icon = R.drawable.ic_baseline_link_24,
+                                    title = stringResource(R.string.tapi_title),
+                                    summary = stringResource(R.string.tapi_summary),
+                                    checked = tapiEnabled,
+                                    onCheckedChange = { enabled ->
+                                        if (enabled) {
+                                            showTapiDialog = true
+                                        } else {
+                                            TapiSettings.setEnabled(false)
+                                            tapiEnabled = false
+                                            TapiAutoGrant.onLabFeatureDisabled(this@LabFeaturesActivity)
                                         }
                                     }
                                 )
@@ -236,13 +306,36 @@ class LabFeaturesActivity : AppActivity() {
                                 TextButton(onClick = {
                                     showNightDogDialog = false
                                     nightDogEnabled = true
-                                    NightDog.start()
+                                    Shizuku.setNightDogEnabled(true)
                                 }) {
                                     Text(stringResource(android.R.string.ok))
                                 }
                             },
                             dismissButton = {
                                 TextButton(onClick = { showNightDogDialog = false }) {
+                                    Text(stringResource(android.R.string.cancel))
+                                }
+                            }
+                        )
+                    }
+
+                    if (showTapiDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showTapiDialog = false },
+                            title = { Text(stringResource(R.string.tapi_title)) },
+                            text = { Text(stringResource(R.string.tapi_description)) },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    showTapiDialog = false
+                                    TapiSettings.setEnabled(true)
+                                    tapiEnabled = true
+                                    TapiAutoGrant.onLabFeatureEnabled(this@LabFeaturesActivity)
+                                }) {
+                                    Text(stringResource(android.R.string.ok))
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showTapiDialog = false }) {
                                     Text(stringResource(android.R.string.cancel))
                                 }
                             }

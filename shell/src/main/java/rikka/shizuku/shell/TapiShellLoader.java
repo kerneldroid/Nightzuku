@@ -23,7 +23,7 @@ import dalvik.system.BaseDexClassLoader;
 import rikka.hidden.compat.PackageManagerApis;
 import stub.dalvik.system.VMRuntimeHidden;
 
-public class ShizukuShellLoader {
+public class TapiShellLoader {
 
     private static String[] args;
     private static String callingPackage;
@@ -40,7 +40,7 @@ public class ShizukuShellLoader {
                 if (binder != null) {
                     handler.post(() -> onBinderReceived(binder, sourceDir));
                 } else {
-                    System.err.println("Server is not running");
+                    System.err.println("tapi: Nightzuku server is not running");
                     System.err.flush();
                     System.exit(1);
                 }
@@ -68,36 +68,21 @@ public class ShizukuShellLoader {
         }
 
         try {
-            if (Build.VERSION.SDK_INT >= 30) {
-                java.lang.reflect.Method method = findBroadcastMethod(am);
-                if (method == null) {
-                    throw new RuntimeException("Cannot find broadcastIntentWithFeature on " + am.getClass());
-                }
-                Class<?>[] paramTypes = method.getParameterTypes();
-                Object[] args = new Object[paramTypes.length];
-                args[0] = null;
-                args[1] = null;
-                args[2] = intent;
-                int intIndex = 0;
-                int booleanIndex = 0;
-                for (int i = 3; i < paramTypes.length; i++) {
-                    Class<?> t = paramTypes[i];
-                    if (t == boolean.class) {
-                        args[i] = booleanIndex++ == 0;
-                    } else if (t == int.class) {
-                        args[i] = isAppOpParameter(paramTypes, i, intIndex) ? -1 : 0;
-                        intIndex++;
-                    } else if (t == long.class) {
-                        args[i] = 0L;
-                    } else {
-                        args[i] = null;
-                    }
-                }
+            if (Build.VERSION.SDK_INT >= 36) {
                 try {
-                    method.invoke(am, args);
-                } catch (ReflectiveOperationException e) {
-                    throw new RuntimeException("broadcastIntentWithFeature invocation failed", e);
+                    Intent activityIntent = new Intent("rikka.shizuku.intent.action.REQUEST_BINDER")
+                            .setPackage(BuildConfig.MANAGER_APPLICATION_ID)
+                            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            .putExtra("data", data);
+                    am.startActivityAsUser(null, callingPackage, activityIntent, null, null, null, 0, 0, null, null, Os.getuid() / 100000);
+                } catch (SecurityException e) {
+                    System.err.println("tapi: startActivityAsUser requires INTERACT_ACROSS_USERS_FULL, falling back to broadcast");
+                    System.err.flush();
+                    broadcastIntent(am, intent);
                 }
+            } else if (Build.VERSION.SDK_INT >= 30) {
+                broadcastIntent(am, intent);
             } else {
                 am.broadcastIntent(null, intent, null, null, 0, null, null,
                         null, -1, null, true, false, 0);
@@ -117,7 +102,7 @@ public class ShizukuShellLoader {
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT)
                             .putExtra("data", data),
-                    "Request binder from Shizuku"
+                    "Request binder from Nightzuku"
             );
 
             am.startActivityAsUser(null, callingPackage, activityIntent, null, null, null, 0, 0, null, null, Os.getuid() / 100000);
@@ -138,8 +123,8 @@ public class ShizukuShellLoader {
             cls.getDeclaredMethod("main", String[].class, String.class, IBinder.class, Handler.class)
                     .invoke(null, args, callingPackage, binder, handler);
         } catch (ClassNotFoundException tr) {
-            System.err.println("Class not found");
-            System.err.println("Make sure you have Shizuku v12.0.0 or above installed");
+            System.err.println("tapi: Class not found");
+            System.err.println("Make sure you have Nightzuku v12.0.0 or above installed");
             System.err.flush();
             System.exit(1);
         } catch (Throwable tr) {
@@ -150,21 +135,24 @@ public class ShizukuShellLoader {
     }
 
     public static void main(String[] args) {
-        ShizukuShellLoader.args = args;
+        TapiShellLoader.args = args;
 
         String packageName;
         var pkg = PackageManagerApis.getPackagesForUidNoThrow(Os.getuid());
         if (pkg.size() == 1) {
             packageName = pkg.get(0);
         } else {
-            packageName = System.getenv("RISH_APPLICATION_ID");
+            packageName = System.getenv("TAPI_PACKAGE");
             if (TextUtils.isEmpty(packageName) || "PKG".equals(packageName)) {
-                abort("RISH_APPLICATION_ID is not set, set this environment variable to the id of current application (package name)");
-                System.exit(1);
+                packageName = System.getenv("RISH_APPLICATION_ID");
+                if (TextUtils.isEmpty(packageName) || "PKG".equals(packageName)) {
+                    abort("TAPI_PACKAGE or RISH_APPLICATION_ID is not set, set this environment variable to the id of current application (package name)");
+                    System.exit(1);
+                }
             }
         }
 
-        ShizukuShellLoader.callingPackage = packageName;
+        TapiShellLoader.callingPackage = packageName;
 
         if (Looper.getMainLooper() == null) {
             Looper.prepareMainLooper();
@@ -182,9 +170,9 @@ public class ShizukuShellLoader {
 
         handler.postDelayed(() -> abort(
                 String.format(
-                        "Request timeout. The connection between the current app (%1$s) and Shizuku app may be blocked by your system. " +
-                                "Please disable all battery optimization features for both current app (%1$s) and Shizuku app.",
-                        packageName)
+                        "Request timeout. The connection between the current app (%1$s) and Nightzuku app may be blocked by your system. " +
+                                "Please disable all battery optimization features for both current app (%1$s) and Nightzuku app.",
+                        callingPackage)
         ), 5000);
 
         Looper.loop();
@@ -195,6 +183,43 @@ public class ShizukuShellLoader {
         System.err.println(message);
         System.err.flush();
         System.exit(1);
+    }
+
+    private static void broadcastIntent(IActivityManager am, Intent intent) throws RemoteException {
+        if (Build.VERSION.SDK_INT >= 30) {
+            java.lang.reflect.Method method = findBroadcastMethod(am);
+            if (method == null) {
+                throw new RuntimeException("Cannot find broadcastIntentWithFeature on " + am.getClass());
+            }
+            Class<?>[] paramTypes = method.getParameterTypes();
+            Object[] args = new Object[paramTypes.length];
+            args[0] = null;
+            args[1] = null;
+            args[2] = intent;
+            int intIndex = 0;
+            int booleanIndex = 0;
+            for (int i = 3; i < paramTypes.length; i++) {
+                Class<?> t = paramTypes[i];
+                if (t == boolean.class) {
+                    args[i] = booleanIndex++ == 0;
+                } else if (t == int.class) {
+                    args[i] = isAppOpParameter(paramTypes, i, intIndex) ? -1 : 0;
+                    intIndex++;
+                } else if (t == long.class) {
+                    args[i] = 0L;
+                } else {
+                    args[i] = null;
+                }
+            }
+            try {
+                method.invoke(am, args);
+            } catch (ReflectiveOperationException e) {
+                throw new RuntimeException("broadcastIntentWithFeature invocation failed", e);
+            }
+        } else {
+            am.broadcastIntent(null, intent, null, null, 0, null, null,
+                    null, -1, null, true, false, 0);
+        }
     }
 
     private static java.lang.reflect.Method findBroadcastMethod(Object am) {

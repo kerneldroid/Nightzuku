@@ -7,6 +7,7 @@
 #include <cstring>
 #include <libgen.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <sys/system_properties.h>
 #include <cerrno>
 #include <string>
@@ -114,29 +115,67 @@ v_current = (uintptr_t) v + v_size - sizeof(char *); \
 }
 
 static void start_server(const char *path, const char *main_class, const char *process_name) {
-    pid_t pid = fork();
-    switch (pid) {
-        case -1: {
-            perrorf("fatal: can't fork\n");
-            exit(EXIT_FATAL_FORK);
-        }
-        case 0: {
-            LOGD("child");
-            setsid();
-            chdir("/");
-            int fd = open("/dev/null", O_RDWR);
-            if (fd != -1) {
-                dup2(fd, STDIN_FILENO);
-                dup2(fd, STDOUT_FILENO);
-                dup2(fd, STDERR_FILENO);
-                if (fd > 2) close(fd);
+    int restart_count = 0;
+    const int max_restarts = 5;
+    const int restart_delay_secs = 5;
+
+    while (1) {
+        pid_t pid = fork();
+        switch (pid) {
+            case -1: {
+                perrorf("fatal: can't fork\n");
+                exit(EXIT_FATAL_FORK);
             }
-            run_server(path, main_class, process_name);
-        }
-        default: {
-            printf("info: shizuku_server pid is %d\n", pid);
-            printf("info: shizuku_starter exit with 0\n");
-            exit(EXIT_SUCCESS);
+            case 0: {
+                LOGD("child");
+                setsid();
+                chdir("/");
+                int fd = open("/dev/null", O_RDWR);
+                if (fd != -1) {
+                    dup2(fd, STDIN_FILENO);
+                    dup2(fd, STDOUT_FILENO);
+                    dup2(fd, STDERR_FILENO);
+                    if (fd > 2) close(fd);
+                }
+                run_server(path, main_class, process_name);
+                _exit(1);
+            }
+            default: {
+                if (restart_count == 0) {
+                    printf("info: shizuku_server pid is %d\n", pid);
+                }
+
+                int status;
+                waitpid(pid, &status, 0);
+
+                int exit_code = -1;
+                bool killed_by_signal = false;
+                if (WIFEXITED(status)) {
+                    exit_code = WEXITSTATUS(status);
+                } else if (WIFSIGNALED(status)) {
+                    exit_code = 128 + WTERMSIG(status);
+                    killed_by_signal = true;
+                }
+
+                printf("info: shizuku_server exited with code %d\n", exit_code);
+
+                if (!killed_by_signal && exit_code == 0) {
+                    printf("info: shizuku_server exited cleanly, no restart\n");
+                    exit(EXIT_SUCCESS);
+                }
+
+                restart_count++;
+                if (restart_count > max_restarts) {
+                    printf("fatal: shizuku_server crashed %d times, giving up\n", restart_count);
+                    exit(EXIT_FATAL_APP_PROCESS);
+                }
+
+                printf("info: restarting shizuku_server in %d seconds (attempt %d/%d)...\n",
+                       restart_delay_secs, restart_count, max_restarts);
+                fflush(stdout);
+                sleep(restart_delay_secs);
+                break;
+            }
         }
     }
 }

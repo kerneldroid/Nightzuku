@@ -89,6 +89,7 @@ public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuCl
     private final ShizukuClientManager clientManager;
     private final ShizukuConfigManager configManager;
     private final int managerAppId;
+    private Runnable heartbeatRunnable;
 
     public ShizukuService() {
         super();
@@ -122,20 +123,20 @@ public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuCl
 
         BinderSender.register(this);
 
-        // Initialize NightDog watchdog (AOSP Watchdog.java pattern)
-        LOGGER.i("Initializing NightDog watchdog...");
-        NightDog.INSTANCE.start(60000L, 60000L);
-        LOGGER.i("NightDog watchdog initialized");
+        if (configManager.getNightDogEnabled()) {
+            LOGGER.i("Initializing NightDog watchdog...");
+            NightDog.INSTANCE.start(60000L, 60000L);
+            LOGGER.i("NightDog watchdog initialized");
 
-        // Push heartbeat from main thread every 5s
-        // If main thread is stuck, beat() won't be called → NightDog detects timeout
-        mainHandler.post(new Runnable() {
-            @Override
-            public void run() {
-                NightDog.INSTANCE.beat();
-                mainHandler.postDelayed(this, 5000L);
-            }
-        });
+            heartbeatRunnable = new Runnable() {
+                @Override
+                public void run() {
+                    NightDog.INSTANCE.beat();
+                    mainHandler.postDelayed(this, 5000L);
+                }
+            };
+            mainHandler.post(heartbeatRunnable);
+        }
 
         mainHandler.post(() -> {
             sendBinderToClient();
@@ -189,6 +190,10 @@ public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuCl
     public void exit() {
         enforceManagerPermission("exit");
         LOGGER.i("exit");
+        if (heartbeatRunnable != null) {
+            mainHandler.removeCallbacks(heartbeatRunnable);
+            heartbeatRunnable = null;
+        }
         NightDog.INSTANCE.stop();
         System.exit(0);
     }
@@ -418,7 +423,7 @@ public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuCl
             }
         }
 
-        configManager.update(uid, null, mask, value);
+        configManager.update(uid, PackageManagerApis.getPackagesForUidNoThrow(uid), mask, value);
     }
 
     private void onPermissionRevoked(String packageName) {
@@ -475,6 +480,27 @@ public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuCl
             reply.writeNoException();
             result.writeToParcel(reply, android.os.Parcelable.PARCELABLE_WRITE_RETURN_VALUE);
             return true;
+        } else if (code == ServerConstants.BINDER_TRANSACTION_setNightDogEnabled) {
+            if (UserHandleCompat.getAppId(Binder.getCallingUid()) != managerAppId) {
+                reply.writeException(new SecurityException("Permission denied"));
+                return true;
+            }
+            data.enforceInterface(ShizukuApiConstants.BINDER_DESCRIPTOR);
+            boolean enabled = data.readInt() != 0;
+            LOGGER.i("setNightDogEnabled: %s", enabled);
+            configManager.setNightDogEnabled(enabled);
+            applyNightDogState(enabled);
+            reply.writeNoException();
+            return true;
+        } else if (code == ServerConstants.BINDER_TRANSACTION_getNightDogEnabled) {
+            if (UserHandleCompat.getAppId(Binder.getCallingUid()) != managerAppId) {
+                reply.writeException(new SecurityException("Permission denied"));
+                return true;
+            }
+            data.enforceInterface(ShizukuApiConstants.BINDER_DESCRIPTOR);
+            reply.writeNoException();
+            reply.writeInt(configManager.getNightDogEnabled() ? 1 : 0);
+            return true;
         }
         return super.onTransact(code, data, reply, flags);
     }
@@ -482,6 +508,31 @@ public class ShizukuService extends Service<ShizukuUserServiceManager, ShizukuCl
     void sendBinderToClient() {
         for (int userId : UserManagerApis.getUserIdsNoThrow()) {
             sendBinderToClient(this, userId);
+        }
+    }
+
+    private void applyNightDogState(boolean enabled) {
+        if (enabled) {
+            if (!NightDog.INSTANCE.isStarted()) {
+                LOGGER.i("Starting NightDog watchdog...");
+                NightDog.INSTANCE.start(60000L, 60000L);
+                heartbeatRunnable = new Runnable() {
+                    @Override
+                    public void run() {
+                        NightDog.INSTANCE.beat();
+                        mainHandler.postDelayed(this, 5000L);
+                    }
+                };
+                mainHandler.post(heartbeatRunnable);
+                LOGGER.i("NightDog watchdog started");
+            }
+        } else {
+            if (heartbeatRunnable != null) {
+                mainHandler.removeCallbacks(heartbeatRunnable);
+                heartbeatRunnable = null;
+            }
+            NightDog.INSTANCE.stop();
+            LOGGER.i("NightDog watchdog stopped");
         }
     }
 

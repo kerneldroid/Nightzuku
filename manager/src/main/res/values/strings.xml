@@ -265,4 +265,7 @@ With %1$s, in any terminal app, you can connect to and interact with the shell r
     <string name="nightdog_description">NightDog monitors server health using inotify (zero polling). Runs as shell process.</string>
     <string name="unsafe_warning_title">Warning</string>
     <string name="unsafe_warning_message">Enabling this feature is UNSAFE. Are you sure?</string>
+    <string name="tapi_title">Termux APIs</string>
+    <string name="tapi_summary">Auto-grant Shizuku permission to Termux fork and enable tapi bridge</string>
+    <string name="tapi_description">When enabled, Nightzuku detects your Termux fork and automatically grants it Shizuku permission. This enables the tapi command-line tool for privileged shell access and Nightzuku management from within Termux.</string>
 </resources>

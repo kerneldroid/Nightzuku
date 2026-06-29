@@ -1,0 +1,45 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# TAPI - Termux API bridge for Nightzuku
+
+ANDROID_BIN=/system/bin
+PM="$ANDROID_BIN/pm"
+UNZIP="$ANDROID_BIN/unzip"
+GETPROP="$ANDROID_BIN/getprop"
+APP_PROCESS="$ANDROID_BIN/app_process"
+
+TAPI_DIR="$HOME/.tapi"
+DEX="$TAPI_DIR/rish_shizuku.dex"
+
+if [ ! -f "$DEX" ]; then
+  mkdir -p "$TAPI_DIR"
+  apk_path=$("$PM" path kerneldroid.nightzuku 2>/dev/null | sed 's/package://')
+  if [ -n "$apk_path" ]; then
+    tmpdir=$(mktemp -d -p "$TAPI_DIR")
+    "$UNZIP" -o "$apk_path" "assets/rish_shizuku.dex" -d "$tmpdir" 2>/dev/null
+    if [ -f "$tmpdir/assets/rish_shizuku.dex" ]; then
+      mv "$tmpdir/assets/rish_shizuku.dex" "$DEX"
+    fi
+    rm -rf "$tmpdir"
+  fi
+fi
+
+if [ ! -f "$DEX" ]; then
+  echo "tapi: Cannot find rish_shizuku.dex" >&2
+  echo "Make sure Nightzuku is installed." >&2
+  echo "tapi: PM=$PM APK=$apk_path" >&2
+  exit 1
+fi
+
+if [ "$("$GETPROP" ro.build.version.sdk)" -ge 34 ]; then
+  if [ -w "$DEX" ]; then
+    chmod 400 "$DEX"
+  fi
+  if [ -w "$DEX" ]; then
+    echo "tapi: Cannot remove write permission of $DEX" >&2
+    exit 1
+  fi
+fi
+
+export RISH_APPLICATION_ID="com.termux"
+unset LD_LIBRARY_PATH
+exec "$APP_PROCESS" -Djava.class.path="$DEX" /system/bin --nice-name=tapi rikka.shizuku.shell.ShizukuShellLoader "$@"
