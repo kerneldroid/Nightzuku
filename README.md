@@ -128,8 +128,3 @@ All code is licensed under Apache 2.0.
 [**Razgame**](https://github.com/RazGame/Shizuku) for [app list fix](https://github.com/kerneldroid/Nightzuku/commit/6ea7e74984f860398760f5111a15083ea004c842)
 
 
-## STOP AND READ
-Currently i'm fully rewriting nightzuku. If you want to test new versions, go to [Nightzuku-private](https://github.com/kerneldroid/Nightzuku-private) repo. Nightzuku-private is closed-source. This repo temporarily will not receive updates.
-
-
-And new info: my laptop is died. Updates suspended. Write your Issues to nightzuku-private, not this repo (I'll fix they in the future).
