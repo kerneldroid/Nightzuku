@@ -135,11 +135,16 @@ With %1$s, in any terminal app, you can connect to and interact with the shell r
     <string name="settings_start_on_boot">Start on boot (root)</string>
     <string name="settings_start_on_boot_summary">For rooted devices, Nightzuku is able to start automatically on boot</string>
     <string name="settings_use_system_color">Use system theme color</string>
+    <string name="settings_category_startup_summary">Start Nightzuku automatically</string>
+    <string name="settings_category_appearance_summary">Theme, dark mode and colors</string>
+    <string name="settings_category_language_summary">App language and translation</string>
+    <string name="settings_category_modules_summary">Module access and permissions</string>
 
     <!-- ADB modules -->
     <string name="modules_title">ADB Modules</string>
     <string name="modules_settings_title">Modules</string>
     <string name="modules_settings_summary">Install ZIP modules and run their actions through the active Nightzuku ADB/root server</string>
+    <string name="settings_modules_recommendations">Recommendations</string>
     <string name="modules_header_summary">%1$d installed, %2$d enabled</string>
     <string name="modules_version_label">Version: %s</string>
     <string name="modules_author_label">Author: %s</string>
@@ -260,10 +265,6 @@ With %1$s, in any terminal app, you can connect to and interact with the shell r
     <string name="lab_features_summary">Experimental features</string>
     <string name="shizuku_connectors_title">Nightzuku Connectors</string>
     <string name="shizuku_connectors_summary">Allow plugins to activate Nightzuku</string>
-    <string name="tapi_title">TAPI</string>
-    <string name="tapi_summary">Enable Termux API and command-line execution bridge</string>
-    <string name="tapi_warning_title">Enable TAPI?</string>
-    <string name="tapi_warning_message">TAPI allows authorized clients to manage Shizuku permissions and run commands. Enable this only if you trust the client.</string>
     <string name="nightdog_title">NightDog Beta</string>
     <string name="nightdog_summary">Lightweight system monitor with zero energy consumption</string>
     <string name="nightdog_description">NightDog monitors server health using inotify (zero polling). Runs as shell process.</string>

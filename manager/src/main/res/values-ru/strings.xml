@@ -132,11 +132,16 @@
     <string name="settings_start_on_boot">Запускать при загрузке (root)</string>
     <string name="settings_start_on_boot_summary">Для устройств с root-правами Nightzuku может запускаться автоматически при включении</string>
     <string name="settings_use_system_color">Использовать цвет системной темы</string>
+    <string name="settings_category_startup_summary">Автоматический запуск Nightzuku</string>
+    <string name="settings_category_appearance_summary">Тема, ночной режим и цвета</string>
+    <string name="settings_category_language_summary">Язык приложения и перевод</string>
+    <string name="settings_category_modules_summary">Доступ к модулям и разрешения</string>
 
     <!-- ADB modules -->
     <string name="modules_title">ADB-модули</string>
     <string name="modules_settings_title">Модули</string>
     <string name="modules_settings_summary">Устанавливайте ZIP-модули и запускайте их действия через активный сервер Nightzuku ADB/root</string>
+    <string name="settings_modules_recommendations">Рекомендации</string>
     <string name="modules_header_summary">Установлено: %1$d, включено: %2$d</string>
     <string name="modules_version_label">Версия: %s</string>
     <string name="modules_author_label">Автор: %s</string>
@@ -254,10 +259,6 @@
     <string name="lab_features_summary">Экспериментальные возможности</string>
     <string name="shizuku_connectors_title">Подключатели Nightzuku</string>
     <string name="shizuku_connectors_summary">Разрешить плагинам активировать Nightzuku</string>
-    <string name="tapi_title">TAPI</string>
-    <string name="tapi_summary">Включить Termux API и мост командной строки</string>
-    <string name="tapi_warning_title">Включить TAPI?</string>
-    <string name="tapi_warning_message">TAPI позволяет авторизованным клиентам управлять разрешениями Shizuku и запускать команды. Включайте только если доверяете клиенту.</string>
     <string name="nightdog_title">NightDog (бета)</string>
     <string name="nightdog_summary">Лёгкий системный монитор с нулевым энергопотреблением</string>
     <string name="nightdog_description">NightDog мониторит здоровье сервера через inotify (без опроса). Работает как shell-процесс.</string>

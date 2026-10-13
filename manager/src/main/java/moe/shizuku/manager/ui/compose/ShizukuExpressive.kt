@@ -14,6 +14,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -38,6 +39,7 @@ import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.ContentCopy
@@ -61,15 +63,16 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -526,117 +529,124 @@ fun ExpressiveButtons(buttons: List<ExpressiveButtonSpec>) {
 }
 
 @Composable
-fun SettingsGroup(
+fun SettingsSectionHeader(title: String) {
+    Text(
+        text = title,
+        modifier = Modifier.padding(start = 4.dp, end = 4.dp),
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        fontWeight = FontWeight.SemiBold
+    )
+}
+
+@Composable
+fun SettingsSection(
     title: String,
-    content: @Composable () -> Unit
+    content: @Composable ColumnScope.() -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = title,
-            modifier = Modifier.padding(horizontal = 4.dp),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.SemiBold
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SettingsSectionHeader(title)
+        Column(
+            verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
+            content = content
         )
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.colorScheme.surfaceContainer,
-            tonalElevation = 1.dp
-        ) {
-            Column {
-                content()
-            }
-        }
     }
 }
 
 @Composable
-fun SettingsRow(
-    @DrawableRes icon: Int?,
+fun SettingsItem(
+    index: Int,
+    count: Int,
     title: String,
     modifier: Modifier = Modifier,
+    @DrawableRes icon: Int? = null,
     summary: String? = null,
-    enabled: Boolean = true,
+    showChevron: Boolean = true,
     onClick: (() -> Unit)? = null,
     trailing: @Composable (() -> Unit)? = null
 ) {
-    val clickableModifier = if (onClick != null) {
-        Modifier.clickable(enabled = enabled, onClick = onClick)
-    } else {
-        Modifier
-    }
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .then(clickableModifier)
-            .alpha(if (enabled) 1f else 0.56f)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        if (icon != null) {
-            ShizukuIcon(
-                icon = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(24.dp)
-            )
-        }
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(3.dp)
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Medium
-            )
-            if (!summary.isNullOrBlank()) {
+    SegmentedListItem(
+        onClick = { onClick?.invoke() },
+        shapes = ListItemDefaults.segmentedShapes(index = index, count = count),
+        colors = ListItemDefaults.segmentedColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        ),
+        modifier = modifier,
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        leadingContent = if (icon != null) {
+            {
+                ShizukuIcon(
+                    icon = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        } else {
+            null
+        },
+        supportingContent = if (summary.isNullOrBlank()) {
+            null
+        } else {
+            {
                 Text(
                     text = summary,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+        },
+        trailingContent = if (trailing != null || showChevron) {
+            {
+                trailing?.invoke()
+                if (showChevron) {
+                    Spacer(Modifier.width(8.dp))
+                    ShizukuIcon(
+                        imageVector = Icons.Rounded.ChevronRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+        } else {
+            null
         }
-        trailing?.invoke()
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium
+        )
     }
 }
 
 @Composable
-fun SwitchSettingsRow(
-    @DrawableRes icon: Int?,
+fun SettingsSwitchItem(
+    index: Int,
+    count: Int,
     title: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
-    summary: String? = null,
-    enabled: Boolean = true
+    @DrawableRes icon: Int? = null,
+    summary: String? = null
 ) {
-    SettingsRow(
-        icon = icon,
+    SettingsItem(
+        index = index,
+        count = count,
         title = title,
         modifier = modifier,
+        icon = icon,
         summary = summary,
-        enabled = enabled,
-        onClick = { if (enabled) onCheckedChange(!checked) },
+        showChevron = false,
+        onClick = { onCheckedChange(!checked) },
         trailing = {
             ExpressiveSwitch(
                 checked = checked,
-                enabled = enabled,
                 onCheckedChange = onCheckedChange
             )
         }
-    )
-}
-
-@Composable
-fun GroupDivider() {
-    HorizontalDivider(
-        modifier = Modifier.padding(start = 56.dp),
-        color = MaterialTheme.colorScheme.outlineVariant
     )
 }
 

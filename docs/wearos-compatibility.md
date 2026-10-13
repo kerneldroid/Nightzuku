@@ -10,7 +10,7 @@ This document details the Wear OS compatibility enhancements introduced in the N
 
 ## Backward Compatibility
 Nightzuku maintains full backward compatibility with older Wear OS versions (down to API 25).
-* **Dynamic Checks:** We use `Build.VERSION.SDK_INT` and `Android17Compat` to ensure modern system APIs (like multi-device awareness) are used only when available.
+* **Dynamic Checks:** the server resolves the hidden package and permission APIs through `Android17Compat`, which tries the signatures the running platform actually exposes and caches the one that worked, so the platform's multi-device aware permission methods are used only where they exist.
 * **Stable UI:** The Compose Material 3 UI degrades gracefully on older devices, ensuring a functional experience even without latest platform features like advanced Monet transitions.
 
 

@@ -1,4 +1,8 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, androidx.tv.material3.ExperimentalTvMaterial3Api::class)
+@file:OptIn(
+    androidx.compose.material3.ExperimentalMaterial3Api::class,
+    androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class,
+    androidx.tv.material3.ExperimentalTvMaterial3Api::class
+)
 
 package moe.shizuku.manager.settings
 
@@ -19,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
@@ -49,10 +54,9 @@ import androidx.wear.compose.material3.RadioButton as WearRadioButton
 import androidx.wear.compose.material3.Text as WearText
 import moe.shizuku.manager.R
 import moe.shizuku.manager.module.ModuleSettings
-import moe.shizuku.manager.ui.compose.GroupDivider
-import moe.shizuku.manager.ui.compose.SettingsRow
+import moe.shizuku.manager.ui.compose.SettingsItem
+import moe.shizuku.manager.ui.compose.SettingsSwitchItem
 import moe.shizuku.manager.ui.compose.ShizukuIcon
-import moe.shizuku.manager.ui.compose.SwitchSettingsRow
 
 internal data class ChoiceOption(
     val title: String,
@@ -217,25 +221,30 @@ internal fun CustomPermissionsDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 520.dp)
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)
             ) {
-                SwitchSettingsRow(
+                SettingsSwitchItem(
+                    index = 0,
+                    count = 5,
                     icon = R.drawable.ic_outline_play_arrow_24,
                     title = stringResource(R.string.modules_permission_action),
                     summary = stringResource(R.string.modules_permission_action_summary),
                     checked = draft.action,
                     onCheckedChange = { draft = draft.copy(action = it) }
                 )
-                GroupDivider()
-                SwitchSettingsRow(
+                SettingsSwitchItem(
+                    index = 1,
+                    count = 5,
                     icon = R.drawable.ic_terminal_24,
                     title = stringResource(R.string.modules_permission_service),
                     summary = stringResource(R.string.modules_permission_service_summary),
                     checked = draft.service,
                     onCheckedChange = { draft = draft.copy(service = it) }
                 )
-                GroupDivider()
-                SwitchSettingsRow(
+                SettingsSwitchItem(
+                    index = 2,
+                    count = 5,
                     icon = R.drawable.ic_code_24dp,
                     title = stringResource(R.string.modules_permission_web_bridge),
                     summary = stringResource(R.string.modules_permission_web_bridge_summary),
@@ -248,8 +257,9 @@ internal fun CustomPermissionsDialog(
                         }
                     }
                 )
-                GroupDivider()
-                SwitchSettingsRow(
+                SettingsSwitchItem(
+                    index = 3,
+                    count = 5,
                     icon = R.drawable.ic_baseline_link_24,
                     title = stringResource(R.string.modules_permission_web_network),
                     summary = stringResource(R.string.modules_permission_web_network_summary),
@@ -262,8 +272,9 @@ internal fun CustomPermissionsDialog(
                         }
                     }
                 )
-                GroupDivider()
-                SwitchSettingsRow(
+                SettingsSwitchItem(
+                    index = 4,
+                    count = 5,
                     icon = R.drawable.ic_outline_arrow_upward_24,
                     title = stringResource(R.string.modules_permission_web_download),
                     summary = stringResource(R.string.modules_permission_web_download_summary),
@@ -303,13 +314,17 @@ internal fun ChoiceDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 420.dp)
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)
             ) {
                 for ((index, choice) in choices.withIndex()) {
-                    SettingsRow(
+                    SettingsItem(
+                        index = index,
+                        count = choices.size,
                         icon = choice.icon,
                         title = choice.title,
                         summary = choice.summary,
+                        showChevron = false,
                         onClick = { onSelect(index) },
                         trailing = {
                             RadioButton(

@@ -20,6 +20,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -45,13 +46,12 @@ import androidx.compose.ui.unit.dp
 import moe.shizuku.manager.R
 import moe.shizuku.manager.module.ModuleSettings
 import moe.shizuku.manager.module.catalog.TokenStore
-import moe.shizuku.manager.ui.compose.GroupDivider
-import moe.shizuku.manager.ui.compose.SettingsGroup
-import moe.shizuku.manager.ui.compose.SettingsRow
+import moe.shizuku.manager.ui.compose.SettingsItem
+import moe.shizuku.manager.ui.compose.SettingsSection
+import moe.shizuku.manager.ui.compose.SettingsSwitchItem
 import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
 import moe.shizuku.manager.ui.compose.ShizukuIcon
 import moe.shizuku.manager.ui.compose.ShizukuLazyScaffold
-import moe.shizuku.manager.ui.compose.SwitchSettingsRow
 
 @Composable
 fun UpdateSettingsScreen(
@@ -70,8 +70,10 @@ fun UpdateSettingsScreen(
             onNavigateUp = onNavigateUp
         ) {
             item {
-                SettingsGroup(title = stringResource(R.string.update_settings_catalog)) {
-                    SwitchSettingsRow(
+                SettingsSection(title = stringResource(R.string.update_settings_catalog)) {
+                    SettingsSwitchItem(
+                        index = 0,
+                        count = 1,
                         icon = R.drawable.ic_outline_notifications_active_24,
                         title = stringResource(R.string.update_settings_catalog_enabled),
                         summary = stringResource(R.string.update_settings_catalog_enabled_summary),
@@ -89,7 +91,7 @@ fun UpdateSettingsScreen(
             }
 
             item {
-                SettingsGroup(title = stringResource(R.string.update_settings_frequency)) {
+                SettingsSection(title = stringResource(R.string.update_settings_frequency)) {
                     UpdateFrequencyDropdown(
                         selected = updateFrequency,
                         onSelect = {
@@ -105,7 +107,7 @@ fun UpdateSettingsScreen(
             }
 
             item {
-                SettingsGroup(title = stringResource(R.string.update_settings_install_mode)) {
+                SettingsSection(title = stringResource(R.string.update_settings_install_mode)) {
                     InstallModeDropdown(
                         selected = installMode,
                         onSelect = {
@@ -121,8 +123,11 @@ fun UpdateSettingsScreen(
             }
 
             item {
-                SettingsGroup(title = stringResource(R.string.update_settings_github)) {
-                    SettingsRow(
+                val githubItemCount = 1 + (if (githubPat.isNotBlank()) 1 else 0)
+                SettingsSection(title = stringResource(R.string.update_settings_github)) {
+                    SettingsItem(
+                        index = 0,
+                        count = githubItemCount,
                         icon = R.drawable.ic_baseline_link_24,
                         title = stringResource(R.string.update_settings_github_pat),
                         summary = if (githubPat.isNotBlank()) {
@@ -133,10 +138,13 @@ fun UpdateSettingsScreen(
                         onClick = { showPatDialog = true }
                     )
                     if (githubPat.isNotBlank()) {
-                        SettingsRow(
+                        SettingsItem(
+                            index = 1,
+                            count = githubItemCount,
                             icon = R.drawable.ic_close_24,
                             title = stringResource(R.string.update_settings_github_pat_delete),
                             summary = stringResource(R.string.update_settings_github_pat_delete_summary),
+                            showChevron = false,
                             onClick = {
                                 githubPat = ""
                                 TokenStore.clearToken(context)
@@ -176,7 +184,9 @@ private fun UpdateFrequencyDropdown(
         expanded = expanded,
         onExpandedChange = { expanded = !expanded }
     ) {
-        SettingsRow(
+        SettingsItem(
+            index = 0,
+            count = 1,
             icon = R.drawable.ic_outline_notifications_active_24,
             title = stringResource(R.string.update_settings_frequency_label),
             summary = stringResource(when (selected) {
@@ -184,6 +194,7 @@ private fun UpdateFrequencyDropdown(
                 ModuleSettings.UpdateFrequency.DAILY -> R.string.update_settings_frequency_daily
                 ModuleSettings.UpdateFrequency.WEEKLY -> R.string.update_settings_frequency_weekly
             }),
+            showChevron = false,
             onClick = { expanded = true },
             trailing = {
                 ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
@@ -230,13 +241,16 @@ private fun InstallModeDropdown(
         expanded = expanded,
         onExpandedChange = { expanded = !expanded }
     ) {
-        SettingsRow(
+        SettingsItem(
+            index = 0,
+            count = 1,
             icon = R.drawable.ic_outline_arrow_upward_24,
             title = stringResource(R.string.update_settings_install_mode_label),
             summary = stringResource(when (selected) {
                 ModuleSettings.InstallMode.SOURCES -> R.string.update_settings_install_mode_sources
                 ModuleSettings.InstallMode.RELEASE -> R.string.update_settings_install_mode_release
             }),
+            showChevron = false,
             onClick = { expanded = true },
             trailing = {
                 ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
