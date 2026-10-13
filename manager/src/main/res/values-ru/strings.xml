@@ -4,6 +4,13 @@
     <string name="home_status_service_not_running">Nightzuku не запущен</string>
     <string name="home_status_service_version">Версия %2$s, %1$s</string>
     <string name="home_status_service_version_update"><![CDATA[Версия %2$s, %1$s<br>Запустите снова для обновления до версии %3$s]]></string>
+    <string name="home_hero_adb_full">ADB: полный доступ</string>
+    <string name="home_hero_adb_limited">ADB: ограниченный доступ</string>
+
+    <!-- Home - Sections -->
+    <string name="home_section_manage">Управление</string>
+    <string name="home_section_start">Запуск</string>
+    <string name="home_section_info">Информация</string>
 
     <!-- Home - Adb -->
     <string name="home_adb_title"><![CDATA[Начните с подключения к компьютеру]]></string>

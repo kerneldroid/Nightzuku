@@ -9,12 +9,18 @@ package moe.shizuku.manager.home
 import android.os.Build
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
-import androidx.compose.foundation.clickable
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -25,16 +31,24 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,6 +57,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -52,6 +67,8 @@ import moe.shizuku.manager.BuildConfig
 import moe.shizuku.manager.Helps
 import moe.shizuku.manager.R
 import moe.shizuku.manager.model.ServiceStatus
+import moe.shizuku.manager.ui.compose.SettingsItem
+import moe.shizuku.manager.ui.compose.SettingsSectionHeader
 import moe.shizuku.manager.ui.compose.ShizukuIcon
 import moe.shizuku.manager.utils.EnvironmentUtils
 import rikka.lifecycle.Resource
@@ -67,11 +84,9 @@ internal data class LocalNetworkPermissionState(
         get() = permission?.substringAfterLast('.') ?: "none"
 }
 
-internal data class HomeButtonSpec(
+internal data class HeroAction(
     @param:StringRes val label: Int,
     @param:DrawableRes val icon: Int,
-    val primary: Boolean = false,
-    val enabled: Boolean = true,
     val onClick: () -> Unit
 )
 
@@ -215,15 +230,16 @@ internal fun HomeScreen(
     val running = status.isRunning
     val adbPermission = status.permission
     val canUseWirelessAdb = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R || EnvironmentUtils.getAdbTcpPort() > 0
-    var moreOpen by androidx.compose.runtime.mutableStateOf(false)
+    var moreOpen by remember { mutableStateOf(false) }
     val diagnostics = remember(status, grantedCount, localNetworkPermissionState) {
         buildDiagnostics(context, status, grantedCount, localNetworkPermissionState)
     }
+    val localNetworkMissing = localNetworkPermissionState.required && !localNetworkPermissionState.granted
 
-    androidx.compose.material3.Scaffold(
-        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0.dp),
+    Scaffold(
+        contentWindowInsets = WindowInsets(0.dp),
         topBar = {
-            androidx.compose.material3.TopAppBar(
+            TopAppBar(
                 title = {
                     Text(
                         text = stringResource(R.string.app_name),
@@ -232,30 +248,30 @@ internal fun HomeScreen(
                     )
                 },
                 actions = {
-                    androidx.compose.material3.IconButton(onClick = onSettings) {
+                    IconButton(onClick = onSettings) {
                         ShizukuIcon(
                             icon = R.drawable.ic_action_settings_24dp,
                             contentDescription = stringResource(R.string.settings_title)
                         )
                     }
-                    androidx.compose.material3.IconButton(onClick = onRefresh) {
+                    IconButton(onClick = onRefresh) {
                         ShizukuIcon(
                             icon = R.drawable.ic_server_restart,
                             contentDescription = stringResource(R.string.home_refresh)
                         )
                     }
                     Box {
-                        androidx.compose.material3.IconButton(onClick = { moreOpen = true }) {
+                        IconButton(onClick = { moreOpen = true }) {
                             ShizukuIcon(
                                 icon = R.drawable.ic_more_vert_24,
                                 contentDescription = null
                             )
                         }
-                        androidx.compose.material3.DropdownMenu(
+                        DropdownMenu(
                             expanded = moreOpen,
                             onDismissRequest = { moreOpen = false }
                         ) {
-                            androidx.compose.material3.DropdownMenuItem(
+                            DropdownMenuItem(
                                 text = { Text(stringResource(R.string.action_stop)) },
                                 leadingIcon = {
                                     ShizukuIcon(R.drawable.ic_close_24, contentDescription = null)
@@ -265,7 +281,7 @@ internal fun HomeScreen(
                                     onStop()
                                 }
                             )
-                            androidx.compose.material3.DropdownMenuItem(
+                            DropdownMenuItem(
                                 text = { Text(stringResource(R.string.action_about)) },
                                 leadingIcon = {
                                     ShizukuIcon(R.drawable.ic_outline_info_24, contentDescription = null)
@@ -278,147 +294,219 @@ internal fun HomeScreen(
                         }
                     }
                 },
-                colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                     scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer
                 )
             )
         }
     ) { innerPadding ->
-        androidx.compose.foundation.lazy.LazyColumn(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
                 .windowInsetsPadding(WindowInsets.navigationBars),
-            contentPadding = PaddingValues(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            contentPadding = PaddingValues(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                StatusCard(
+                StatusHero(
                     serviceResource = serviceResource,
-                    status = status
+                    status = status,
+                    isPrimaryUser = isPrimaryUser,
+                    isRooted = isRooted,
+                    canUseWirelessAdb = canUseWirelessAdb,
+                    onStop = onStop,
+                    onStartRoot = onStartRoot,
+                    onStartWirelessAdb = onStartWirelessAdb,
+                    onShowAdbCommand = onShowAdbCommand
                 )
             }
 
             if (adbPermission) {
                 item {
-                    ManageAppsCard(
-                        status = status,
-                        grantedCount = grantedCount,
-                        onClick = onManageApps
-                    )
-                }
-                item {
-                    SimpleActionCard(
-                        icon = R.drawable.ic_adb_24dp,
-                        title = stringResource(R.string.modules_title),
-                        body = if (running) {
-                            stringResource(R.string.home_modules_description)
-                        } else {
-                            stringResource(R.string.home_status_service_not_running, stringResource(R.string.app_name))
-                        },
-                        enabled = running,
-                        onClick = onModules
-                    )
-                }
-                item {
-                    SimpleActionCard(
-                        icon = R.drawable.ic_terminal_24,
-                        title = stringResource(R.string.home_terminal_title),
-                        body = if (running) {
-                            stringResource(R.string.home_terminal_description)
-                        } else {
-                            stringResource(R.string.home_status_service_not_running, stringResource(R.string.app_name))
-                        },
-                        enabled = running,
-                        onClick = onTerminal
-                    )
+                    val manageTitle = if (running) {
+                        context.resources.getQuantityString(
+                            R.plurals.home_app_management_authorized_apps_count,
+                            grantedCount,
+                            grantedCount
+                        )
+                    } else {
+                        stringResource(R.string.home_app_management_title)
+                    }
+                    val manageBody = if (running) {
+                        stringResource(R.string.home_app_management_view_authorized_apps)
+                    } else {
+                        stringResource(R.string.home_status_service_not_running, stringResource(R.string.app_name))
+                    }
+                    HomeGroup(title = stringResource(R.string.home_section_manage)) {
+                        HomeRow(
+                            index = 0,
+                            count = 3,
+                            icon = R.drawable.ic_system_icon,
+                            title = manageTitle,
+                            summary = manageBody,
+                            enabled = running,
+                            onClick = onManageApps
+                        )
+                        HomeRow(
+                            index = 1,
+                            count = 3,
+                            icon = R.drawable.ic_adb_24dp,
+                            title = stringResource(R.string.modules_title),
+                            summary = if (running) {
+                                stringResource(R.string.home_modules_description)
+                            } else {
+                                stringResource(R.string.home_status_service_not_running, stringResource(R.string.app_name))
+                            },
+                            enabled = running,
+                            onClick = onModules
+                        )
+                        HomeRow(
+                            index = 2,
+                            count = 3,
+                            icon = R.drawable.ic_terminal_24,
+                            title = stringResource(R.string.home_terminal_title),
+                            summary = if (running) {
+                                stringResource(R.string.home_terminal_description)
+                            } else {
+                                stringResource(R.string.home_status_service_not_running, stringResource(R.string.app_name))
+                            },
+                            enabled = running,
+                            onClick = onTerminal
+                        )
+                    }
                 }
             }
 
             if (running && !adbPermission) {
                 item {
-                    HomeCard(
-                        icon = R.drawable.ic_warning_24,
-                        title = stringResource(R.string.home_adb_is_limited_title),
-                        body = stringResource(R.string.home_adb_is_limited_description)
-                    ) {
-                        HomeButtons(
-                            listOf(
-                                HomeButtonSpec(
-                                    label = R.string.home_adb_button_view_help,
-                                    icon = R.drawable.ic_help_outline_24dp,
-                                    primary = true,
-                                    onClick = onOpenAdbPermissionHelp
-                                )
-                            )
-                        )
-                    }
+                    AdbLimitedCard(onOpenAdbPermissionHelp = onOpenAdbPermissionHelp)
                 }
             }
 
             if (isPrimaryUser) {
                 val rootRestart = running && status.uid == 0
-                if (isRooted) {
-                    item {
-                        RootCard(rootRestart, onStartRoot)
+                val canPair = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                val wirelessRows = if (canUseWirelessAdb) 1 + if (canPair) 2 else 0 else 0
+                val count = 2 + wirelessRows
+                val wirelessIndex = if (isRooted) 1 else 0
+                val commandIndex = wirelessIndex + wirelessRows
+                item {
+                    HomeGroup(title = stringResource(R.string.home_section_start)) {
+                        if (isRooted) {
+                            HomeRootRow(
+                                index = 0,
+                                count = count,
+                                restart = rootRestart,
+                                onStartRoot = onStartRoot
+                            )
+                        }
+                        if (canUseWirelessAdb) {
+                            HomeWirelessRow(
+                                index = wirelessIndex,
+                                count = count,
+                                localNetworkPermissionState = localNetworkPermissionState,
+                                onStartWirelessAdb = onStartWirelessAdb
+                            )
+                            if (canPair) {
+                                HomePairingRow(
+                                    index = wirelessIndex + 1,
+                                    count = count,
+                                    onPairWirelessAdb = onPairWirelessAdb
+                                )
+                                HomeGuideRow(
+                                    index = wirelessIndex + 2,
+                                    count = count,
+                                    onOpenWirelessGuide = onOpenWirelessGuide
+                                )
+                            }
+                        }
+                        HomeAdbCommandRow(
+                            index = commandIndex,
+                            count = count,
+                            onShowAdbCommand = onShowAdbCommand,
+                            onOpenAdbHelp = onOpenAdbHelp
+                        )
+                        if (!isRooted) {
+                            HomeRootRow(
+                                index = count - 1,
+                                count = count,
+                                restart = rootRestart,
+                                onStartRoot = onStartRoot
+                            )
+                        }
                     }
                 }
-                if (canUseWirelessAdb) {
-                    item {
-                        WirelessAdbCard(
-                            localNetworkPermissionState = localNetworkPermissionState,
-                            onStartWirelessAdb = onStartWirelessAdb,
-                            onPairWirelessAdb = onPairWirelessAdb,
-                            onOpenWirelessGuide = onOpenWirelessGuide
+            }
+
+            val infoCount = if (localNetworkMissing) 3 else 2
+            item {
+                HomeGroup(title = stringResource(R.string.home_section_info)) {
+                    if (localNetworkMissing) {
+                        HomeRow(
+                            index = 0,
+                            count = infoCount,
+                            icon = R.drawable.ic_warning_24,
+                            title = stringResource(R.string.home_local_network_title),
+                            summary = stringResource(
+                                R.string.home_local_network_description,
+                                localNetworkPermissionState.label
+                            ),
+                            showChevron = false,
+                            onClick = onRequestLocalNetworkPermission,
+                            trailing = {
+                                HomeRowButton(
+                                    label = R.string.home_local_network_grant,
+                                    icon = R.drawable.ic_settings_outline_24dp,
+                                    onClick = onRequestLocalNetworkPermission
+                                )
+                            }
                         )
                     }
-                }
-                item {
-                    AdbCommandCard(
-                        onShowAdbCommand = onShowAdbCommand,
-                        onOpenAdbHelp = onOpenAdbHelp
+                    HomeRow(
+                        index = if (localNetworkMissing) 1 else 0,
+                        count = infoCount,
+                        icon = R.drawable.ic_outline_info_24,
+                        title = stringResource(R.string.home_diagnostics_title),
+                        summary = diagnostics,
+                        showChevron = false,
+                        onClick = { onCopyDiagnostics(diagnostics) },
+                        trailing = {
+                            IconButton(onClick = { onCopyDiagnostics(diagnostics) }) {
+                                ShizukuIcon(
+                                    icon = R.drawable.ic_content_copy_24,
+                                    contentDescription = stringResource(R.string.home_diagnostics_copy),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    )
+                    HomeRow(
+                        index = infoCount - 1,
+                        count = infoCount,
+                        icon = R.drawable.ic_learn_more_24dp,
+                        title = stringResource(R.string.home_learn_more_title),
+                        summary = stringResource(R.string.home_learn_more_description),
+                        onClick = onLearnMore
                     )
                 }
-                if (!isRooted) {
-                    item {
-                        RootCard(rootRestart, onStartRoot)
-                    }
-                }
-            }
-
-            if (localNetworkPermissionState.required && !localNetworkPermissionState.granted) {
-                item {
-                    LocalNetworkPermissionCard(
-                        localNetworkPermissionState = localNetworkPermissionState,
-                        onRequestLocalNetworkPermission = onRequestLocalNetworkPermission
-                    )
-                }
-            }
-
-            item {
-                DiagnosticsCard(
-                    diagnostics = diagnostics,
-                    onCopyDiagnostics = onCopyDiagnostics
-                )
-            }
-
-            item {
-                SimpleActionCard(
-                    icon = R.drawable.ic_learn_more_24dp,
-                    title = stringResource(R.string.home_learn_more_title),
-                    body = stringResource(R.string.home_learn_more_description),
-                    onClick = onLearnMore
-                )
             }
         }
     }
 }
 
 @Composable
-internal fun StatusCard(
+internal fun StatusHero(
     serviceResource: Resource<ServiceStatus>?,
-    status: ServiceStatus
+    status: ServiceStatus,
+    isPrimaryUser: Boolean,
+    isRooted: Boolean,
+    canUseWirelessAdb: Boolean,
+    onStop: () -> Unit,
+    onStartRoot: () -> Unit,
+    onStartWirelessAdb: () -> Unit,
+    onShowAdbCommand: () -> Unit
 ) {
     val context = LocalContext.current
     val running = status.isRunning
@@ -430,86 +518,309 @@ internal fun StatusCard(
     val summary = remember(status, running) {
         buildServiceSummary(context, status)
     }
+    val container by animateColorAsState(
+        targetValue = if (running) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        },
+        animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
+        label = "status_hero_container"
+    )
+    val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
+    val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+    val cta = when {
+        running -> HeroAction(R.string.action_stop, R.drawable.ic_close_24, onStop)
+        !isPrimaryUser -> null
+        isRooted -> HeroAction(R.string.home_root_button_start, R.drawable.ic_server_start_24dp, onStartRoot)
+        canUseWirelessAdb -> HeroAction(R.string.home_root_button_start, R.drawable.ic_server_start_24dp, onStartWirelessAdb)
+        else -> HeroAction(R.string.home_adb_button_view_command, R.drawable.ic_code_24dp, onShowAdbCommand)
+    }
 
-    HomeCard(
-        icon = if (running) R.drawable.ic_server_ok_24dp else R.drawable.ic_server_error_24dp,
-        title = title,
-        body = summary
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraExtraLarge,
+        color = container,
+        tonalElevation = 0.dp
     ) {
-        if (serviceResource == null) {
-            Spacer(Modifier.height(12.dp))
-            androidx.compose.material3.LoadingIndicator(Modifier.size(32.dp))
+        Column(
+            modifier = Modifier.padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            AnimatedContent(
+                targetState = running,
+                transitionSpec = {
+                    (
+                        scaleIn(initialScale = 0.9f, animationSpec = spatialSpec) +
+                            fadeIn(animationSpec = effectsSpec)
+                        ) togetherWith
+                        (
+                            scaleOut(targetScale = 0.9f, animationSpec = spatialSpec) +
+                                fadeOut(animationSpec = effectsSpec)
+                            )
+                },
+                label = "status_hero_header"
+            ) { isRunning ->
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Surface(
+                        modifier = Modifier.size(52.dp),
+                        shape = CircleShape,
+                        color = if (isRunning) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        }
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            ShizukuIcon(
+                                icon = if (isRunning) R.drawable.ic_server_ok_24dp else R.drawable.ic_server_error_24dp,
+                                contentDescription = null,
+                                tint = if (isRunning) {
+                                    MaterialTheme.colorScheme.onPrimary
+                                } else {
+                                    MaterialTheme.colorScheme.onSecondaryContainer
+                                },
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (isRunning) {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            }
+                        )
+                        if (summary.isNotBlank()) {
+                            Text(
+                                text = summary,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = if (isRunning) {
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (running) {
+                HeroFactChip(
+                    text = stringResource(
+                        if (status.permission) R.string.home_hero_adb_full else R.string.home_hero_adb_limited
+                    ),
+                    container = MaterialTheme.colorScheme.primary,
+                    content = MaterialTheme.colorScheme.onPrimary
+                )
+            }
+
+            if (serviceResource == null) {
+                LoadingIndicator(Modifier.size(32.dp))
+            } else if (cta != null) {
+                Button(
+                    onClick = cta.onClick,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = MaterialTheme.shapes.extraLargeIncreased
+                ) {
+                    ShizukuIcon(
+                        icon = cta.icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = stringResource(cta.label),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
-internal fun ManageAppsCard(
-    status: ServiceStatus,
-    grantedCount: Int,
-    onClick: () -> Unit
+internal fun HeroFactChip(
+    text: String,
+    container: Color,
+    content: Color
 ) {
-    val context = LocalContext.current
-    val running = status.isRunning
-    val title = if (running) {
-        context.resources.getQuantityString(
-            R.plurals.home_app_management_authorized_apps_count,
-            grantedCount,
-            grantedCount
+    Surface(
+        shape = CircleShape,
+        color = container,
+        contentColor = content
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
         )
-    } else {
-        stringResource(R.string.home_app_management_title)
     }
-    val body = if (running) {
-        stringResource(R.string.home_app_management_view_authorized_apps)
-    } else {
-        stringResource(R.string.home_status_service_not_running, stringResource(R.string.app_name))
-    }
+}
 
-    SimpleActionCard(
-        icon = R.drawable.ic_system_icon,
+@Composable
+internal fun AdbLimitedCard(
+    onOpenAdbPermissionHelp: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLargeIncreased,
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        tonalElevation = 0.dp
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ShizukuIcon(
+                    icon = R.drawable.ic_warning_24,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.size(24.dp)
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = stringResource(R.string.home_adb_is_limited_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = stringResource(R.string.home_adb_is_limited_description),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+            Button(
+                onClick = onOpenAdbPermissionHelp,
+                shape = MaterialTheme.shapes.largeIncreased,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError
+                )
+            ) {
+                ShizukuIcon(
+                    icon = R.drawable.ic_help_outline_24dp,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.home_adb_button_view_help))
+            }
+        }
+    }
+}
+
+@Composable
+internal fun HomeGroup(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SettingsSectionHeader(title)
+        Column(
+            verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
+            content = content
+        )
+    }
+}
+
+@Composable
+internal fun HomeRow(
+    index: Int,
+    count: Int,
+    @DrawableRes icon: Int,
+    title: String,
+    summary: String?,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    showChevron: Boolean = true,
+    onClick: (() -> Unit)? = null,
+    trailing: @Composable (() -> Unit)? = null
+) {
+    SettingsItem(
+        index = index,
+        count = count,
         title = title,
-        body = body,
-        enabled = running,
-        onClick = onClick
+        modifier = modifier.then(if (enabled) Modifier else Modifier.alpha(0.56f)),
+        icon = icon,
+        summary = summary,
+        showChevron = showChevron,
+        onClick = if (enabled) onClick else null,
+        trailing = trailing
     )
 }
 
 @Composable
-internal fun RootCard(
-    restart: Boolean,
-    onStartRoot: () -> Unit
+internal fun HomeRowButton(
+    @StringRes label: Int,
+    @DrawableRes icon: Int,
+    onClick: () -> Unit
 ) {
-    val buttonLabel = if (restart) R.string.home_root_button_restart else R.string.home_root_button_start
-    val buttonIcon = if (restart) R.drawable.ic_server_restart else R.drawable.ic_server_start_24dp
-
-    HomeCard(
-        icon = R.drawable.ic_root_24dp,
-        title = htmlStringResource(R.string.home_root_title),
-        body = htmlStringResource(
-            R.string.home_root_description,
-            "Don't kill my app!"
-        )
+    TextButton(
+        onClick = onClick,
+        contentPadding = PaddingValues(horizontal = 8.dp)
     ) {
-        HomeButtons(
-            listOf(
-                HomeButtonSpec(
-                    label = buttonLabel,
-                    icon = buttonIcon,
-                    primary = true,
-                    onClick = onStartRoot
-                )
-            )
+        ShizukuIcon(
+            icon = icon,
+            contentDescription = null,
+            modifier = Modifier
+                .padding(end = 6.dp)
+                .size(18.dp)
+        )
+        Text(
+            text = stringResource(label),
+            style = MaterialTheme.typography.labelLarge
         )
     }
 }
 
 @Composable
-internal fun WirelessAdbCard(
+internal fun HomeRootRow(
+    index: Int,
+    count: Int,
+    restart: Boolean,
+    onStartRoot: () -> Unit
+) {
+    HomeRow(
+        index = index,
+        count = count,
+        icon = R.drawable.ic_root_24dp,
+        title = htmlStringResource(R.string.home_root_title),
+        summary = htmlStringResource(
+            R.string.home_root_description,
+            "Don't kill my app!"
+        ),
+        showChevron = false,
+        onClick = onStartRoot,
+        trailing = {
+            HomeRowButton(
+                label = if (restart) R.string.home_root_button_restart else R.string.home_root_button_start,
+                icon = if (restart) R.drawable.ic_server_restart else R.drawable.ic_server_start_24dp,
+                onClick = onStartRoot
+            )
+        }
+    )
+}
+
+@Composable
+internal fun HomeWirelessRow(
+    index: Int,
+    count: Int,
     localNetworkPermissionState: LocalNetworkPermissionState,
-    onStartWirelessAdb: () -> Unit,
-    onPairWirelessAdb: () -> Unit,
-    onOpenWirelessGuide: () -> Unit
+    onStartWirelessAdb: () -> Unit
 ) {
     val body = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
         htmlStringResource(R.string.home_wireless_adb_description)
@@ -529,243 +840,78 @@ internal fun WirelessAdbCard(
         null
     }
 
-    HomeCard(
+    HomeRow(
+        index = index,
+        count = count,
         icon = R.drawable.ic_wadb_24,
         title = htmlStringResource(R.string.home_wireless_adb_title),
-        body = listOfNotNull(body, permissionLine).joinToString("\n\n")
-    ) {
-        val buttons = mutableListOf(
-            HomeButtonSpec(
+        summary = listOfNotNull(body, permissionLine).joinToString("\n\n"),
+        showChevron = false,
+        onClick = onStartWirelessAdb,
+        trailing = {
+            HomeRowButton(
                 label = R.string.home_root_button_start,
                 icon = R.drawable.ic_server_start_24dp,
-                primary = true,
                 onClick = onStartWirelessAdb
             )
-        )
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            buttons += HomeButtonSpec(
-                label = R.string.adb_pairing,
-                icon = R.drawable.ic_numeric_1_circle_outline_24,
-                onClick = onPairWirelessAdb
-            )
-            buttons += HomeButtonSpec(
-                label = R.string.home_wireless_adb_view_guide_button,
-                icon = R.drawable.ic_help_outline_24dp,
-                onClick = onOpenWirelessGuide
-            )
         }
-        HomeButtons(buttons)
-    }
-}
-
-@Composable
-internal fun AdbCommandCard(
-    onShowAdbCommand: () -> Unit,
-    onOpenAdbHelp: () -> Unit
-) {
-    HomeCard(
-        icon = R.drawable.ic_adb_24dp,
-        title = htmlStringResource(R.string.home_adb_title),
-        body = htmlStringResource(R.string.home_adb_description, Helps.ADB.get())
-    ) {
-        HomeButtons(
-            listOf(
-                HomeButtonSpec(
-                    label = R.string.home_adb_button_view_command,
-                    icon = R.drawable.ic_code_24dp,
-                    primary = true,
-                    onClick = onShowAdbCommand
-                ),
-                HomeButtonSpec(
-                    label = R.string.home_adb_button_view_help,
-                    icon = R.drawable.ic_help_outline_24dp,
-                    onClick = onOpenAdbHelp
-                )
-            )
-        )
-    }
-}
-
-@Composable
-internal fun LocalNetworkPermissionCard(
-    localNetworkPermissionState: LocalNetworkPermissionState,
-    onRequestLocalNetworkPermission: () -> Unit
-) {
-    HomeCard(
-        icon = R.drawable.ic_warning_24,
-        title = stringResource(R.string.home_local_network_title),
-        body = stringResource(
-            R.string.home_local_network_description,
-            localNetworkPermissionState.label
-        )
-    ) {
-        HomeButtons(
-            listOf(
-                HomeButtonSpec(
-                    label = R.string.home_local_network_grant,
-                    icon = R.drawable.ic_settings_outline_24dp,
-                    primary = true,
-                    onClick = onRequestLocalNetworkPermission
-                )
-            )
-        )
-    }
-}
-
-@Composable
-internal fun DiagnosticsCard(
-    diagnostics: String,
-    onCopyDiagnostics: (String) -> Unit
-) {
-    HomeCard(
-        icon = R.drawable.ic_outline_info_24,
-        title = stringResource(R.string.home_diagnostics_title),
-        body = diagnostics
-    ) {
-        HomeButtons(
-            listOf(
-                HomeButtonSpec(
-                    label = R.string.home_diagnostics_copy,
-                    icon = R.drawable.ic_content_copy_24,
-                    primary = true,
-                    onClick = { onCopyDiagnostics(diagnostics) }
-                )
-            )
-        )
-    }
-}
-
-@Composable
-internal fun SimpleActionCard(
-    @DrawableRes icon: Int,
-    title: String,
-    body: String,
-    enabled: Boolean = true,
-    onClick: () -> Unit
-) {
-    HomeCard(
-        icon = icon,
-        title = title,
-        body = body,
-        enabled = enabled,
-        onClick = onClick
     )
 }
 
 @Composable
-internal fun HomeCard(
-    @DrawableRes icon: Int,
-    title: String,
-    body: String,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    onClick: (() -> Unit)? = null,
-    content: @Composable () -> Unit = {}
+internal fun HomePairingRow(
+    index: Int,
+    count: Int,
+    onPairWirelessAdb: () -> Unit
 ) {
-    val clickableModifier = if (onClick != null) {
-        Modifier.clickable(enabled = enabled, onClick = onClick)
-    } else {
-        Modifier
-    }
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .then(clickableModifier)
-            .alpha(if (enabled) 1f else 0.56f),
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        tonalElevation = 2.dp
-    ) {
-        Row(
-            modifier = Modifier.padding(18.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Surface(
-                modifier = Modifier.size(44.dp),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    ShizukuIcon(
-                        icon = icon,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            }
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                if (body.isNotBlank()) {
-                    Text(
-                        text = body,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                content()
-            }
-        }
-    }
+    HomeRow(
+        index = index,
+        count = count,
+        icon = R.drawable.ic_numeric_1_circle_outline_24,
+        title = stringResource(R.string.adb_pairing),
+        summary = null,
+        onClick = onPairWirelessAdb
+    )
 }
 
 @Composable
-internal fun HomeButtons(buttons: List<HomeButtonSpec>) {
-    if (buttons.isEmpty()) return
-
-    Spacer(Modifier.height(8.dp))
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        buttons.forEach { button ->
-            if (button.primary) {
-                Button(
-                    enabled = button.enabled,
-                    onClick = button.onClick,
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
-                ) {
-                    ButtonIcon(button.icon)
-                    Text(stringResource(button.label))
-                }
-            } else if (button.enabled) {
-                FilledTonalButton(
-                    onClick = button.onClick,
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
-                ) {
-                    ButtonIcon(button.icon)
-                    Text(stringResource(button.label))
-                }
-            } else {
-                OutlinedButton(
-                    enabled = false,
-                    onClick = button.onClick,
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
-                ) {
-                    ButtonIcon(button.icon)
-                    Text(stringResource(button.label))
-                }
-            }
-        }
-    }
+internal fun HomeGuideRow(
+    index: Int,
+    count: Int,
+    onOpenWirelessGuide: () -> Unit
+) {
+    HomeRow(
+        index = index,
+        count = count,
+        icon = R.drawable.ic_help_outline_24dp,
+        title = stringResource(R.string.home_wireless_adb_view_guide_button),
+        summary = null,
+        onClick = onOpenWirelessGuide
+    )
 }
 
 @Composable
-internal fun ButtonIcon(@DrawableRes icon: Int) {
-    ShizukuIcon(
-        icon = icon,
-        contentDescription = null,
-        modifier = Modifier
-            .padding(end = 8.dp)
-            .size(18.dp)
+internal fun HomeAdbCommandRow(
+    index: Int,
+    count: Int,
+    onShowAdbCommand: () -> Unit,
+    onOpenAdbHelp: () -> Unit
+) {
+    HomeRow(
+        index = index,
+        count = count,
+        icon = R.drawable.ic_adb_24dp,
+        title = htmlStringResource(R.string.home_adb_title),
+        summary = htmlStringResource(R.string.home_adb_description, Helps.ADB.get()),
+        showChevron = false,
+        onClick = onShowAdbCommand,
+        trailing = {
+            HomeRowButton(
+                label = R.string.home_adb_button_view_help,
+                icon = R.drawable.ic_help_outline_24dp,
+                onClick = onOpenAdbHelp
+            )
+        }
     )
 }
 
