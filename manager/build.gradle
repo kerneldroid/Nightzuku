@@ -14,11 +14,6 @@ android {
         applicationId "kerneldroid.nightzuku"
         versionCode rootProject.ext.versionCode
         versionName rootProject.ext.versionName
-        externalNativeBuild {
-            cmake {
-                arguments '-DANDROID_STL=none'
-            }
-        }
     }
     buildFeatures {
         buildConfig true
@@ -42,12 +37,6 @@ android {
             shrinkResources true
             vcsInfo.include false
             proguardFiles 'proguard-rules.pro'
-        }
-    }
-    externalNativeBuild {
-        cmake {
-            path 'src/main/jni/CMakeLists.txt'
-            version = "3.31.0+"
         }
     }
     packagingOptions {
@@ -115,6 +104,10 @@ def collapseReleaseResourceNames = task('collapseReleaseResourceNames').doLast {
     }
 }
 
+ext.rustPackages = ['starter', 'adb-pairing']
+ext.rustExecutables = ['shizuku': 'libshizuku.so']
+apply from: rootProject.file('gradle/rust-native.gradle')
+
 afterEvaluate {
     if (tasks.findByName('optimizeReleaseResources') != null) {
         tasks.getByName('optimizeReleaseResources').finalizedBy(collapseReleaseResourceNames)
@@ -123,10 +116,6 @@ afterEvaluate {
     tasks.getByName('preDebugBuild').dependsOn(':shell:copyDebugShellDex')
     tasks.getByName('mergeReleaseAssets').dependsOn(':shell:copyReleaseShellDex')
     tasks.getByName('mergeDebugAssets').dependsOn(':shell:copyDebugShellDex')
-    tasks.getByName('preReleaseBuild').dependsOn(':shell:buildReleaseTapiDex')
-    tasks.getByName('preDebugBuild').dependsOn(':shell:buildDebugTapiDex')
-    tasks.getByName('mergeReleaseAssets').dependsOn(':shell:buildReleaseTapiDex')
-    tasks.getByName('mergeDebugAssets').dependsOn(':shell:buildDebugTapiDex')
 
     ['debug', 'release'].each { variantName ->
         def capitalized = variantName.capitalize()
@@ -178,38 +167,37 @@ dependencies {
     implementation project(':api')
     implementation project(':provider')
     implementation project(':common')
-    implementation project(':tapi')
     compileOnly project(':nightdog')
 
     implementation libs.hidden.compat
     compileOnly libs.hidden.stub
 
-    implementation platform('androidx.compose:compose-bom:2026.06.00')
+    implementation platform('androidx.compose:compose-bom:2026.09.00')
     implementation 'androidx.compose.animation:animation'
     implementation 'androidx.compose.foundation:foundation'
     implementation 'androidx.compose.material:material-icons-core'
     implementation 'androidx.compose.material:material-icons-extended'
-    implementation 'androidx.compose.material3:material3:1.5.0-alpha22'
+    implementation 'androidx.compose.material3:material3:1.5.0-beta01'
     implementation 'androidx.compose.runtime:runtime'
     implementation 'androidx.compose.runtime:runtime-livedata'
     implementation 'androidx.compose.ui:ui'
     implementation 'androidx.compose.ui:ui-tooling-preview'
     debugImplementation 'androidx.compose.ui:ui-tooling'
     
-    implementation 'androidx.wear.compose:compose-foundation:1.6.2'
-    implementation 'androidx.wear.compose:compose-material3:1.6.2'
+    implementation 'androidx.wear.compose:compose-foundation:1.7.1'
+    implementation 'androidx.wear.compose:compose-material3:1.7.1'
 
     implementation 'androidx.tv:tv-foundation:1.0.0'
     implementation 'androidx.tv:tv-material:1.1.0'
 
-    implementation 'androidx.activity:activity-compose:1.13.0'
+    implementation 'androidx.activity:activity-compose:1.14.0-alpha03'
     implementation 'androidx.browser:browser:1.10.0'
-    implementation 'androidx.core:core-ktx:1.19.0'
-    implementation 'androidx.fragment:fragment-ktx:1.8.9'
+    implementation 'androidx.core:core-ktx:1.19.1'
+    implementation 'androidx.fragment:fragment-ktx:1.9.1'
     implementation 'androidx.recyclerview:recyclerview:1.4.0'
-    implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.11.0'
-    implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0'
-    implementation 'androidx.lifecycle:lifecycle-livedata-ktx:2.11.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.12.0-alpha04'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.12.0-alpha04'
+    implementation 'androidx.lifecycle:lifecycle-livedata-ktx:2.12.0-alpha04'
     implementation 'androidx.preference:preference-ktx:1.2.1'
 
     implementation 'com.google.android.material:material:1.14.0'
@@ -232,18 +220,15 @@ dependencies {
     implementation 'dev.rikka.rikkax.lifecycle:lifecycle-shared-viewmodel:1.0.1'
     implementation 'dev.rikka.rikkax.lifecycle:lifecycle-viewmodel-lazy:2.0.0'
 
-    implementation 'io.github.vvb2060.ndk:boringssl:20251124'
-    implementation 'org.lsposed.libcxx:libcxx:29.0.14206865'
-
-    implementation 'org.lsposed.hiddenapibypass:hiddenapibypass:6.1'
-
-    implementation 'org.bouncycastle:bcpkix-jdk18on:1.84'
-
     implementation 'me.zhanghai.android.appiconloader:appiconloader:1.5.0'
 
-    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
-    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1'
-    implementation 'androidx.security:security-crypto:1.1.0-alpha06'
+    implementation 'org.bouncycastle:bcpkix-jdk18on:1.86'
+
+    implementation 'org.lsposed.hiddenapibypass:hiddenapibypass:6.2'
+
+    implementation 'com.squareup.okhttp3:okhttp:5.5.0'
+    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0'
+    implementation 'androidx.security:security-crypto:1.1.0'
 
     implementation 'io.coil-kt:coil-compose:2.7.0'
 }

@@ -1,0 +1,84 @@
+def rustAbiTriples = [
+        'arm64-v8a'  : 'aarch64-linux-android',
+        'armeabi-v7a': 'armv7-linux-androideabi',
+        'x86'        : 'i686-linux-android',
+        'x86_64'     : 'x86_64-linux-android',
+]
+
+def rustWorkspace = rootProject.file('rust')
+def rustPackages = project.ext.has('rustPackages') ? project.ext.rustPackages : []
+def rustExecutables = project.ext.has('rustExecutables') ? project.ext.rustExecutables : [:]
+
+def androidSdkDirectory = {
+    def localProperties = rootProject.file('local.properties')
+    if (localProperties.exists()) {
+        def properties = new Properties()
+        localProperties.withInputStream { properties.load(it) }
+        def sdkDir = properties.getProperty('sdk.dir')
+        if (sdkDir != null) {
+            return new File(sdkDir)
+        }
+    }
+    def fromEnvironment = System.getenv('ANDROID_HOME') ?: System.getenv('ANDROID_SDK_ROOT')
+    if (fromEnvironment != null) {
+        return new File(fromEnvironment)
+    }
+    throw new GradleException('Android SDK directory not found: set sdk.dir in local.properties or ANDROID_HOME')
+}
+
+android {
+    sourceSets {
+        debug.jniLibs.srcDir(file("$buildDir/generated/rustJniLibs/debug"))
+        release.jniLibs.srcDir(file("$buildDir/generated/rustJniLibs/release"))
+    }
+}
+
+['debug', 'release'].each { variantName ->
+    def capitalized = variantName.capitalize()
+    def rustTask = tasks.register("buildRust${capitalized}") {
+        def outDir = file("$buildDir/generated/rustJniLibs/${variantName}")
+        def profileDir = variantName == 'release' ? 'release' : 'debug'
+        inputs.dir(rustWorkspace)
+        outputs.dir(outDir)
+        doLast {
+            outDir.mkdirs()
+            def command = ['cargo', 'ndk', '--platform', '25']
+            rustAbiTriples.keySet().each { abi -> command += ['-t', abi] }
+            command += ['-o', outDir.absolutePath, 'build']
+            if (variantName == 'release') {
+                command += ['--release']
+            }
+            rustPackages.each { packageName -> command += ['-p', packageName] }
+
+            def ndkDir = new File(androidSdkDirectory(), "ndk/${android.ndkVersion}")
+            def processBuilder = new ProcessBuilder(command)
+            processBuilder.directory(rustWorkspace)
+            processBuilder.redirectErrorStream(true)
+            processBuilder.environment().put('ANDROID_NDK_HOME', ndkDir.absolutePath)
+            def process = processBuilder.start()
+            def output = process.inputStream.text
+            def exitValue = process.waitFor()
+            if (exitValue != 0) {
+                throw new GradleException("cargo ndk failed (${exitValue}):\n${output}")
+            }
+
+            rustExecutables.each { binaryName, packagedName ->
+                rustAbiTriples.each { abi, triple ->
+                    def built = new File(rustWorkspace, "target/${triple}/${profileDir}/${binaryName}")
+                    if (!built.exists()) {
+                        throw new GradleException("rust binary ${binaryName} was not built for ${abi}: ${built}")
+                    }
+                    def destination = new File(outDir, "${abi}/${packagedName}")
+                    destination.parentFile.mkdirs()
+                    destination.bytes = built.bytes
+                    destination.setExecutable(true, false)
+                }
+            }
+        }
+    }
+    tasks.matching {
+        it.name.startsWith("merge${capitalized}") && (it.name.contains('Jni') || it.name.contains('Native'))
+    }.configureEach {
+        dependsOn(rustTask)
+    }
+}

@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0
+      - name: Setup Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: manager/src/main/rust
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+      - name: Write signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
+          KEYSTORE_ALIAS_PASSWORD: ${{ secrets.KEYSTORE_ALIAS_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEYSTORE_ALIAS" ] || [ -z "$KEYSTORE_ALIAS_PASSWORD" ]; then
+            echo "::error::Signing secrets are not configured; refusing to build an unsigned release."
+            exit 1
+          fi
+          {
+            printf 'KEYSTORE_PASSWORD=%s\n' "$KEYSTORE_PASSWORD"
+            printf 'KEYSTORE_ALIAS=%s\n' "$KEYSTORE_ALIAS"
+            printf 'KEYSTORE_ALIAS_PASSWORD=%s\n' "$KEYSTORE_ALIAS_PASSWORD"
+            printf 'KEYSTORE_FILE=../key.jks\n'
+          } > signing.properties
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > key.jks
+      - name: Setup Android SDK
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --channel=3 \
+            "platforms;android-37.0" \
+            "build-tools;37.0.0" \
+            "ndk;29.0.14206865"
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          dependency-graph: generate-and-submit
+          build-scan-publish: true
+          build-scan-terms-of-use-url: "https://gradle.com/terms-of-service"
+          build-scan-terms-of-use-agree: "yes"
+      - name: Configure Gradle
+        run: |
+          echo 'android.sdk.channel=3' >> gradle.properties
+          echo 'android.native.buildOutput=verbose' >> gradle.properties
+          echo 'org.gradle.caching=true' >> gradle.properties
+          echo 'org.gradle.parallel=true' >> gradle.properties
+      - name: Build release APK
+        run: ./gradlew :manager:assembleRelease
+      - name: Verify signature
+        run: |
+          apk=$(ls out/apk/*-release.apk)
+          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --print-certs "$apk"
+      - name: Upload release APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: nightzuku-${{ github.ref_name }}-release
+          path: out/apk/*-release.apk
+          compression-level: 9
+          overwrite: true
+      - name: GitHub Release
+        uses: softprops/action-gh-release@v3
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: out/apk/*-release.apk
+          fail_on_unmatched_files: true
+          generate_release_notes: true

@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+members = ["starter", "adb-pairing", "rish"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "Apache-2.0"
+publish = false
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+overflow-checks = false
+incremental = false
+
+[profile.dev]
+panic = "abort"
+opt-level = 1
+debug = false
+strip = "debuginfo"
+incremental = false
