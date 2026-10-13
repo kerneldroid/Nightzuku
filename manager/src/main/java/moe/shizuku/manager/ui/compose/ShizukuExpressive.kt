@@ -563,7 +563,8 @@ fun SettingsItem(
     summary: String? = null,
     showChevron: Boolean = true,
     onClick: (() -> Unit)? = null,
-    trailing: @Composable (() -> Unit)? = null
+    trailing: @Composable (() -> Unit)? = null,
+    compact: Boolean = false
 ) {
     SegmentedListItem(
         onClick = { onClick?.invoke() },
@@ -572,7 +573,10 @@ fun SettingsItem(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         ),
         modifier = modifier,
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        contentPadding = PaddingValues(
+            horizontal = 16.dp,
+            vertical = if (compact) 8.dp else 12.dp
+        ),
         leadingContent = if (icon != null) {
             {
                 ShizukuIcon(

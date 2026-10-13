@@ -393,13 +393,14 @@ internal fun HomeScreen(
                 val wirelessIndex = if (isRooted) 1 else 0
                 val commandIndex = wirelessIndex + wirelessRows
                 item {
-                    HomeGroup(title = stringResource(R.string.home_section_start)) {
+                    HomeGroup(title = stringResource(R.string.home_section_start), compact = true) {
                         if (isRooted) {
                             HomeRootRow(
                                 index = 0,
                                 count = count,
                                 restart = rootRestart,
-                                onStartRoot = onStartRoot
+                                onStartRoot = onStartRoot,
+                                compact = true
                             )
                         }
                         if (canUseWirelessAdb) {
@@ -407,18 +408,21 @@ internal fun HomeScreen(
                                 index = wirelessIndex,
                                 count = count,
                                 localNetworkPermissionState = localNetworkPermissionState,
-                                onStartWirelessAdb = onStartWirelessAdb
+                                onStartWirelessAdb = onStartWirelessAdb,
+                                compact = true
                             )
                             if (canPair) {
                                 HomePairingRow(
                                     index = wirelessIndex + 1,
                                     count = count,
-                                    onPairWirelessAdb = onPairWirelessAdb
+                                    onPairWirelessAdb = onPairWirelessAdb,
+                                    compact = true
                                 )
                                 HomeGuideRow(
                                     index = wirelessIndex + 2,
                                     count = count,
-                                    onOpenWirelessGuide = onOpenWirelessGuide
+                                    onOpenWirelessGuide = onOpenWirelessGuide,
+                                    compact = true
                                 )
                             }
                         }
@@ -426,14 +430,16 @@ internal fun HomeScreen(
                             index = commandIndex,
                             count = count,
                             onShowAdbCommand = onShowAdbCommand,
-                            onOpenAdbHelp = onOpenAdbHelp
+                            onOpenAdbHelp = onOpenAdbHelp,
+                            compact = true
                         )
                         if (!isRooted) {
                             HomeRootRow(
                                 index = count - 1,
                                 count = count,
                                 restart = rootRestart,
-                                onStartRoot = onStartRoot
+                                onStartRoot = onStartRoot,
+                                compact = true
                             )
                         }
                     }
@@ -726,9 +732,10 @@ internal fun AdbLimitedCard(
 @Composable
 internal fun HomeGroup(
     title: String,
+    compact: Boolean = false,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 10.dp)) {
         SettingsSectionHeader(title)
         Column(
             verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
@@ -748,7 +755,8 @@ internal fun HomeRow(
     enabled: Boolean = true,
     showChevron: Boolean = true,
     onClick: (() -> Unit)? = null,
-    trailing: @Composable (() -> Unit)? = null
+    trailing: @Composable (() -> Unit)? = null,
+    compact: Boolean = false
 ) {
     SettingsItem(
         index = index,
@@ -759,7 +767,8 @@ internal fun HomeRow(
         summary = summary,
         showChevron = showChevron,
         onClick = if (enabled) onClick else null,
-        trailing = trailing
+        trailing = trailing,
+        compact = compact
     )
 }
 
@@ -792,11 +801,13 @@ internal fun HomeRootRow(
     index: Int,
     count: Int,
     restart: Boolean,
-    onStartRoot: () -> Unit
+    onStartRoot: () -> Unit,
+    compact: Boolean = false
 ) {
     HomeRow(
         index = index,
         count = count,
+        compact = compact,
         icon = R.drawable.ic_root_24dp,
         title = htmlStringResource(R.string.home_root_title),
         summary = htmlStringResource(
@@ -820,7 +831,8 @@ internal fun HomeWirelessRow(
     index: Int,
     count: Int,
     localNetworkPermissionState: LocalNetworkPermissionState,
-    onStartWirelessAdb: () -> Unit
+    onStartWirelessAdb: () -> Unit,
+    compact: Boolean = false
 ) {
     val body = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
         htmlStringResource(R.string.home_wireless_adb_description)
@@ -843,6 +855,7 @@ internal fun HomeWirelessRow(
     HomeRow(
         index = index,
         count = count,
+        compact = compact,
         icon = R.drawable.ic_wadb_24,
         title = htmlStringResource(R.string.home_wireless_adb_title),
         summary = listOfNotNull(body, permissionLine).joinToString("\n\n"),
@@ -862,11 +875,13 @@ internal fun HomeWirelessRow(
 internal fun HomePairingRow(
     index: Int,
     count: Int,
-    onPairWirelessAdb: () -> Unit
+    onPairWirelessAdb: () -> Unit,
+    compact: Boolean = false
 ) {
     HomeRow(
         index = index,
         count = count,
+        compact = compact,
         icon = R.drawable.ic_numeric_1_circle_outline_24,
         title = stringResource(R.string.adb_pairing),
         summary = null,
@@ -878,11 +893,13 @@ internal fun HomePairingRow(
 internal fun HomeGuideRow(
     index: Int,
     count: Int,
-    onOpenWirelessGuide: () -> Unit
+    onOpenWirelessGuide: () -> Unit,
+    compact: Boolean = false
 ) {
     HomeRow(
         index = index,
         count = count,
+        compact = compact,
         icon = R.drawable.ic_help_outline_24dp,
         title = stringResource(R.string.home_wireless_adb_view_guide_button),
         summary = null,
@@ -895,11 +912,13 @@ internal fun HomeAdbCommandRow(
     index: Int,
     count: Int,
     onShowAdbCommand: () -> Unit,
-    onOpenAdbHelp: () -> Unit
+    onOpenAdbHelp: () -> Unit,
+    compact: Boolean = false
 ) {
     HomeRow(
         index = index,
         count = count,
+        compact = compact,
         icon = R.drawable.ic_adb_24dp,
         title = htmlStringResource(R.string.home_adb_title),
         summary = htmlStringResource(R.string.home_adb_description, Helps.ADB.get()),
