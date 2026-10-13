@@ -7,8 +7,6 @@ import android.os.Parcel
 import moe.shizuku.manager.utils.Logger.LOGGER
 import rikka.shizuku.Shizuku
 
-import moe.shizuku.manager.module.ModuleSettings
-
 object ShellBinderRequestHandler {
 
     fun handleRequest(context: Context, intent: Intent): Boolean {
@@ -17,15 +15,6 @@ object ShellBinderRequestHandler {
         }
 
         val binder = intent.getBundleExtra("data")?.getBinder("binder") ?: return false
-
-        if (!ModuleSettings.isTapiEnabled()) {
-            try {
-                val emptyData = Parcel.obtain()
-                binder.transact(2, emptyData, null, IBinder.FLAG_ONEWAY)
-                emptyData.recycle()
-            } catch (ignored: Throwable) {}
-            return true
-        }
 
         val shizukuBinder = Shizuku.getBinder()
         if (shizukuBinder == null) {

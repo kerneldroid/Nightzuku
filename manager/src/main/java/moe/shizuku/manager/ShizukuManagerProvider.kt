@@ -8,7 +8,6 @@ import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuApiConstants.USER_SERVICE_ARG_TOKEN
 import rikka.shizuku.ShizukuProvider
 import rikka.shizuku.server.ktx.workerHandler
-import moe.shizuku.manager.module.ModuleSettings
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
@@ -26,10 +25,6 @@ class ShizukuManagerProvider : ShizukuProvider() {
     }
 
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
-        if (method == "isTapiEnabled") {
-            context?.let { ShizukuSettings.initialize(it) }
-            return bundleOf("enabled" to ModuleSettings.isTapiEnabled())
-        }
         if (extras == null) return null
 
         return if (method == METHOD_SEND_USER_SERVICE) {

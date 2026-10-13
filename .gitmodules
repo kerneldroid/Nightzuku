@@ -1,4 +1,4 @@
 [submodule "api"]
 	path = api
-	url = https://github.com/RikkaApps/Shizuku-API.git
+	url = https://github.com/kerneldroid/nightzuku-api.git
 	branch = master

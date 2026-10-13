@@ -11,6 +11,7 @@
 jdk21/
 release.keystore
 signing.properties
+*.jks
 
 **/build/
 **/out/
@@ -19,5 +20,6 @@ signing.properties
 .jdk/
 *.apk
 *.jar
+!gradle/wrapper/gradle-wrapper.jar
 view.xml
 packages.txt
