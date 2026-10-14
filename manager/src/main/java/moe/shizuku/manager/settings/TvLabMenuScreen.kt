@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,15 +31,26 @@ import moe.shizuku.manager.R
 import moe.shizuku.manager.module.ModuleSettings
 import moe.shizuku.manager.nightdog.NightDogClient
 import moe.shizuku.manager.ui.compose.ShizukuIcon
+import rikka.shizuku.Shizuku
 
 @Composable
 fun TvLabMenuScreen(
     onNavigateUp: () -> Unit
 ) {
     var connectorEnabled by remember { mutableStateOf(ModuleSettings.isConnectorEnabled()) }
-    var nightDogEnabled by remember { mutableStateOf(try { NightDogClient.isEnabled() } catch (_: Throwable) { false }) }
+    var nightDogEnabled by remember { mutableStateOf(NightDogClient.isEnabled()) }
     var showUnsafeDialog by remember { mutableStateOf(false) }
     var showNightDogDialog by remember { mutableStateOf(false) }
+
+    DisposableEffect(Unit) {
+        val receivedListener = Shizuku.OnBinderReceivedListener {
+            nightDogEnabled = NightDogClient.isEnabled()
+        }
+        Shizuku.addBinderReceivedListener(receivedListener)
+        onDispose {
+            Shizuku.removeBinderReceivedListener(receivedListener)
+        }
+    }
 
     Row(modifier = Modifier.fillMaxSize().padding(32.dp)) {
         Column(

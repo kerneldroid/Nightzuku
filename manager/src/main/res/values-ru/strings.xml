@@ -59,7 +59,7 @@
     <string name="notification_settings">Настройки уведомлений</string>
     <string name="adb_pairing_tutorial_title">Сопряжение Nightzuku с вашим устройством</string>
     <string name="adb_pairing_tutorial_content_notification">Уведомление от Nightzuku поможет завершить сопряжение.</string>
-    <string name="adb_pairing_tutorial_content_steps">Перейдите в \"Параметры разработчика\" → \"Беспроводная отладка\". Нажмите \"Сопряжение устройства с кодом\" — появится шестизначный код.</string>
+    <string name="adb_pairing_tutorial_content_steps">Перейдите в \"Параметры разработчика\" → \"Беспроводная отладка\". Нажмите \"Сопряжение устройства с кодом\" — появится ш��стизначный код.</string>
     <string name="adb_pairing_tutorial_content_enter_pairing_code">Введите код в уведомлении для завершения сопряжения.</string>
     <string name="adb_pairing_tutorial_content_notification_blocked">Для сопряжения нужно взаимодействовать с уведомлением от Nightzuku. Разрешите Nightzuku отправлять уведомления.</string>
     <string name="adb_pairing_tutorial_content_miui">Пользователям MIUI может потребоваться переключить стиль уведомлений на \"Android\" в \"Уведомления\" → \"Панель уведомлений\" в настройках системы.</string>
@@ -266,9 +266,9 @@
     <string name="lab_features_summary">Экспериментальные возможности</string>
     <string name="shizuku_connectors_title">Подключатели Nightzuku</string>
     <string name="shizuku_connectors_summary">Разрешить плагинам активировать Nightzuku</string>
-    <string name="nightdog_title">NightDog (бета)</string>
-    <string name="nightdog_summary">Лёгкий системный монитор с нулевым энергопотреблением</string>
-    <string name="nightdog_description">NightDog мониторит здоровье сервера через inotify (без опроса). Работает как shell-процесс.</string>
+    <string name="nightdog_title">Сторожевой таймер NightDog</string>
+    <string name="nightdog_summary">Мониторинг здоровья сервера и автовосстановление при зависаниях</string>
+    <string name="nightdog_description">NightDog отслеживает отзывчивость главного потока сервера через периодические сигналы (heartbeat) и состояние критических системных служб (package, activity, user, appops) через Binder linkToDeath. При зависании сервера или потере служб NightDog перезапускает процесс через загрузчик.</string>
     <string name="unsafe_warning_title">Внимание</string>
     <string name="unsafe_warning_message">Включение этой функции НЕБЕЗОПАСНО. Вы уверены?</string>
 
