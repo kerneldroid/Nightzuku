@@ -11,10 +11,10 @@ NightDog is the built-in watchdog for the Nightzuku server process (`shizuku_ser
    - Before killing a stalled server process (`Process.killProcess(Process.myPid())`), NightDog captures and logs the main looper thread's stack trace to aid debugging.
 
 2. **System service death & recovery monitoring**:
-   - NightDog registers `IBinder.linkToDeath` recipients on four critical system services: `package`, `activity`, `user`, and `appops`.
+   - NightDog registers `IBinder.linkToDeath` recipients on four critical system services (`package`, `activity`, `user`, `appops`) and optional `permissionmgr`.
    - Each health-check cycle also performs a fallback `pingBinder()` check and properly unlinks stale death recipients before rebinding.
    - When a service dies or becomes unresponsive, NightDog deduplicates pending rebinds per service and retries with exponential backoff (`5s`, `10s`, `20s`, `40s`, `60s`, up to 10 attempts), verifying that the replacement binder is alive (`pingBinder()`) before accepting it.
-   - When a service recovers (`NightDog.Listener.onServiceRecovered`), `ShizukuService` re-registers `BinderSender` process/UID observers (if `activity` restarted) and re-dispatches binders to the manager and client apps.
+   - When a service recovers (`NightDog.Listener.onServiceRecovered`), `ShizukuService` invalidates cached `Android17Compat` proxy handles (`package` / `permissionmgr`), re-registers `BinderSender` process/UID observers (if `activity` restarted), and re-dispatches binders to the manager and client apps.
    - If a critical service cannot be recovered after all 10 attempts, NightDog terminates the server process so the starter daemon can respawn it and wait for system services cleanly.
 
 ## Enabling and disabling
@@ -27,9 +27,12 @@ NightDog is controlled via **Settings -> Lab Features -> NightDog Watchdog** acr
 
 ## Starter recovery behavior
 
-When `shizuku_server` exits abnormally or is killed by NightDog:
+When `shizuku_server` is launched or exits abnormally / is killed by NightDog:
 
-- The native `starter` supervisor (`rust/starter/src/main.rs`) waits 5 seconds and respawns `shizuku_server`.
+- The native `starter` (`rust/starter/src/main.rs`) ignores `SIGPIPE` and `SIGHUP` (`SIG_IGN`) so closing the launching ADB/root shell cannot kill the background supervisor or trigger broken-pipe terminations, while restoring `SIG_DFL` inside the spawned `shizuku_server` child before `execvp`.
+- Before spawning a new supervisor, `starter` terminates both stale `shizuku_server` instances and any lingering previous `starter` supervisor processes (matched via `/proc/<pid>/exe`) so duplicate supervisors never race each other.
+- `starter` forks a detached background supervisor (`setsid`, `/dev/null` stdio) and communicates the initial `shizuku_server` PID over a pipe so the foreground starter process immediately prints `info: shizuku_server pid is <pid>` and `info: shizuku_starter exit with 0` and exits cleanly without blocking `StarterActivity` or wireless ADB sessions.
+- The detached supervisor waits on `shizuku_server` via `waitpid` (retrying on `EINTR`), logs lifecycle events to Android logcat (`Shizuku` tag), and waits 5 seconds before respawning `shizuku_server` on abnormal exit.
 - Rapid crash loops are capped at 5 consecutive restarts (`max_restarts = 5`).
 - If `shizuku_server` runs stably for at least 60 seconds (`STABLE_UPTIME_RESET_SECS`), the consecutive crash counter resets to `0`, allowing NightDog to recover the server across multi-day uptimes without exhausting the retry budget.
 - Clean exits (`0`) and manager-uninstalled exits (`50` / `MANAGER_APP_NOT_FOUND`) stop the starter without restarting.

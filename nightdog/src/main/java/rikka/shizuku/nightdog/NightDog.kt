@@ -26,6 +26,7 @@ object NightDog {
     private const val MAX_REBIND_ATTEMPTS = 10
 
     private val CRITICAL_SERVICES = arrayOf("package", "activity", "user", "appops")
+    private val OPTIONAL_SERVICES = arrayOf("permissionmgr")
 
     interface Listener {
         fun onServiceRecovered(name: String) {}
@@ -84,7 +85,8 @@ object NightDog {
 
             threadHandler.post {
                 if (!started.get()) return@post
-                linkToServices(*CRITICAL_SERVICES)
+                linkToServices(critical = true, *CRITICAL_SERVICES)
+                linkToServices(critical = false, *OPTIONAL_SERVICES)
                 val initialDelay = minOf(this.pollIntervalMs, this.timeoutMs)
                 threadHandler.postDelayed(checkRunnable, initialDelay)
             }
@@ -147,13 +149,15 @@ object NightDog {
         }
     }
 
-    private fun linkToServices(vararg names: String) {
+    private fun linkToServices(critical: Boolean, vararg names: String) {
         for (name in names) {
             if (!started.get()) return
             val binder = ServiceManager.getService(name)
             if (binder == null || !binder.pingBinder() || !linkTo(name, binder)) {
-                Log.w(TAG, "Initial bind to '$name' unavailable, scheduling rebind")
-                scheduleRebind(name, INITIAL_REBIND_DELAY_MS)
+                if (critical) {
+                    Log.w(TAG, "Initial bind to '$name' unavailable, scheduling rebind")
+                    scheduleRebind(name, INITIAL_REBIND_DELAY_MS)
+                }
             }
         }
     }
@@ -215,12 +219,16 @@ object NightDog {
 
         val nextAttempt = attempts + 1
         if (nextAttempt >= MAX_REBIND_ATTEMPTS) {
-            Log.e(
-                TAG,
-                "Critical service '$name' failed to recover after $MAX_REBIND_ATTEMPTS attempts; terminating server for starter recovery"
-            )
             rebindAttempts.remove(name)
-            terminateForRecovery("service_unrecoverable:$name")
+            if (name in CRITICAL_SERVICES) {
+                Log.e(
+                    TAG,
+                    "Critical service '$name' failed to recover after $MAX_REBIND_ATTEMPTS attempts; terminating server for starter recovery"
+                )
+                terminateForRecovery("service_unrecoverable:$name")
+            } else {
+                Log.w(TAG, "Optional service '$name' did not recover after $MAX_REBIND_ATTEMPTS attempts")
+            }
             return
         }
 

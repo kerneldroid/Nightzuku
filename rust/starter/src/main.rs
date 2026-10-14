@@ -6,6 +6,7 @@ mod selinux;
 
 use std::ffi::{CStr, CString, c_char, c_int};
 use std::io::Write;
+use std::mem;
 use std::os::unix::ffi::OsStringExt;
 use std::ptr;
 use std::time::Instant;
@@ -38,6 +39,7 @@ fn exit(code: c_int) -> ! {
 
 fn flush() {
     let _ = std::io::stdout().flush();
+    let _ = std::io::stderr().flush();
 }
 
 fn c_arg(value: &str) -> CString {
@@ -73,6 +75,22 @@ fn display(value: *const c_char) -> String {
     unsafe { CStr::from_ptr(value) }.to_string_lossy().into_owned()
 }
 
+fn detach_stdio_to_dev_null() {
+    let fd = unsafe { libc::open(c"/dev/null".as_ptr(), libc::O_RDWR) };
+    if fd != -1 {
+        unsafe {
+            libc::dup2(fd, 0);
+            libc::dup2(fd, 1);
+            libc::dup2(fd, 2);
+        }
+        if fd > 2 {
+            unsafe {
+                libc::close(fd);
+            }
+        }
+    }
+}
+
 #[cfg(debug_assertions)]
 fn push_debug_vm_params(argv: &mut Vec<CString>) {
     let api_level = android::api_level();
@@ -90,6 +108,11 @@ fn push_debug_vm_params(argv: &mut Vec<CString>) {
 }
 
 fn run_server(dex_path: &str, main_class: &str, process_name: &str) {
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+        libc::signal(libc::SIGHUP, libc::SIG_DFL);
+    }
+
     let Ok(classpath) = CString::new(dex_path) else {
         logging::loge("can't set CLASSPATH\n");
         exit(EXIT_FATAL_SET_CLASSPATH);
@@ -111,6 +134,8 @@ fn run_server(dex_path: &str, main_class: &str, process_name: &str) {
     argv.push(c_arg("/system/bin"));
     argv.push(c_arg(&format!("--nice-name={process_name}")));
     argv.push(c_arg(main_class));
+    #[cfg(debug_assertions)]
+    argv.push(c_arg("--debug"));
 
     let mut argv_ptrs: Vec<*const c_char> = argv.iter().map(|entry| entry.as_ptr()).collect();
     argv_ptrs.push(ptr::null());
@@ -122,7 +147,7 @@ fn run_server(dex_path: &str, main_class: &str, process_name: &str) {
     }
 }
 
-fn start_server(path: &str, main_class: &str, process_name: &str) -> ! {
+fn supervise_server(path: &str, main_class: &str, process_name: &str, mut pipe_write_fd: c_int) -> ! {
     let mut restart_count: c_int = 0;
     let max_restarts: c_int = 5;
     let restart_delay_secs: libc::c_uint = 5;
@@ -130,85 +155,155 @@ fn start_server(path: &str, main_class: &str, process_name: &str) -> ! {
     loop {
         let pid = unsafe { libc::fork() };
         if pid == -1 {
-            eprintln!("fatal: can't fork");
+            logging::loge("fatal: can't fork shizuku_server");
+            if pipe_write_fd != -1 {
+                unsafe {
+                    libc::close(pipe_write_fd);
+                }
+            }
             exit(EXIT_FATAL_FORK);
         } else if pid == 0 {
+            if pipe_write_fd != -1 {
+                unsafe {
+                    libc::close(pipe_write_fd);
+                }
+            }
             logging::logd("child");
             unsafe {
                 libc::setsid();
-            }
-            unsafe {
                 libc::chdir(c"/".as_ptr());
             }
-            let fd = unsafe { libc::open(c"/dev/null".as_ptr(), libc::O_RDWR) };
-            if fd != -1 {
-                unsafe {
-                    libc::dup2(fd, 0);
-                    libc::dup2(fd, 1);
-                    libc::dup2(fd, 2);
-                }
-                if fd > 2 {
-                    unsafe {
-                        libc::close(fd);
-                    }
-                }
-            }
+            detach_stdio_to_dev_null();
             run_server(path, main_class, process_name);
             unsafe {
-                libc::_exit(1);
-            }
-        } else {
-            let started_at = Instant::now();
-            println!("info: shizuku_server pid is {pid}");
-            flush();
-
-            let mut status: c_int = 0;
-            unsafe {
-                libc::waitpid(pid, &mut status, 0);
-            }
-
-            let uptime_secs = started_at.elapsed().as_secs();
-            let mut exit_code: c_int = -1;
-            let mut killed_by_signal = false;
-            if libc::WIFEXITED(status) {
-                exit_code = libc::WEXITSTATUS(status);
-            } else if libc::WIFSIGNALED(status) {
-                exit_code = 128 + libc::WTERMSIG(status);
-                killed_by_signal = true;
-            }
-
-            println!("info: shizuku_server exited with code {exit_code} after {uptime_secs}s");
-            flush();
-
-            if !killed_by_signal && exit_code == 0 {
-                println!("info: shizuku_server exited cleanly, no restart");
-                exit(0);
-            }
-
-            if !killed_by_signal && exit_code == EXIT_MANAGER_APP_NOT_FOUND {
-                println!("info: manager application not found, stopping server without restart");
-                exit(0);
-            }
-
-            if uptime_secs >= STABLE_UPTIME_RESET_SECS {
-                restart_count = 0;
-            }
-
-            restart_count += 1;
-            if restart_count > max_restarts {
-                println!("fatal: shizuku_server crashed {restart_count} times consecutively, giving up");
-                exit(EXIT_FATAL_APP_PROCESS);
-            }
-
-            println!(
-                "info: restarting shizuku_server in {restart_delay_secs} seconds (attempt {restart_count}/{max_restarts})..."
-            );
-            flush();
-            unsafe {
-                libc::sleep(restart_delay_secs);
+                libc::_exit(EXIT_FATAL_APP_PROCESS);
             }
         }
+
+        let started_at = Instant::now();
+        if pipe_write_fd != -1 {
+            let pid_bytes = pid.to_ne_bytes();
+            let _ = unsafe {
+                libc::write(pipe_write_fd, pid_bytes.as_ptr().cast(), pid_bytes.len())
+            };
+            unsafe {
+                libc::close(pipe_write_fd);
+            }
+            pipe_write_fd = -1;
+            detach_stdio_to_dev_null();
+        }
+        logging::logi(&format!("shizuku_server pid is {pid}"));
+
+        let mut status: c_int = 0;
+        loop {
+            let waited = unsafe { libc::waitpid(pid, &mut status, 0) };
+            if waited == -1 && misc::errno() == libc::EINTR {
+                continue;
+            }
+            break;
+        }
+
+        let uptime_secs = started_at.elapsed().as_secs();
+        let mut exit_code: c_int = -1;
+        let mut killed_by_signal = false;
+        if libc::WIFEXITED(status) {
+            exit_code = libc::WEXITSTATUS(status);
+        } else if libc::WIFSIGNALED(status) {
+            exit_code = 128 + libc::WTERMSIG(status);
+            killed_by_signal = true;
+        }
+
+        logging::logi(&format!(
+            "shizuku_server exited with code {exit_code} after {uptime_secs}s"
+        ));
+
+        if !killed_by_signal && exit_code == 0 {
+            logging::logi("shizuku_server exited cleanly, no restart");
+            exit(0);
+        }
+
+        if !killed_by_signal && exit_code == EXIT_MANAGER_APP_NOT_FOUND {
+            logging::logw("manager application not found, stopping supervisor without restart");
+            exit(0);
+        }
+
+        if uptime_secs >= STABLE_UPTIME_RESET_SECS {
+            restart_count = 0;
+        }
+
+        restart_count += 1;
+        if restart_count > max_restarts {
+            logging::loge(&format!(
+                "fatal: shizuku_server crashed {restart_count} times consecutively, giving up"
+            ));
+            exit(EXIT_FATAL_APP_PROCESS);
+        }
+
+        logging::logw(&format!(
+            "restarting shizuku_server in {restart_delay_secs} seconds (attempt {restart_count}/{max_restarts})..."
+        ));
+        unsafe {
+            libc::sleep(restart_delay_secs);
+        }
     }
+}
+
+fn start_server(path: &str, main_class: &str, process_name: &str) -> ! {
+    let mut pipe_fds = [-1 as c_int; 2];
+    if unsafe { libc::pipe(pipe_fds.as_mut_ptr()) } != 0 {
+        pipe_fds = [-1, -1];
+    }
+
+    let supervisor_pid = unsafe { libc::fork() };
+    if supervisor_pid == -1 {
+        if pipe_fds[0] != -1 {
+            unsafe {
+                libc::close(pipe_fds[0]);
+                libc::close(pipe_fds[1]);
+            }
+        }
+        eprintln!("fatal: can't fork");
+        exit(EXIT_FATAL_FORK);
+    } else if supervisor_pid == 0 {
+        if pipe_fds[0] != -1 {
+            unsafe {
+                libc::close(pipe_fds[0]);
+            }
+        }
+        unsafe {
+            libc::setsid();
+            libc::chdir(c"/".as_ptr());
+        }
+        supervise_server(path, main_class, process_name, pipe_fds[1]);
+    }
+
+    if pipe_fds[1] != -1 {
+        unsafe {
+            libc::close(pipe_fds[1]);
+        }
+    }
+
+    let mut server_pid: libc::pid_t = supervisor_pid;
+    if pipe_fds[0] != -1 {
+        let mut buf = [0u8; mem::size_of::<libc::pid_t>()];
+        let read_bytes = unsafe {
+            libc::read(pipe_fds[0], buf.as_mut_ptr().cast(), buf.len())
+        };
+        unsafe {
+            libc::close(pipe_fds[0]);
+        }
+        if read_bytes == buf.len() as isize {
+            server_pid = libc::pid_t::from_ne_bytes(buf);
+        } else {
+            eprintln!("fatal: failed to spawn shizuku_server");
+            exit(EXIT_FATAL_FORK);
+        }
+    }
+
+    println!("info: shizuku_server pid is {server_pid}");
+    println!("info: shizuku_starter exit with 0");
+    flush();
+    exit(0);
 }
 
 fn check_selinux(s: &CStr, t: *const c_char, class: &CStr, perm: &CStr) -> c_int {
@@ -254,9 +349,76 @@ fn switch_cgroup() -> c_int {
     -1
 }
 
+fn kill_old_processes() {
+    let self_pid = unsafe { libc::getpid() };
+    let self_exe = unsafe {
+        let mut buf = [0u8; libc::PATH_MAX as usize];
+        let len = libc::readlink(
+            c"/proc/self/exe".as_ptr(),
+            buf.as_mut_ptr().cast(),
+            buf.len() - 1,
+        );
+        if len > 0 {
+            Some(buf[..len as usize].to_vec())
+        } else {
+            None
+        }
+    };
+
+    misc::foreach_proc(|pid| {
+        if pid == self_pid {
+            return;
+        }
+
+        let mut buf = [0u8; 1024];
+        if misc::get_proc_name(pid, &mut buf) != 0 {
+            return;
+        }
+
+        let name = unsafe { CStr::from_ptr(buf.as_ptr().cast()) };
+        let name_bytes = name.to_bytes();
+
+        let is_server = name_bytes == SERVER_NAME.as_bytes();
+        let is_old_supervisor = if !is_server {
+            if let Some(ref my_exe) = self_exe {
+                if let Ok(exe_path) = CString::new(format!("/proc/{pid}/exe")) {
+                    let mut exe_buf = [0u8; libc::PATH_MAX as usize];
+                    let len = unsafe {
+                        libc::readlink(
+                            exe_path.as_ptr(),
+                            exe_buf.as_mut_ptr().cast(),
+                            exe_buf.len() - 1,
+                        )
+                    };
+                    len > 0 && &exe_buf[..len as usize] == my_exe.as_slice()
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        if !is_server && !is_old_supervisor {
+            return;
+        }
+
+        if unsafe { libc::kill(pid, libc::SIGKILL) } == 0 {
+            println!("info: killed {pid} ({})", name.to_string_lossy());
+        } else if std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM) {
+            println!("warn: can't kill {pid} (EPERM), ignoring potential fake process.");
+        } else {
+            println!("warn: failed to kill {pid} ({})", name.to_string_lossy());
+        }
+    });
+}
+
 fn main() {
     unsafe {
-        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+        libc::signal(libc::SIGPIPE, libc::SIG_IGN);
+        libc::signal(libc::SIGHUP, libc::SIG_IGN);
     }
 
     let mut apk_path = String::new();
@@ -308,29 +470,7 @@ fn main() {
     println!("info: killing old process...");
     flush();
 
-    misc::foreach_proc(|pid| {
-        if pid == unsafe { libc::getpid() } {
-            return;
-        }
-
-        let mut buf = [0u8; 1024];
-        if misc::get_proc_name(pid, &mut buf) != 0 {
-            return;
-        }
-
-        let name = unsafe { CStr::from_ptr(buf.as_ptr().cast()) };
-        if name.to_bytes() != SERVER_NAME.as_bytes() {
-            return;
-        }
-
-        if unsafe { libc::kill(pid, libc::SIGKILL) } == 0 {
-            println!("info: killed {pid} ({})", name.to_string_lossy());
-        } else if std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM) {
-            println!("warn: can't kill {pid} (EPERM), ignoring potential fake process.");
-        } else {
-            println!("warn: failed to kill {pid} ({})", name.to_string_lossy());
-        }
-    });
+    kill_old_processes();
 
     if access(&apk_path, libc::R_OK) == 0 {
         println!("info: use apk path from argv");

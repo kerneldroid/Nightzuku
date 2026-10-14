@@ -70,6 +70,24 @@ object Android17Compat {
     private val unresolved = HashSet<Operation>()
 
     @Synchronized
+    fun invalidate(serviceName: String) {
+        when (serviceName) {
+            Backend.PACKAGE.serviceName -> {
+                packageManagerHolder.value = null
+                packageManagerHolder.failure = null
+                resolutions.entries.removeAll { it.value.backend == Backend.PACKAGE }
+                unresolved.clear()
+            }
+            Backend.PERMISSION.serviceName -> {
+                permissionManagerHolder.value = null
+                permissionManagerHolder.failure = null
+                resolutions.entries.removeAll { it.value.backend == Backend.PERMISSION }
+                unresolved.clear()
+            }
+        }
+    }
+
+    @Synchronized
     private fun managerHolder(backend: Backend): ManagerHolder =
         if (backend == Backend.PACKAGE) packageManagerHolder else permissionManagerHolder
 

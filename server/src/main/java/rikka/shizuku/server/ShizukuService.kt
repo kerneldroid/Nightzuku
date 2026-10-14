@@ -500,6 +500,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                     listener = object : NightDog.Listener {
                         override fun onServiceRecovered(name: String) {
                             Service.LOGGER.i("NightDog: system service '%s' recovered, refreshing bindings", name)
+                            Android17Compat.invalidate(name)
                             mainHandler.post {
                                 if (name == Context.ACTIVITY_SERVICE) {
                                     BinderSender.register(this@ShizukuService)
