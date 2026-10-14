@@ -16,6 +16,9 @@ import okhttp3.Request
 import moe.shizuku.manager.module.catalog.TokenStore
 import java.io.File
 import java.util.concurrent.TimeUnit
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
 
 class ModuleInstaller private constructor() {
 
@@ -39,27 +42,53 @@ class ModuleInstaller private constructor() {
             cleanupOldZips(context)
 
             val installMode = ModuleSettings.getInstallMode()
-            val githubPat = TokenStore.getToken(context)
-            Log.d(TAG, "Installing $moduleId mode=$installMode token=${if (githubPat.isNullOrBlank()) "null" else "set"}")
+            val githubPat = TokenStore.getToken(context)?.trim()?.takeIf { it.isNotEmpty() }
+            Log.d(TAG, "Installing $moduleId mode=$installMode token=${if (githubPat == null) "null" else "set"}")
 
             val zipUri = when (installMode) {
                 ModuleSettings.InstallMode.SOURCES -> {
                     buildFromSources(context, moduleId, owner, repo, subPath, githubPat)
+                        ?: downloadRelease(context, moduleId, owner, repo, githubPat)
                 }
                 ModuleSettings.InstallMode.RELEASE -> {
                     downloadRelease(context, moduleId, owner, repo, githubPat)
+                        ?: buildFromSources(context, moduleId, owner, repo, subPath, githubPat)
                 }
             }
 
             if (zipUri == null) {
-                return@withContext Result.failure(Exception("Failed to prepare module ZIP"))
+                return@withContext Result.failure(Exception("Failed to prepare module ZIP from $owner/$repo"))
             }
 
             val module = AdbModuleManager.install(context, zipUri)
+            saveSourceMetadata(module.directory, owner, repo, subPath, installMode)
             Result.success(module)
         } catch (e: Exception) {
             Log.e(TAG, "Install failed for $moduleId", e)
             Result.failure(e)
+        }
+    }
+
+    private fun saveSourceMetadata(
+        moduleDir: File,
+        owner: String,
+        repo: String,
+        subPath: String?,
+        installMode: ModuleSettings.InstallMode
+    ) {
+        runCatching {
+            val sourceProp = moduleDir.resolve(".source.prop")
+            sourceProp.writeText(
+                buildString {
+                    appendLine("owner=$owner")
+                    appendLine("repo=$repo")
+                    if (!subPath.isNullOrBlank()) {
+                        appendLine("subPath=${subPath.trim('/')}")
+                    }
+                    appendLine("installMode=${installMode.value}")
+                }
+            )
+            sourceProp.setReadable(true, false)
         }
     }
 
@@ -71,36 +100,30 @@ class ModuleInstaller private constructor() {
         subPath: String?,
         githubPat: String?
     ): Uri? {
-        val repoUrl = "https://api.github.com/repos/$owner/$repo"
-        val repoRequest = buildRequest(repoUrl, githubPat)
-        val repoResponse = client.newCall(repoRequest).execute()
+        val defaultBranch = fetchDefaultBranch(owner, repo, githubPat)
 
-        val defaultBranch = repoResponse.use { resp ->
-            rateLimit.update(resp.headers)
-            if (!resp.isSuccessful) {
-                Log.w(TAG, "Repo API failed: ${resp.code} for $repoUrl")
-                "main"
-            } else {
-                val body = resp.body?.string() ?: "main"
-                json.decodeFromString<GitHubRepo>(body).defaultBranch
-            }
+        // Primary fast & atomic path: download branch archive ZIP in a single HTTP call
+        buildFromArchiveZip(context, moduleId, owner, repo, defaultBranch, subPath, githubPat)?.let {
+            return it
         }
 
-        val path = subPath?.trim('/')?.let { "/$it" } ?: ""
-        val url = "https://api.github.com/repos/$owner/$repo/contents$path?ref=$defaultBranch"
+        // Fallback path: traverse GitHub Contents API with full relative paths
+        val cleanSubPath = subPath?.trim('/')?.takeIf { it.isNotEmpty() }
+        val rootPathSegment = cleanSubPath?.let { "/$it" } ?: ""
+        val url = "https://api.github.com/repos/$owner/$repo/contents$rootPathSegment?ref=$defaultBranch"
 
-        val request = buildRequest(url, githubPat)
+        val request = buildApiRequest(url, githubPat)
         val response = client.newCall(request).execute()
 
-        response.use { resp ->
+        return response.use { resp ->
             rateLimit.update(resp.headers)
 
             if (!resp.isSuccessful) {
                 Log.w(TAG, "Contents API failed: ${resp.code} for $url")
-                return null
+                return@use null
             }
 
-            val body = resp.body?.string() ?: return null
+            val body = resp.body?.string() ?: return@use null
             val items = json.decodeFromString<List<ContentItem>>(body)
 
             val allFiles = mutableListOf<ContentItem>()
@@ -110,15 +133,18 @@ class ModuleInstaller private constructor() {
                 if (item.type == "file") {
                     allFiles.add(item)
                 } else if (item.type == "dir") {
-                    dirsToFetch.add(item.name)
+                    val dirPath = item.path.trim('/')
+                    val dirName = dirPath.substringAfterLast('/')
+                    if (!dirName.startsWith(".git")) {
+                        dirsToFetch.add(dirPath)
+                    }
                 }
             }
 
             while (dirsToFetch.isNotEmpty()) {
-                val dirName = dirsToFetch.removeFirst()
-                val parentPath = path.trim('/').let { if (it.isNotEmpty()) "$it/$dirName" else dirName }
-                val dirUrl = "https://api.github.com/repos/$owner/$repo/contents/$parentPath?ref=$defaultBranch"
-                val dirRequest = buildRequest(dirUrl, githubPat)
+                val dirPath = dirsToFetch.removeFirst()
+                val dirUrl = "https://api.github.com/repos/$owner/$repo/contents/$dirPath?ref=$defaultBranch"
+                val dirRequest = buildApiRequest(dirUrl, githubPat)
                 val dirResponse = client.newCall(dirRequest).execute()
 
                 dirResponse.use { dirResp ->
@@ -133,7 +159,11 @@ class ModuleInstaller private constructor() {
                         if (dirItem.type == "file") {
                             allFiles.add(dirItem)
                         } else if (dirItem.type == "dir") {
-                            dirsToFetch.add(dirItem.name)
+                            val nestedPath = dirItem.path.trim('/')
+                            val nestedName = nestedPath.substringAfterLast('/')
+                            if (!nestedName.startsWith(".git")) {
+                                dirsToFetch.add(nestedPath)
+                            }
                         }
                     }
                 }
@@ -141,13 +171,143 @@ class ModuleInstaller private constructor() {
 
             if (allFiles.isEmpty()) {
                 Log.w(TAG, "No files found in $url")
-                return null
+                return@use null
             }
 
-        val zipFile = sourceZipBuilder.buildZip(context, moduleId, allFiles, githubPat, subPath)
-            ?: return null
+            val zipFile = sourceZipBuilder.buildZip(context, moduleId, allFiles, githubPat, cleanSubPath)
+                ?: return@use null
 
-            return Uri.fromFile(zipFile)
+            Uri.fromFile(zipFile)
+        }
+    }
+
+    private fun fetchDefaultBranch(owner: String, repo: String, githubPat: String?): String {
+        val repoUrl = "https://api.github.com/repos/$owner/$repo"
+        return try {
+            val repoRequest = buildApiRequest(repoUrl, githubPat)
+            client.newCall(repoRequest).execute().use { resp ->
+                rateLimit.update(resp.headers)
+                if (!resp.isSuccessful) {
+                    Log.w(TAG, "Repo API failed: ${resp.code} for $repoUrl")
+                    "main"
+                } else {
+                    val body = resp.body?.string() ?: return@use "main"
+                    json.decodeFromString<GitHubRepo>(body).defaultBranch.ifBlank { "main" }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Default branch lookup failed for $owner/$repo", e)
+            "main"
+        }
+    }
+
+    private fun buildFromArchiveZip(
+        context: Context,
+        moduleId: String,
+        owner: String,
+        repo: String,
+        defaultBranch: String,
+        subPath: String?,
+        githubPat: String?
+    ): Uri? {
+        val cacheDir = File(context.cacheDir, "module_zips").apply { mkdirs() }
+        val rawArchiveFile = File(cacheDir, "$moduleId-archive-raw.zip")
+        val targetZipFile = File(cacheDir, "$moduleId-source.zip")
+        val cleanSubPath = subPath?.replace('\\', '/')?.trim('/')?.takeIf { it.isNotEmpty() }
+
+        val candidateUrls = buildList {
+            add("https://codeload.github.com/$owner/$repo/zip/refs/heads/$defaultBranch")
+            if (defaultBranch != "main") add("https://codeload.github.com/$owner/$repo/zip/refs/heads/main")
+            if (defaultBranch != "master") add("https://codeload.github.com/$owner/$repo/zip/refs/heads/master")
+            if (!githubPat.isNullOrBlank()) {
+                add("https://api.github.com/repos/$owner/$repo/zipball/$defaultBranch")
+            }
+        }
+
+        try {
+            var downloaded = false
+            for (archiveUrl in candidateUrls) {
+                try {
+                    val req = if (archiveUrl.contains("api.github.com")) {
+                        buildApiRequest(archiveUrl, githubPat)
+                    } else {
+                        Request.Builder().url(archiveUrl).build()
+                    }
+                    client.newCall(req).execute().use { resp ->
+                        rateLimit.update(resp.headers)
+                        if (resp.isSuccessful) {
+                            resp.body?.byteStream()?.use { input ->
+                                rawArchiveFile.outputStream().use { output ->
+                                    input.copyTo(output)
+                                }
+                            }
+                            if (rawArchiveFile.length() > 0) {
+                                downloaded = true
+                            }
+                        }
+                    }
+                    if (downloaded) break
+                } catch (e: Exception) {
+                    Log.w(TAG, "Archive download attempt failed: $archiveUrl", e)
+                }
+            }
+
+            if (!downloaded) return null
+
+            var hasModuleProp = false
+            val addedEntries = HashSet<String>()
+
+            ZipFile(rawArchiveFile).use { archiveZip ->
+                ZipOutputStream(targetZipFile.outputStream()).use { outZip ->
+                    val entries = archiveZip.entries().asSequence().toList()
+                    for (entry in entries) {
+                        if (entry.isDirectory) continue
+                        val fullEntryPath = entry.name.replace('\\', '/').trim('/')
+                        val slashIndex = fullEntryPath.indexOf('/')
+                        if (slashIndex <= 0) continue
+
+                        // Strip GitHub's top-level "<repo>-<branch-or-sha>/" directory
+                        val repoRelativePath = fullEntryPath.substring(slashIndex + 1).trimStart('/')
+                        if (repoRelativePath.isBlank()) continue
+
+                        val moduleRelativePath = if (cleanSubPath != null) {
+                            val prefix = "$cleanSubPath/"
+                            if (!repoRelativePath.startsWith(prefix)) continue
+                            repoRelativePath.removePrefix(prefix).trimStart('/')
+                        } else {
+                            repoRelativePath
+                        }
+
+                        if (moduleRelativePath.isBlank()) continue
+                        val lower = moduleRelativePath.lowercase()
+                        if (lower.startsWith(".git/") || lower.startsWith(".github/")) continue
+                        if (!addedEntries.add(moduleRelativePath)) continue
+
+                        if (moduleRelativePath == "module.prop") {
+                            hasModuleProp = true
+                        }
+
+                        val newEntry = ZipEntry(moduleRelativePath)
+                        outZip.putNextEntry(newEntry)
+                        archiveZip.getInputStream(entry).use { input ->
+                            input.copyTo(outZip)
+                        }
+                        outZip.closeEntry()
+                    }
+                }
+            }
+
+            if (hasModuleProp && targetZipFile.length() > 0) {
+                return Uri.fromFile(targetZipFile)
+            }
+            targetZipFile.delete()
+            return null
+        } catch (e: Exception) {
+            Log.w(TAG, "Archive ZIP extraction failed for $moduleId", e)
+            targetZipFile.delete()
+            return null
+        } finally {
+            rawArchiveFile.delete()
         }
     }
 
@@ -160,7 +320,7 @@ class ModuleInstaller private constructor() {
     ): Uri? {
         val url = "https://api.github.com/repos/$owner/$repo/releases/latest"
 
-        val request = buildRequest(url, githubPat)
+        val request = buildApiRequest(url, githubPat)
         val response = client.newCall(request).execute()
 
         val release = response.use { resp ->
@@ -191,7 +351,10 @@ class ModuleInstaller private constructor() {
         val zipFile = File(cacheDir, "$moduleId-release.zip")
 
         return try {
-            val downloadRequest = buildRequest(downloadUrl, githubPat)
+            val downloadRequest = Request.Builder()
+                .url(downloadUrl)
+                .header("Accept", "application/octet-stream")
+                .build()
             val downloadResponse = client.newCall(downloadRequest).execute()
 
             downloadResponse.use { dlResp ->
@@ -206,7 +369,7 @@ class ModuleInstaller private constructor() {
                     }
                 }
 
-                Uri.fromFile(zipFile)
+                if (zipFile.length() > 0) Uri.fromFile(zipFile) else null
             }
         } catch (e: Exception) {
             Log.e(TAG, "ZIP download error", e)
@@ -215,14 +378,14 @@ class ModuleInstaller private constructor() {
         }
     }
 
-    private fun buildRequest(url: String, githubPat: String?): Request {
+    private fun buildApiRequest(url: String, githubPat: String?): Request {
         val builder = Request.Builder()
             .url(url)
             .header("Accept", "application/vnd.github+json")
             .header("X-GitHub-Api-Version", "2022-11-28")
 
         if (!githubPat.isNullOrBlank()) {
-            builder.header("Authorization", "Bearer $githubPat")
+            builder.header("Authorization", "Bearer ${githubPat.trim()}")
         }
 
         return builder.build()

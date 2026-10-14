@@ -101,6 +101,13 @@ import moe.shizuku.manager.ui.compose.ExpressiveSwitch
 
 class ModulesActivity : AppActivity() {
 
+    private var reloadTrigger by androidx.compose.runtime.mutableIntStateOf(0)
+
+    override fun onResume() {
+        super.onResume()
+        reloadTrigger++
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -156,7 +163,7 @@ class ModulesActivity : AppActivity() {
                 }
             }
 
-            LaunchedEffect(Unit) {
+            LaunchedEffect(reloadTrigger) {
                 modules = AdbModuleManager.listModules(context)
             }
 
@@ -268,7 +275,7 @@ class ModulesActivity : AppActivity() {
                     Box(modifier = Modifier.fillMaxSize()) {
                         if (showCatalog) {
                             moe.shizuku.manager.module.catalog.TvCatalogScreen(
-                                onNavigateUp = { showCatalog = false }
+                                onNavigateUp = { showCatalog = false; reload() }
                             )
                         } else if (showLabFeatures) {
                             moe.shizuku.manager.settings.TvLabMenuScreen(
@@ -386,7 +393,7 @@ class ModulesActivity : AppActivity() {
                 ) { catalogOpen ->
                     if (catalogOpen) {
                         moe.shizuku.manager.module.catalog.CatalogScreen(
-                            onNavigateUp = { showCatalog = false }
+                            onNavigateUp = { showCatalog = false; reload() }
                         )
                     } else {
                 ShizukuExpressiveTheme {

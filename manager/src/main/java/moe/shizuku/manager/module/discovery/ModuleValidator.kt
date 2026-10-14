@@ -10,8 +10,20 @@ class ModuleValidator(private val client: OkHttpClient, private val rateLimit: R
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
-    fun validateRepo(owner: String, repo: String, authHeader: String? = null): List<DiscoveredModule> {
+    fun validateRepo(
+        owner: String,
+        repo: String,
+        authHeader: String? = null,
+        defaultBranch: String = "main"
+    ): List<DiscoveredModule> {
         val now = System.currentTimeMillis()
+
+        // Fast zero-quota check via raw.githubusercontent.com for root module.prop
+        val rawRootUrl = "https://raw.githubusercontent.com/$owner/$repo/$defaultBranch/module.prop"
+        val rawPropContent = fetchRawContent(rawRootUrl, null)
+        if (rawPropContent != null) {
+            parseModuleProp(rawPropContent, owner, repo, null)?.let { return listOf(it) }
+        }
 
         val rootModule = checkModuleProp(owner, repo, null, authHeader)
         if (rootModule != null) {

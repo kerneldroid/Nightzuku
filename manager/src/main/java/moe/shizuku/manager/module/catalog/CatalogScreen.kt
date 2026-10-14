@@ -121,7 +121,7 @@ fun CatalogScreen(onNavigateUp: () -> Unit) {
     var showInstallDialog by remember { mutableStateOf<DiscoveredModule?>(null) }
     var detailModule by remember { mutableStateOf<DiscoveredModule?>(null) }
     var installing by remember { mutableStateOf<String?>(null) }
-    var installSuccess by remember { mutableStateOf(false) }
+    var installedModuleName by remember { mutableStateOf<String?>(null) }
     var token by remember { mutableStateOf<String?>(TokenStore.getToken(context)) }
     var pendingDangerModule by remember { mutableStateOf<DiscoveredModule?>(null) }
     var showDangerDialog by remember { mutableStateOf(false) }
@@ -244,7 +244,7 @@ fun CatalogScreen(onNavigateUp: () -> Unit) {
                         result.fold(
                             onSuccess = {
                                 installedIds = AdbModuleManager.listModules(context).map { it.id }.toSet()
-                                installSuccess = true
+                                installedModuleName = module.moduleName
                                 Toast.makeText(context, context.getString(R.string.modules_install_success, module.moduleName), Toast.LENGTH_SHORT).show()
                             },
                             onFailure = {
@@ -256,11 +256,11 @@ fun CatalogScreen(onNavigateUp: () -> Unit) {
             )
         }
 
-        if (installSuccess) {
+        installedModuleName?.let { name ->
             AlertDialog(
-                onDismissRequest = { installSuccess = false },
-                title = { Text(stringResource(R.string.modules_install_success, "")) },
-                confirmButton = { TextButton(onClick = { installSuccess = false; onNavigateUp() }) { Text(stringResource(android.R.string.ok)) } }
+                onDismissRequest = { installedModuleName = null },
+                title = { Text(stringResource(R.string.modules_install_success, name)) },
+                confirmButton = { TextButton(onClick = { installedModuleName = null; onNavigateUp() }) { Text(stringResource(android.R.string.ok)) } }
             )
         }
 

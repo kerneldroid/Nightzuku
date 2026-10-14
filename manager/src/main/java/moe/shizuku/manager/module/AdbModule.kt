@@ -20,7 +20,8 @@ data class AdbModule(
     val enabled: Boolean
 ) {
     val hasWebUi: Boolean
-        get() = webRoot?.resolve("index.html")?.isFile == true
+        get() = webRoot?.resolve("index.html")?.isFile == true ||
+            webRoot?.resolve("index.htm")?.isFile == true
 
     val hasAction: Boolean
         get() = actionScript?.isFile == true

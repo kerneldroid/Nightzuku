@@ -48,7 +48,14 @@ class UpdateChecker private constructor() {
         }
 
     private fun readModuleProp(module: AdbModule): Map<String, String> {
-        val propsFile = module.directory.resolve("module.prop")
+        return readPropsFile(module.directory.resolve("module.prop"))
+    }
+
+    private fun readSourceProp(module: AdbModule): Map<String, String> {
+        return readPropsFile(module.directory.resolve(".source.prop"))
+    }
+
+    private fun readPropsFile(propsFile: java.io.File): Map<String, String> {
         if (!propsFile.isFile) return emptyMap()
         return propsFile.readText().lineSequence()
             .map { it.trim() }
@@ -57,6 +64,47 @@ class UpdateChecker private constructor() {
                 val index = it.indexOf('=')
                 it.substring(0, index).trim() to it.substring(index + 1).trim()
             }
+    }
+
+    private fun resolveOwnerAndRepo(module: AdbModule): Triple<String, String, String?>? {
+        val sourceProps = readSourceProp(module)
+        val sourceOwner = sourceProps["owner"]?.takeIf { it.isNotBlank() }
+        val sourceRepo = sourceProps["repo"]?.takeIf { it.isNotBlank() }
+        val sourceSubPath = sourceProps["subPath"]?.takeIf { it.isNotBlank() }
+        if (sourceOwner != null && sourceRepo != null) {
+            return Triple(sourceOwner, sourceRepo, sourceSubPath)
+        }
+
+        val moduleProps = readModuleProp(module)
+        val repoProp = moduleProps["repository"] ?: moduleProps["repo"] ?: moduleProps["github"]
+        if (!repoProp.isNullOrBlank()) {
+            val cleaned = repoProp.trim()
+                .removePrefix("https://github.com/")
+                .removePrefix("http://github.com/")
+                .removeSuffix(".git")
+                .trim('/')
+            val parts = cleaned.split('/')
+            if (parts.size >= 2 && parts[0].isNotBlank() && parts[1].isNotBlank()) {
+                return Triple(parts[0], parts[1], sourceSubPath)
+            }
+        }
+
+        val updateJson = moduleProps["updateJson"]
+        if (!updateJson.isNullOrBlank()) {
+            val rawPrefix = "https://raw.githubusercontent.com/"
+            if (updateJson.startsWith(rawPrefix, ignoreCase = true)) {
+                val parts = updateJson.substring(rawPrefix.length).split('/')
+                if (parts.size >= 2 && parts[0].isNotBlank() && parts[1].isNotBlank()) {
+                    return Triple(parts[0], parts[1], sourceSubPath)
+                }
+            }
+        }
+
+        val author = module.author?.trim()?.takeIf { it.isNotBlank() && !it.contains(' ') }
+        if (author != null) {
+            return Triple(author, module.id, sourceSubPath)
+        }
+        return null
     }
 
     private fun checkViaUpdateJson(
@@ -114,23 +162,6 @@ class UpdateChecker private constructor() {
         module: AdbModule,
         githubPat: String?
     ): UpdateResult {
-        val owner = module.directory.parentFile?.name ?: return UpdateResult(
-            moduleId = module.id,
-            hasUpdate = false,
-            currentVersion = module.version,
-            currentVersionCode = module.versionCode,
-            latestVersion = null,
-            latestVersionCode = null,
-            downloadUrl = null,
-            changelog = null
-        )
-
-        val repoName = module.id
-        val url = "https://api.github.com/repos/$owner/$repoName/releases/latest"
-
-        val request = buildRequest(url, githubPat)
-        val response = client.newCall(request).execute()
-
         val unsuccessful = UpdateResult(
             moduleId = module.id,
             hasUpdate = false,
@@ -142,10 +173,18 @@ class UpdateChecker private constructor() {
             changelog = null
         )
 
+        val (owner, repoName, subPath) = resolveOwnerAndRepo(module) ?: return unsuccessful
+        val url = "https://api.github.com/repos/$owner/$repoName/releases/latest"
+
+        val request = buildRequest(url, githubPat)
+        val response = client.newCall(request).execute()
+
         response.use { resp ->
             rateLimit.update(resp.headers)
 
-            if (!resp.isSuccessful) return unsuccessful
+            if (!resp.isSuccessful) {
+                return checkViaRemoteModuleProp(module, owner, repoName, subPath, githubPat) ?: unsuccessful
+            }
 
             val body = resp.body?.string() ?: return unsuccessful
 
@@ -182,6 +221,58 @@ class UpdateChecker private constructor() {
                 changelog = release.body
             )
         }
+    }
+
+    private fun checkViaRemoteModuleProp(
+        module: AdbModule,
+        owner: String,
+        repoName: String,
+        subPath: String?,
+        githubPat: String?
+    ): UpdateResult? {
+        val prefix = subPath?.trim('/')?.let { if (it.isNotEmpty()) "$it/" else "" } ?: ""
+        val candidates = listOf(
+            "https://raw.githubusercontent.com/$owner/$repoName/main/${prefix}module.prop",
+            "https://raw.githubusercontent.com/$owner/$repoName/master/${prefix}module.prop"
+        )
+        for (rawUrl in candidates) {
+            try {
+                val req = buildRequest(rawUrl, githubPat)
+                client.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) return@use
+                    val text = resp.body?.string() ?: return@use
+                    val remoteProps = text.lineSequence()
+                        .map { it.trim() }
+                        .filter { it.isNotBlank() && !it.startsWith("#") && it.contains("=") }
+                        .associate {
+                            val idx = it.indexOf('=')
+                            it.substring(0, idx).trim() to it.substring(idx + 1).trim()
+                        }
+                    val remoteVersion = remoteProps["version"]?.takeIf { it.isNotBlank() }
+                    val remoteVersionCode = remoteProps["versionCode"]?.toLongOrNull()
+                    val currentVersionCode = module.versionCode
+                    val hasUpdate = if (remoteVersionCode != null && currentVersionCode != null) {
+                        remoteVersionCode > currentVersionCode
+                    } else if (remoteVersion != null && module.version != null) {
+                        compareSemanticVersions(remoteVersion, module.version) > 0
+                    } else {
+                        false
+                    }
+                    return UpdateResult(
+                        moduleId = module.id,
+                        hasUpdate = hasUpdate,
+                        currentVersion = module.version,
+                        currentVersionCode = module.versionCode,
+                        latestVersion = remoteVersion,
+                        latestVersionCode = remoteVersionCode,
+                        downloadUrl = null,
+                        changelog = null
+                    )
+                }
+            } catch (_: Exception) {
+            }
+        }
+        return null
     }
 
     private fun buildRequest(url: String, githubPat: String?): Request {

@@ -41,8 +41,11 @@ class ModuleWebViewActivity : AppActivity() {
 
         val moduleId = intent.getStringExtra(EXTRA_MODULE_ID).orEmpty()
         val module = AdbModuleManager.readModule(AdbModuleManager.modulesRoot(this).resolve(moduleId))
-        val index = module?.webRoot?.resolve("index.html")
-        if (module == null || index?.isFile != true) {
+        val index = module?.webRoot?.let { root ->
+            root.resolve("index.html").takeIf { it.isFile }
+                ?: root.resolve("index.htm").takeIf { it.isFile }
+        }
+        if (module == null || index == null) {
             finish()
             return
         }

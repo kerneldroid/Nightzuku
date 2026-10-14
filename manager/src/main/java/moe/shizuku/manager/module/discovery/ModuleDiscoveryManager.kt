@@ -137,7 +137,7 @@ class ModuleDiscoveryManager private constructor(context: Context) {
             }
 
             val found = try {
-                validator.validateRepo(owner, name, auth)
+                validator.validateRepo(owner, name, auth, repo.defaultBranch.ifBlank { "main" })
             } catch (e: Exception) {
                 Log.w(TAG, "Validation failed for ${repo.fullName}", e)
                 emptyList()

@@ -118,10 +118,12 @@ class ModuleJsBridge(
 
         val result = JSONObject()
         return try {
+            val targetDir = resolveModuleDirectory(options.cwd)
             val service = IShizukuService.Stub.asInterface(binder)
             val env = buildEnvironment(mode, options.extraEnv)
+            val wrappedCommand = "cd \"${targetDir.absolutePath}\" 2>/dev/null || true\n$command"
             val remote = service.newProcess(
-                arrayOf("sh", "-c", command),
+                arrayOf("sh", "-c", wrappedCommand),
                 env,
                 "/data/local/tmp"
             )
