@@ -78,19 +78,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         BinderSender.register(this)
 
         if (configManager.getNightDogEnabled()) {
-            Service.LOGGER.i("Initializing NightDog watchdog...")
-            NightDog.start(60000L, 60000L)
-            Service.LOGGER.i("NightDog watchdog initialized")
-
-            val heartbeat = object : Runnable {
-
-                override fun run() {
-                    NightDog.beat()
-                    mainHandler.postDelayed(this, 5000L)
-                }
-            }
-            heartbeatRunnable = heartbeat
-            mainHandler.post(heartbeat)
+            applyNightDogState(true)
         }
 
         mainHandler.post {
@@ -500,26 +488,52 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
     }
 
     private fun applyNightDogState(enabled: Boolean) {
+        heartbeatRunnable?.let { mainHandler.removeCallbacks(it) }
+        heartbeatRunnable = null
+
         if (enabled) {
             if (!NightDog.isStarted()) {
                 Service.LOGGER.i("Starting NightDog watchdog...")
-                NightDog.start(60000L, 60000L)
-                val heartbeat = object : Runnable {
+                NightDog.start(
+                    timeoutMs = NightDog.DEFAULT_TIMEOUT_MS,
+                    pollIntervalMs = NightDog.DEFAULT_POLL_INTERVAL_MS,
+                    listener = object : NightDog.Listener {
+                        override fun onServiceRecovered(name: String) {
+                            Service.LOGGER.i("NightDog: system service '%s' recovered, refreshing bindings", name)
+                            mainHandler.post {
+                                if (name == Context.ACTIVITY_SERVICE) {
+                                    BinderSender.register(this@ShizukuService)
+                                }
+                                if (name == Context.ACTIVITY_SERVICE || name == "package" || name == Context.USER_SERVICE) {
+                                    sendBinderToManager()
+                                    sendBinderToClient()
+                                }
+                            }
+                        }
 
-                    override fun run() {
-                        NightDog.beat()
-                        mainHandler.postDelayed(this, 5000L)
+                        override fun onFatalFault(reason: String) {
+                            Service.LOGGER.e("NightDog detected fatal fault (%s), terminating server for recovery", reason)
+                        }
                     }
-                }
-                heartbeatRunnable = heartbeat
-                mainHandler.post(heartbeat)
+                )
                 Service.LOGGER.i("NightDog watchdog started")
             }
+
+            val heartbeat = object : Runnable {
+                override fun run() {
+                    if (!NightDog.isStarted()) return
+                    NightDog.beat()
+                    mainHandler.postDelayed(this, HEARTBEAT_INTERVAL_MS)
+                }
+            }
+            heartbeatRunnable = heartbeat
+            NightDog.beat()
+            mainHandler.postDelayed(heartbeat, HEARTBEAT_INTERVAL_MS)
         } else {
-            heartbeatRunnable?.let { mainHandler.removeCallbacks(it) }
-            heartbeatRunnable = null
-            NightDog.stop()
-            Service.LOGGER.i("NightDog watchdog stopped")
+            if (NightDog.isStarted()) {
+                NightDog.stop()
+                Service.LOGGER.i("NightDog watchdog stopped")
+            }
         }
     }
 
@@ -535,6 +549,8 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
     }
 
     companion object {
+
+        private const val HEARTBEAT_INTERVAL_MS = 5_000L
 
         @JvmStatic
         fun main(args: Array<String>) {

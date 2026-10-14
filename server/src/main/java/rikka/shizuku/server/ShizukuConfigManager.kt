@@ -180,7 +180,8 @@ class ShizukuConfigManager : ConfigManager() {
             return
         }
         config.nightDogEnabled = enabled
-        scheduleWriteLocked()
+        workerHandler.removeCallbacks(mWriteRunner)
+        workerHandler.post(mWriteRunner)
     }
 
     companion object {

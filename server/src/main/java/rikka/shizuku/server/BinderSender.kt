@@ -72,6 +72,12 @@ object BinderSender {
 
         companion object {
             private val startedPids = HashSet<Int>()
+
+            fun clear() {
+                synchronized(startedPids) {
+                    startedPids.clear()
+                }
+            }
         }
     }
 
@@ -127,6 +133,12 @@ object BinderSender {
 
         companion object {
             private val startedUids = HashSet<Int>()
+
+            fun clear() {
+                synchronized(startedUids) {
+                    startedUids.clear()
+                }
+            }
         }
     }
 
@@ -172,6 +184,10 @@ object BinderSender {
     @JvmStatic
     fun register(shizukuService: ShizukuService) {
         this.shizukuService = shizukuService
+        ProcessObserver.clear()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            UidObserver.clear()
+        }
 
         try {
             ActivityManagerApis.registerProcessObserver(ProcessObserver())

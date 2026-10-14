@@ -8,6 +8,7 @@ use std::ffi::{CStr, CString, c_char, c_int};
 use std::io::Write;
 use std::os::unix::ffi::OsStringExt;
 use std::ptr;
+use std::time::Instant;
 
 const EXIT_FATAL_SET_CLASSPATH: c_int = 3;
 const EXIT_FATAL_FORK: c_int = 4;
@@ -15,6 +16,8 @@ const EXIT_FATAL_APP_PROCESS: c_int = 5;
 const EXIT_FATAL_UID: c_int = 6;
 const EXIT_FATAL_PM_PATH: c_int = 7;
 const EXIT_FATAL_BINDER_BLOCKED_BY_SELINUX: c_int = 10;
+const EXIT_MANAGER_APP_NOT_FOUND: c_int = 50;
+const STABLE_UPTIME_RESET_SECS: u64 = 60;
 
 const PACKAGE_NAME: &str = "kerneldroid.nightzuku";
 const SERVER_NAME: &str = "shizuku_server";
@@ -155,15 +158,16 @@ fn start_server(path: &str, main_class: &str, process_name: &str) -> ! {
                 libc::_exit(1);
             }
         } else {
-            if restart_count == 0 {
-                println!("info: shizuku_server pid is {pid}");
-            }
+            let started_at = Instant::now();
+            println!("info: shizuku_server pid is {pid}");
+            flush();
 
             let mut status: c_int = 0;
             unsafe {
                 libc::waitpid(pid, &mut status, 0);
             }
 
+            let uptime_secs = started_at.elapsed().as_secs();
             let mut exit_code: c_int = -1;
             let mut killed_by_signal = false;
             if libc::WIFEXITED(status) {
@@ -173,16 +177,26 @@ fn start_server(path: &str, main_class: &str, process_name: &str) -> ! {
                 killed_by_signal = true;
             }
 
-            println!("info: shizuku_server exited with code {exit_code}");
+            println!("info: shizuku_server exited with code {exit_code} after {uptime_secs}s");
+            flush();
 
             if !killed_by_signal && exit_code == 0 {
                 println!("info: shizuku_server exited cleanly, no restart");
                 exit(0);
             }
 
+            if !killed_by_signal && exit_code == EXIT_MANAGER_APP_NOT_FOUND {
+                println!("info: manager application not found, stopping server without restart");
+                exit(0);
+            }
+
+            if uptime_secs >= STABLE_UPTIME_RESET_SECS {
+                restart_count = 0;
+            }
+
             restart_count += 1;
             if restart_count > max_restarts {
-                println!("fatal: shizuku_server crashed {restart_count} times, giving up");
+                println!("fatal: shizuku_server crashed {restart_count} times consecutively, giving up");
                 exit(EXIT_FATAL_APP_PROCESS);
             }
 
