@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.RemoteException
 import android.text.TextUtils
 import androidx.annotation.RequiresApi
+import java.util.concurrent.Executors
 import rikka.hidden.compat.ActivityManagerApis
 import rikka.hidden.compat.PackageManagerApis
 import rikka.hidden.compat.adapter.ProcessObserverAdapter
@@ -21,7 +22,18 @@ object BinderSender {
 
     private val logger = Logger("BinderSender")
 
+    @Volatile
     private var shizukuService: ShizukuService? = null
+
+    @Volatile
+    private var nightEndpoint: NightServiceEndpoint? = null
+
+    private val dispatchExecutor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "night-binder-sender").apply {
+            isDaemon = true
+            priority = Thread.MAX_PRIORITY
+        }
+    }
 
     private class ProcessObserver : ProcessObserverAdapter() {
 
@@ -40,7 +52,7 @@ object BinderSender {
                 }
             }
 
-            sendBinder(uid, pid)
+            dispatchAsync(uid, pid)
         }
 
         override fun onProcessDied(pid: Int, uid: Int) {
@@ -63,7 +75,7 @@ object BinderSender {
                 }
             }
 
-            sendBinder(uid, pid)
+            dispatchAsync(uid, pid)
         }
 
         companion object {
@@ -110,7 +122,7 @@ object BinderSender {
                 logger.v("Uid %d starts", uid)
             }
 
-            sendBinder(uid, -1)
+            dispatchAsync(uid, -1)
         }
 
         private fun uidGone(uid: Int) {
@@ -132,9 +144,20 @@ object BinderSender {
         }
     }
 
+    private fun dispatchAsync(uid: Int, pid: Int) {
+        dispatchExecutor.execute {
+            try {
+                sendBinder(uid, pid)
+            } catch (t: Throwable) {
+                logger.w(t, "Failed to dispatch binder to uid=%d pid=%d", uid, pid)
+            }
+        }
+    }
+
     @Throws(RemoteException::class)
     private fun sendBinder(uid: Int, pid: Int) {
         val service = shizukuService ?: return
+        val night = nightEndpoint ?: return
         val packages = PackageManagerApis.getPackagesForUidNoThrow(uid)
         if (packages.isEmpty()) {
             return
@@ -149,8 +172,8 @@ object BinderSender {
                 packageName,
                 PackageManager.GET_PERMISSIONS.toLong(),
                 userId
-            )
-            val requestedPermissions = packageInfo?.requestedPermissions ?: continue
+            ) ?: continue
+            val requestedPermissions = packageInfo.requestedPermissions ?: continue
 
             if (requestedPermissions.contains(ServerConstants.MANAGER_PERMISSION)) {
                 val granted = if (pid == -1) {
@@ -160,22 +183,22 @@ object BinderSender {
                 }
 
                 if (granted && userId == 0 && !sentManager) {
-                    ShizukuService.sendBinderToManager(service, userId)
+                    ShizukuService.sendBinderToManager(service, night, userId)
                     sentManager = true
                 }
             }
 
-            if (requestedPermissions.contains(ServerConstants.PERMISSION) ||
-                requestedPermissions.contains(ServerConstants.LEGACY_PERMISSION)
-            ) {
-                ShizukuService.sendBinderToUserApp(service, packageName, userId)
+            val wire = ClientRouting.route(packageInfo)
+            if (wire != null) {
+                ShizukuService.sendBinderToClientPackage(packageInfo, wire, service, night, userId)
             }
         }
     }
 
     @JvmStatic
-    fun register(shizukuService: ShizukuService) {
+    fun register(shizukuService: ShizukuService, nightEndpoint: NightServiceEndpoint = shizukuService.nightEndpoint) {
         this.shizukuService = shizukuService
+        this.nightEndpoint = nightEndpoint
         ProcessObserver.clear()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             UidObserver.clear()
@@ -188,8 +211,6 @@ object BinderSender {
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            // Avoid UID_OBSERVER_IDLE: force-stopping a client reports its uid idle during teardown,
-            // which would otherwise re-trigger provider delivery and restart the stopped client.
             var flags = UID_OBSERVER_GONE or UID_OBSERVER_ACTIVE
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 flags = flags or UID_OBSERVER_CACHED

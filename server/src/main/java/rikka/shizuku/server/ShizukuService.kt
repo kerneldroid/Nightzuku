@@ -18,7 +18,10 @@ import android.os.Parcel
 import android.os.Parcelable
 import android.os.RemoteException
 import android.os.ServiceManager
-import moe.shizuku.api.BinderContainer
+import android.os.SystemClock
+import java.util.concurrent.ConcurrentHashMap
+import kerneldroid.nightzuku.api.LegacyParcelCodec
+import kerneldroid.nightzuku.api.NightProtocol
 import moe.shizuku.common.util.BuildUtils
 import moe.shizuku.common.util.OsUtils
 import moe.shizuku.server.IShizukuApplication
@@ -42,7 +45,11 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
     private val clientManager: ShizukuClientManager
     private val configManager: ShizukuConfigManager
     private val managerAppId: Int
+    val nightEndpoint: NightServiceEndpoint
     private var heartbeatRunnable: Runnable? = null
+
+    /** Tracks active permission prompts by (uid, pid, requestCode) -> elapsedRealtimeMs to block forged/expired replies. */
+    private val openPrompts = ConcurrentHashMap<Triple<Int, Int, Int>, Long>()
 
     init {
         HandlerUtil.setMainHandler(mainHandler)
@@ -64,6 +71,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
 
         configManager = getConfigManager()
         clientManager = getClientManager()
+        nightEndpoint = NightServiceEndpoint(this)
 
         ApkChangedObservers.start(ai.sourceDir, object : ApkChangedListener {
 
@@ -75,7 +83,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             }
         })
 
-        BinderSender.register(this)
+        BinderSender.register(this, nightEndpoint)
 
         if (configManager.getNightDogEnabled()) {
             applyNightDogState(true)
@@ -146,6 +154,42 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         super.attachUserService(binder, options)
     }
 
+    internal fun attachNightClient(
+        callingUid: Int,
+        callingPid: Int,
+        bridgeApp: IShizukuApplication,
+        packageName: String,
+        protocolVersion: Int
+    ): ClientRecord? {
+        val isManager = ServerConstants.MANAGER_APPLICATION_ID == packageName &&
+            UserHandleCompat.getUserId(callingUid) == 0
+
+        var record = clientManager.findClient(callingUid, callingPid)
+        if (record == null) {
+            synchronized(this) {
+                record = clientManager.addClient(
+                    callingUid,
+                    callingPid,
+                    bridgeApp,
+                    packageName,
+                    ShizukuApiConstants.SERVER_VERSION
+                )
+            }
+        }
+        if (isManager) {
+            try {
+                Android17Compat.grantRuntimePermission(
+                    ServerConstants.MANAGER_APPLICATION_ID,
+                    Manifest.permission.WRITE_SECURE_SETTINGS,
+                    UserHandleCompat.getUserId(callingUid)
+                )
+            } catch (e: RemoteException) {
+                Service.LOGGER.w(e, "grant WRITE_SECURE_SETTINGS")
+            }
+        }
+        return record
+    }
+
     override fun attachApplication(application: IShizukuApplication?, args: Bundle?) {
         if (application == null || args == null) {
             return
@@ -186,15 +230,21 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             replyServerVersion = 12
         }
 
-        val reply = Bundle()
-        reply.putInt(ShizukuApiConstants.BIND_APPLICATION_SERVER_UID, OsUtils.getUid())
-        reply.putInt(ShizukuApiConstants.BIND_APPLICATION_SERVER_VERSION, replyServerVersion)
-        reply.putString(ShizukuApiConstants.BIND_APPLICATION_SERVER_SECONTEXT, OsUtils.getSELinuxContext())
-        reply.putInt(ShizukuApiConstants.BIND_APPLICATION_SERVER_PATCH_VERSION, ShizukuApiConstants.SERVER_PATCH_VERSION)
         if (!isManager) {
             val denied = configManager.find(callingUid)?.isDenied() == true
-            reply.putBoolean(ShizukuApiConstants.BIND_APPLICATION_PERMISSION_GRANTED, clientRecord!!.allowed)
-            reply.putBoolean(ShizukuApiConstants.BIND_APPLICATION_SHOULD_SHOW_REQUEST_PERMISSION_RATIONALE, denied)
+            try {
+                LegacyParcelCodec.sendLegacyBindApplication(
+                    application.asBinder(),
+                    OsUtils.getUid(),
+                    replyServerVersion,
+                    ShizukuApiConstants.SERVER_PATCH_VERSION,
+                    OsUtils.getSELinuxContext(),
+                    clientRecord!!.allowed,
+                    denied
+                )
+            } catch (e: Throwable) {
+                Service.LOGGER.w(e, "attachApplication")
+            }
         } else {
             try {
                 Android17Compat.grantRuntimePermission(
@@ -204,12 +254,39 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             } catch (e: RemoteException) {
                 Service.LOGGER.w(e, "grant WRITE_SECURE_SETTINGS")
             }
+            val reply = Bundle()
+            reply.putInt(ShizukuApiConstants.BIND_APPLICATION_SERVER_UID, OsUtils.getUid())
+            reply.putInt(ShizukuApiConstants.BIND_APPLICATION_SERVER_VERSION, replyServerVersion)
+            reply.putString(ShizukuApiConstants.BIND_APPLICATION_SERVER_SECONTEXT, OsUtils.getSELinuxContext())
+            reply.putInt(ShizukuApiConstants.BIND_APPLICATION_SERVER_PATCH_VERSION, ShizukuApiConstants.SERVER_PATCH_VERSION)
+            try {
+                application.bindApplication(reply)
+            } catch (e: Throwable) {
+                Service.LOGGER.w(e, "attachApplication manager")
+            }
         }
-        try {
-            application.bindApplication(reply)
-        } catch (e: Throwable) {
-            Service.LOGGER.w(e, "attachApplication")
+    }
+
+    internal fun requestPermissionFromNightWire(callingUid: Int, callingPid: Int, requestCode: Int) {
+        if (callingUid == OsUtils.getUid() || callingPid == OsUtils.getPid()) {
+            return
         }
+        val clientRecord = clientManager.requireClient(callingUid, callingPid)
+        if (clientRecord.allowed) {
+            val caps = TransactGuard.effectiveCapabilities(configManager.find(callingUid))
+            if (!nightEndpoint.notifyRequestPermissionResult(callingUid, callingPid, requestCode, true, caps)) {
+                clientRecord.dispatchRequestPermissionResult(requestCode, true)
+            }
+            return
+        }
+        val entry = configManager.find(callingUid)
+        if (entry != null && entry.isDenied()) {
+            if (!nightEndpoint.notifyRequestPermissionResult(callingUid, callingPid, requestCode, false, 0)) {
+                clientRecord.dispatchRequestPermissionResult(requestCode, false)
+            }
+            return
+        }
+        showPermissionConfirmation(requestCode, clientRecord, callingUid, callingPid, UserHandleCompat.getUserId(callingUid))
     }
 
     override fun showPermissionConfirmation(
@@ -234,6 +311,10 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             return
         }
 
+        val now = SystemClock.elapsedRealtime()
+        openPrompts.entries.removeIf { now - it.value > PROMPT_ANSWER_WINDOW_MS }
+        openPrompts[Triple(callingUid, callingPid, requestCode)] = now
+
         val intent = Intent(ServerConstants.REQUEST_PERMISSION_ACTION)
             .setPackage(ServerConstants.MANAGER_APPLICATION_ID)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NEW_DOCUMENT)
@@ -248,6 +329,13 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         enforceManagerPermission("dispatchPermissionConfirmationResult")
 
         if (data == null) {
+            return
+        }
+
+        val openedAt = openPrompts.remove(Triple(requestUid, requestPid, requestCode))
+        if (openedAt != null && SystemClock.elapsedRealtime() - openedAt > PROMPT_ANSWER_WINDOW_MS) {
+            Service.LOGGER.w("Prompt expired for uid=%d pid=%d code=%d", requestUid, requestPid, requestCode)
+            clientManager.findClient(requestUid, requestPid)?.dispatchRequestPermissionResult(requestCode, false)
             return
         }
 
@@ -266,7 +354,9 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                 if (allowed) ConfigManager.FLAG_ALLOWED else ConfigManager.FLAG_DENIED
             )
         }
-        val denied = configManager.find(requestUid)?.isDenied() == true
+        val entry = configManager.find(requestUid)
+        val denied = entry?.isDenied() == true
+        val caps = if (allowed) TransactGuard.effectiveCapabilities(entry) else 0
 
         val records = clientManager.findClients(requestUid)
         if (records.isEmpty()) {
@@ -274,10 +364,18 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         } else {
             for (record in records) {
                 record.allowed = allowed
-                pushPermissionState(record, denied)
+                pushPermissionState(record, denied, caps)
                 if (record.pid == requestPid) {
-                    record.dispatchRequestPermissionResult(requestCode, allowed)
+                    if (!nightEndpoint.notifyRequestPermissionResult(requestUid, requestPid, requestCode, allowed, caps)) {
+                        record.dispatchRequestPermissionResult(requestCode, allowed)
+                    }
                 }
+            }
+        }
+
+        if (!allowed) {
+            for (pkg in uidPackages) {
+                onPermissionRevoked(pkg)
             }
         }
 
@@ -286,20 +384,32 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         }
     }
 
-    private fun pushPermissionState(record: ClientRecord, shouldShowRationale: Boolean) {
+    internal fun notifyCapabilitiesUpdated(uid: Int) {
+        val entry = configManager.find(uid)
+        val allowed = entry?.isAllowed() == true
+        val denied = entry?.isDenied() == true
+        val caps = TransactGuard.effectiveCapabilities(entry)
+        for (record in clientManager.findClients(uid)) {
+            record.allowed = allowed
+            pushPermissionState(record, denied, caps)
+        }
+    }
+
+    private fun pushPermissionState(record: ClientRecord, shouldShowRationale: Boolean, capabilities: Int) {
+        if (nightEndpoint.notifyPermissionChanged(record.uid, record.pid, record.allowed, shouldShowRationale, capabilities)) {
+            return
+        }
         val client = record.client ?: return
         try {
-            val reply = Bundle()
-            reply.putInt(ShizukuApiConstants.BIND_APPLICATION_SERVER_UID, OsUtils.getUid())
-            reply.putInt(
-                ShizukuApiConstants.BIND_APPLICATION_SERVER_VERSION,
-                if (record.apiVersion == -1) 12 else ShizukuApiConstants.SERVER_VERSION
+            LegacyParcelCodec.sendLegacyBindApplication(
+                client.asBinder(),
+                OsUtils.getUid(),
+                if (record.apiVersion == -1) 12 else ShizukuApiConstants.SERVER_VERSION,
+                ShizukuApiConstants.SERVER_PATCH_VERSION,
+                OsUtils.getSELinuxContext(),
+                record.allowed,
+                shouldShowRationale
             )
-            reply.putInt(ShizukuApiConstants.BIND_APPLICATION_SERVER_PATCH_VERSION, ShizukuApiConstants.SERVER_PATCH_VERSION)
-            reply.putString(ShizukuApiConstants.BIND_APPLICATION_SERVER_SECONTEXT, OsUtils.getSELinuxContext())
-            reply.putBoolean(ShizukuApiConstants.BIND_APPLICATION_PERMISSION_GRANTED, record.allowed)
-            reply.putBoolean(ShizukuApiConstants.BIND_APPLICATION_SHOULD_SHOW_REQUEST_PERMISSION_RATIONALE, shouldShowRationale)
-            client.bindApplication(reply)
         } catch (t: Throwable) {
             Service.LOGGER.w(t, "Failed to push permission state to uid=%d pid=%d", record.uid, record.pid)
         }
@@ -313,7 +423,6 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             ) ?: continue
             val requestedPermissions = pi.requestedPermissions ?: continue
 
-            // Sync Nightzuku's own declared runtime permission
             if (requestedPermissions.contains(ServerConstants.PERMISSION)) {
                 try {
                     if (allowed) {
@@ -374,11 +483,12 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         if ((mask and ConfigManager.MASK_PERMISSION) != 0) {
             val allowed = (value and ConfigManager.FLAG_ALLOWED) != 0
             val denied = (value and ConfigManager.FLAG_DENIED) != 0
+            val caps = TransactGuard.effectiveCapabilities(configManager.find(uid))
 
             val records = clientManager.findClients(uid)
             for (record in records) {
                 record.allowed = allowed
-                pushPermissionState(record, denied)
+                pushPermissionState(record, denied, caps)
                 if (!allowed) {
                     ActivityManagerApis.forceStopPackageNoThrow(record.packageName, UserHandleCompat.getUserId(record.uid))
                     onPermissionRevoked(record.packageName)
@@ -428,14 +538,12 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
 
                 if (flags != 0) {
                     list.add(pi)
-                } else {
+                } else if (ClientRouting.route(pi) != null) {
                     val metaData = applicationInfo.metaData
-                    val requestedPermissions = pi.requestedPermissions
-                    if (requestedPermissions != null && (
-                        requestedPermissions.contains(ServerConstants.PERMISSION) ||
-                        (metaData != null && metaData.getBoolean("moe.shizuku.client.V3_SUPPORT", false) &&
-                            requestedPermissions.contains(ServerConstants.LEGACY_PERMISSION))
-                    )) {
+                    val wire = ClientRouting.route(pi)
+                    if (wire == ClientRouting.Wire.NIGHTZUKU ||
+                        (metaData != null && metaData.getBoolean("moe.shizuku.client.V3_SUPPORT", false))
+                    ) {
                         list.add(pi)
                     }
                 }
@@ -445,7 +553,25 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
     }
 
     public override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
-        if (code == ServerConstants.BINDER_TRANSACTION_getApplications) {
+        if (code == ShizukuApiConstants.BINDER_TRANSACTION_transact) {
+            data.enforceInterface(ShizukuApiConstants.BINDER_DESCRIPTOR)
+            val callingUid = Binder.getCallingUid()
+            val callingPid = Binder.getCallingPid()
+            enforceCallingPermission("transactRemote")
+            TransactGuard.enforceCapability(
+                configManager,
+                callingUid,
+                checkCallerManagerPermission("transactRemote", callingUid, callingPid),
+                NightProtocol.CAP_BINDER_PROXY,
+                "transactRemote"
+            )
+            val startPos = data.dataPosition()
+            val targetBinder = data.readStrongBinder()
+            TransactGuard.verifyTargetBinder(targetBinder, this, nightEndpoint)
+            data.setDataPosition(startPos)
+            transactRemote(data, reply, flags)
+            return true
+        } else if (code == ServerConstants.BINDER_TRANSACTION_getApplications) {
             val replyParcel = reply!!
             if (!checkCallerManagerPermission("getApplications", Binder.getCallingUid(), Binder.getCallingPid())
                 && checkCallingPermission() != PackageManager.PERMISSION_GRANTED
@@ -482,13 +608,25 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             replyParcel.writeNoException()
             replyParcel.writeInt(if (configManager.getNightDogEnabled()) 1 else 0)
             return true
+        } else if (code == ServerConstants.BINDER_TRANSACTION_claimUserServiceLaunch) {
+            val replyParcel = reply!!
+            if (Binder.getCallingUid() != OsUtils.getUid()) {
+                replyParcel.writeException(SecurityException("Permission denied"))
+                return true
+            }
+            data.enforceInterface(ShizukuApiConstants.BINDER_DESCRIPTOR)
+            val token = data.readString()
+            val claimed = token != null && getUserServiceManager().claimUserServiceLaunch(token, Binder.getCallingPid())
+            replyParcel.writeNoException()
+            replyParcel.writeInt(if (claimed) 1 else 0)
+            return true
         }
         return super.onTransact(code, data, reply, flags)
     }
 
     fun sendBinderToClient() {
         for (userId in UserManagerApis.getUserIdsNoThrow()) {
-            sendBinderToClient(this, userId)
+            sendBinderToClient(this, nightEndpoint, userId)
         }
     }
 
@@ -508,7 +646,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                             Android17Compat.invalidate(name)
                             mainHandler.post {
                                 if (name == Context.ACTIVITY_SERVICE) {
-                                    BinderSender.register(this@ShizukuService)
+                                    BinderSender.register(this@ShizukuService, nightEndpoint)
                                 }
                                 if (name == Context.ACTIVITY_SERVICE || name == "package" || name == Context.USER_SERVICE) {
                                     sendBinderToManager()
@@ -544,7 +682,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
     }
 
     fun sendBinderToManager() {
-        sendBinderToManager(this)
+        sendBinderToManager(this, nightEndpoint)
     }
 
     override fun dispatchPackageChanged(intent: Intent) {
@@ -557,6 +695,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
     companion object {
 
         private const val HEARTBEAT_INTERVAL_MS = 5_000L
+        private const val PROMPT_ANSWER_WINDOW_MS = 5 * 60 * 1000L
 
         @JvmStatic
         fun main(args: Array<String>) {
@@ -584,32 +723,52 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             return Android17Compat.getApplicationInfo(ServerConstants.MANAGER_APPLICATION_ID, 0L, 0)
         }
 
-        private fun sendBinderToClient(binder: Binder, userId: Int) {
+        private fun sendBinderToClient(legacyBinder: Binder, nightBinder: Binder, userId: Int) {
             try {
                 for (pi in InstalledPackagesCompat.getInstalledPackagesNoThrow(
                     PackageManager.GET_PERMISSIONS.toLong(), userId
                 )) {
-                    val requestedPermissions = pi.requestedPermissions ?: continue
-
-                    if (requestedPermissions.contains(ServerConstants.PERMISSION) ||
-                        requestedPermissions.contains(ServerConstants.LEGACY_PERMISSION)
-                    ) {
-                        sendBinderToUserApp(binder, pi.packageName, userId)
-                    }
+                    val wire = ClientRouting.route(pi) ?: continue
+                    sendBinderToClientPackage(pi, wire, legacyBinder, nightBinder, userId)
                 }
             } catch (tr: Throwable) {
                 Service.LOGGER.e("exception when call getInstalledPackages", tr)
             }
         }
 
-        private fun sendBinderToManager(binder: Binder) {
-            for (userId in UserManagerApis.getUserIdsNoThrow()) {
-                sendBinderToManager(binder, userId)
+        @JvmStatic
+        internal fun sendBinderToClientPackage(
+            pi: PackageInfo,
+            primaryWire: ClientRouting.Wire,
+            legacyBinder: Binder,
+            nightBinder: Binder,
+            userId: Int
+        ) {
+            if (primaryWire == ClientRouting.Wire.NIGHTZUKU) {
+                sendBinderToUserApp(ClientRouting.Wire.NIGHTZUKU, nightBinder, pi.packageName, userId, true)
+                if (ClientRouting.supportsLegacyWire(pi)) {
+                    sendBinderToUserApp(ClientRouting.Wire.SHIZUKU, legacyBinder, pi.packageName, userId, false)
+                }
+            } else {
+                sendBinderToUserApp(ClientRouting.Wire.SHIZUKU, legacyBinder, pi.packageName, userId, true)
             }
         }
 
+        private fun sendBinderToManager(legacyBinder: Binder, nightBinder: Binder) {
+            for (userId in UserManagerApis.getUserIdsNoThrow()) {
+                sendBinderToManager(legacyBinder, nightBinder, userId)
+            }
+        }
+
+        @JvmStatic
+        fun sendBinderToManager(legacyBinder: Binder, nightBinder: Binder, userId: Int) {
+            sendBinderToUserApp(ClientRouting.Wire.NIGHTZUKU, nightBinder, ServerConstants.MANAGER_APPLICATION_ID, userId, true)
+            sendBinderToUserApp(ClientRouting.Wire.SHIZUKU, legacyBinder, ServerConstants.MANAGER_APPLICATION_ID, userId, false)
+        }
+
+        @JvmStatic
         fun sendBinderToManager(binder: Binder, userId: Int) {
-            sendBinderToUserApp(binder, ServerConstants.MANAGER_APPLICATION_ID, userId)
+            sendBinderToUserApp(ClientRouting.Wire.SHIZUKU, binder, ServerConstants.MANAGER_APPLICATION_ID, userId, true)
         }
 
         @Deprecated("typo, use sendBinderToManager")
@@ -617,11 +776,19 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             sendBinderToManager(binder, userId)
         }
 
+        @JvmStatic
         fun sendBinderToUserApp(binder: Binder, packageName: String, userId: Int) {
-            sendBinderToUserApp(binder, packageName, userId, true)
+            sendBinderToUserApp(ClientRouting.Wire.SHIZUKU, binder, packageName, userId, true)
         }
 
-        fun sendBinderToUserApp(binder: Binder, packageName: String, userId: Int, retry: Boolean) {
+        @JvmStatic
+        fun sendBinderToUserApp(
+            wire: ClientRouting.Wire,
+            binder: Binder,
+            packageName: String,
+            userId: Int,
+            retry: Boolean
+        ) {
             try {
                 DeviceIdleControllerApis.addPowerSaveTempWhitelistApp(packageName, 30 * 1000L, userId, 316, "shell")
                 Service.LOGGER.v("Add %d:%s to power save temp whitelist for 30s", userId, packageName)
@@ -629,7 +796,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                 Service.LOGGER.e(tr, "Failed to add %d:%s to power save temp whitelist", userId, packageName)
             }
 
-            val name = packageName + ".shizuku"
+            val name = packageName + ClientRouting.providerSuffix(wire)
             var provider: IContentProvider? = null
             val token: IBinder? = null
 
@@ -637,7 +804,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                 val p = ActivityManagerApis.getContentProviderExternal(name, userId, token, name)
                 provider = p
                 if (p == null) {
-                    Service.LOGGER.e("provider is null %s %d", name, userId)
+                    Service.LOGGER.v("provider is null %s %d", name, userId)
                     return
                 }
                 if (!p.asBinder().pingBinder()) {
@@ -647,7 +814,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                         ActivityManagerApis.forceStopPackageNoThrow(packageName, userId)
                         Service.LOGGER.e("kill %s in user %d and try again", packageName, userId)
                         Thread.sleep(1000)
-                        sendBinderToUserApp(binder, packageName, userId, false)
+                        sendBinderToUserApp(wire, binder, packageName, userId, false)
                     }
                     return
                 }
@@ -656,17 +823,26 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                     Service.LOGGER.e("retry works")
                 }
 
-                val extra = Bundle()
-                extra.putParcelable("moe.shizuku.privileged.api.intent.extra.BINDER", BinderContainer(binder))
-
-                val reply = IContentProviderUtils.callCompat(p, null, name, "sendBinder", null, extra)
-                if (reply != null) {
-                    Service.LOGGER.i("send binder to user app %s in user %d", packageName, userId)
+                val extra: Bundle
+                val method: String
+                if (wire == ClientRouting.Wire.NIGHTZUKU) {
+                    extra = Bundle().apply {
+                        putBinder(NightProtocol.EXTRA_BINDER, binder)
+                    }
+                    method = NightProtocol.METHOD_SEND_BINDER
                 } else {
-                    Service.LOGGER.w("failed to send binder to user app %s in user %d", packageName, userId)
+                    extra = LegacyParcelCodec.createLegacyBinderBundle(binder)
+                    method = "sendBinder"
+                }
+
+                val reply = IContentProviderUtils.callCompat(p, null, name, method, null, extra)
+                if (reply != null) {
+                    Service.LOGGER.i("send binder (%s) to user app %s in user %d", wire.name, packageName, userId)
+                } else {
+                    Service.LOGGER.w("failed to send binder (%s) to user app %s in user %d", wire.name, packageName, userId)
                 }
             } catch (tr: Throwable) {
-                Service.LOGGER.e(tr, "failed send binder to user app %s in user %d", packageName, userId)
+                Service.LOGGER.e(tr, "failed send binder (%s) to user app %s in user %d", wire.name, packageName, userId)
             } finally {
                 if (provider != null) {
                     try {
