@@ -30,6 +30,7 @@ android {
 }
 
 dependencies {
+    implementation project(':common')
     implementation project(':api')
     implementation project(':provider')
 

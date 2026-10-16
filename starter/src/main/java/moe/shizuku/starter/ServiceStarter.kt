@@ -5,9 +5,12 @@ import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.os.Looper
+import android.os.Parcel
+import android.os.SystemClock
 import android.util.Log
 import java.util.Locale
-import moe.shizuku.api.BinderContainer
+import kerneldroid.nightzuku.api.LegacyParcelCodec
+import kerneldroid.nightzuku.api.NightProtocol
 import moe.shizuku.starter.util.IContentProviderCompat
 import rikka.hidden.compat.ActivityManagerApis
 import rikka.shizuku.ShizukuApiConstants
@@ -16,8 +19,9 @@ import rikka.shizuku.server.UserService
 object ServiceStarter {
 
     private const val TAG = "ShizukuServiceStarter"
-
-    private const val EXTRA_BINDER = "moe.shizuku.privileged.api.intent.extra.BINDER"
+    private const val MANAGER_PACKAGE = "kerneldroid.nightzuku"
+    private const val LAUNCH_TOKEN_TIMEOUT_MS = 5_000L
+    private const val LAUNCH_TOKEN_RETRY_MS = 250L
 
     @JvmField
     val DEBUG_ARGS: String = when {
@@ -39,21 +43,52 @@ object ServiceStarter {
     }
 
     @JvmStatic
-    fun commandForUserService(appProcess: String, managerApkPath: String, token: String, packageName: String, classname: String, processNameSuffix: String, callingUid: Int, debug: Boolean): String {
+    fun commandForUserService(
+        appProcess: String,
+        managerApkPath: String,
+        token: String,
+        packageName: String,
+        classname: String,
+        processNameSuffix: String,
+        callingUid: Int,
+        debug: Boolean
+    ): String {
         val processName = String.format("%s:%s", packageName, processNameSuffix)
-        return String.format(Locale.ENGLISH, "(CLASSPATH=%s %s%s /system/bin " +
-            "--nice-name=%s moe.shizuku.starter.ServiceStarter " +
-            "--token=%s --package=%s --class=%s --uid=%d%s)&",
-            escapeShellArg(managerApkPath), appProcess, if (debug) " $DEBUG_ARGS" else "",
+        return String.format(
+            Locale.ENGLISH,
+            "(CLASSPATH=%s %s%s /system/bin " +
+                "--nice-name=%s moe.shizuku.starter.ServiceStarter " +
+                "--token=%s --package=%s --class=%s --uid=%d%s)&",
+            escapeShellArg(managerApkPath),
+            appProcess,
+            if (debug) " $DEBUG_ARGS" else "",
             escapeShellArg(processName),
-            escapeShellArg(token), escapeShellArg(packageName), escapeShellArg(classname), callingUid,
-            if (debug) " --debug-name=" + escapeShellArg(processName) else "")
+            escapeShellArg(token),
+            escapeShellArg(packageName),
+            escapeShellArg(classname),
+            callingUid,
+            if (debug) " --debug-name=" + escapeShellArg(processName) else ""
+        )
     }
 
     @JvmStatic
     fun main(args: Array<String>) {
         if (Looper.getMainLooper() == null) {
             Looper.prepareMainLooper()
+        }
+
+        var launchToken: String? = null
+        for (arg in args) {
+            if (arg.startsWith("--token=")) {
+                launchToken = arg.substring("--token=".length)
+            }
+        }
+
+        // Verify that the launch token is still live on the server before loading client APK code
+        if (!isLaunchTokenLive(launchToken)) {
+            Log.w(TAG, "UserService launch token is not active, aborting")
+            System.exit(1)
+            return
         }
 
         UserService.setTag(TAG)
@@ -77,13 +112,74 @@ object ServiceStarter {
         Log.i(TAG, "service exited")
     }
 
-    private fun sendBinder(binder: IBinder, token: String): Boolean {
-        return sendBinder(binder, token, true)
+    private fun isLaunchTokenLive(token: String?): Boolean {
+        if (token.isNullOrEmpty()) return false
+        val authority = MANAGER_PACKAGE + NightProtocol.PROVIDER_SUFFIX
+        val started = SystemClock.uptimeMillis()
+        while (SystemClock.uptimeMillis() - started < LAUNCH_TOKEN_TIMEOUT_MS) {
+            var provider: IContentProvider? = null
+            try {
+                provider = ActivityManagerApis.getContentProviderExternal(authority, 0, null, authority)
+                if (provider != null) {
+                    val reply = IContentProviderCompat.call(
+                        provider,
+                        null,
+                        null,
+                        authority,
+                        NightProtocol.METHOD_GET_BINDER,
+                        null,
+                        Bundle()
+                    )
+                    val serverBinder = LegacyParcelCodec.extractBinderFromBundle(reply)
+                    if (serverBinder != null && serverBinder.pingBinder()) {
+                        return queryTokenLive(serverBinder, token)
+                    }
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "Failed to query launch token", t)
+            } finally {
+                if (provider != null) {
+                    try {
+                        ActivityManagerApis.removeContentProviderExternal(authority, null)
+                    } catch (_: Throwable) {
+                    }
+                }
+            }
+            try {
+                Thread.sleep(LAUNCH_TOKEN_RETRY_MS)
+            } catch (_: InterruptedException) {
+                break
+            }
+        }
+        return false
     }
 
-    private fun sendBinder(binder: IBinder, token: String, retry: Boolean): Boolean {
-        val packageName = "kerneldroid.nightzuku"
-        val name = packageName + ".shizuku"
+    private fun queryTokenLive(serverBinder: IBinder, token: String): Boolean {
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        return try {
+            val descriptor = serverBinder.interfaceDescriptor ?: NightProtocol.DESCRIPTOR
+            data.writeInterfaceToken(descriptor)
+            data.writeString(token)
+            val txCode = if (descriptor == NightProtocol.DESCRIPTOR) {
+                NightProtocol.TRANSACTION_CLAIM_USER_SERVICE
+            } else {
+                10004 /* ServerConstants.BINDER_TRANSACTION_claimUserServiceLaunch */
+            }
+            if (!serverBinder.transact(txCode, data, reply, 0)) return false
+            reply.readException()
+            reply.readInt() != 0
+        } catch (t: Throwable) {
+            Log.w(TAG, "queryTokenLive failed", t)
+            false
+        } finally {
+            reply.recycle()
+            data.recycle()
+        }
+    }
+
+    private fun sendBinder(binder: IBinder, token: String, retry: Boolean = true): Boolean {
+        val name = MANAGER_PACKAGE + NightProtocol.PROVIDER_SUFFIX
         val userId = 0
         var provider: IContentProvider? = null
 
@@ -98,8 +194,8 @@ object ServiceStarter {
                 Log.e(TAG, String.format("provider is dead %s %d", name, userId))
 
                 if (retry) {
-                    ActivityManagerApis.forceStopPackageNoThrow(packageName, userId)
-                    Log.e(TAG, String.format("kill %s in user %d and try again", packageName, userId))
+                    ActivityManagerApis.forceStopPackageNoThrow(MANAGER_PACKAGE, userId)
+                    Log.e(TAG, String.format("kill %s in user %d and try again", MANAGER_PACKAGE, userId))
                     Thread.sleep(1000)
                     return sendBinder(binder, token, false)
                 }
@@ -110,22 +206,29 @@ object ServiceStarter {
                 Log.e(TAG, "retry works")
             }
 
-            val extra = Bundle()
-            extra.putParcelable(EXTRA_BINDER, BinderContainer(binder))
-            extra.putString(ShizukuApiConstants.USER_SERVICE_ARG_TOKEN, token)
+            val extra = Bundle().apply {
+                putBinder(NightProtocol.EXTRA_BINDER, binder)
+                putString(NightProtocol.EXTRA_USER_SERVICE_TOKEN, token)
+                putString(ShizukuApiConstants.USER_SERVICE_ARG_TOKEN, token)
+            }
 
-            val reply = IContentProviderCompat.call(p, null, null, name, "sendUserService", null, extra)
+            val reply = IContentProviderCompat.call(
+                p,
+                null,
+                null,
+                name,
+                NightProtocol.METHOD_SEND_USER_SERVICE,
+                null,
+                extra
+            )
 
             if (reply != null) {
-                reply.setClassLoader(BinderContainer::class.java.classLoader)
+                Log.i(TAG, String.format("send binder to %s in user %d", MANAGER_PACKAGE, userId))
+                val serverBinder = LegacyParcelCodec.extractBinderFromBundle(reply)
 
-                Log.i(TAG, String.format("send binder to %s in user %d", packageName, userId))
-                val container: BinderContainer? = reply.getParcelable(EXTRA_BINDER)
-
-                val containerBinder = container?.binder
-                if (containerBinder != null && containerBinder.pingBinder()) {
-                    shizukuBinder = containerBinder
-                    containerBinder.linkToDeath({
+                if (serverBinder != null && serverBinder.pingBinder()) {
+                    shizukuBinder = serverBinder
+                    serverBinder.linkToDeath({
                         Log.i(TAG, "exiting...")
                         System.exit(0)
                     }, 0)
@@ -137,7 +240,7 @@ object ServiceStarter {
 
             return false
         } catch (tr: Throwable) {
-            Log.e(TAG, String.format("failed send binder to %s in user %d", packageName, userId), tr)
+            Log.e(TAG, String.format("failed send binder to %s in user %d", MANAGER_PACKAGE, userId), tr)
             return false
         } finally {
             if (provider != null) {

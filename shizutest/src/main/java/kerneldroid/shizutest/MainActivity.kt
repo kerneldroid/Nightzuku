@@ -27,28 +27,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
+import java.io.File
+import java.io.PrintWriter
+import java.io.StringWriter
+import java.text.SimpleDateFormat
+import java.util.*
+import kerneldroid.nightzuku.api.NightClient
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuBinderWrapper
 import rikka.shizuku.ShizukuSystemProperties
 import rikka.shizuku.SystemServiceHelper
-import java.io.File
-import java.io.PrintWriter
-import java.io.StringWriter
-import java.text.SimpleDateFormat
-import java.util.*
-
-
-
-
-
-
-
-
-
-
-
 
 enum class TestStatus {
     IDLE, RUNNING, GOOD, FAILED
@@ -70,12 +60,10 @@ data class TestResult(
     val details: String
 )
 
-
 class MainActivity : ComponentActivity() {
 
     private val binderReceived = mutableStateOf(false)
     private val permissionGranted = mutableStateOf(false)
-
 
     private val testsList = mutableStateListOf<DiagnosticTest>()
 
@@ -85,11 +73,20 @@ class MainActivity : ComponentActivity() {
     }
 
     private val BINDER_DEAD_LISTENER = Shizuku.OnBinderDeadListener {
-        binderReceived.value = false
+        binderReceived.value = NightClient.pingBinder()
         permissionGranted.value = false
     }
 
-    private val REQUEST_PERMISSION_RESULT_LISTENER = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
+    private val REQUEST_PERMISSION_RESULT_LISTENER = Shizuku.OnRequestPermissionResultListener { _, grantResult ->
+        permissionGranted.value = grantResult == PackageManager.PERMISSION_GRANTED
+    }
+
+    private val NIGHT_BINDER_RECEIVED_LISTENER = NightClient.OnBinderReceivedListener {
+        binderReceived.value = true
+        permissionGranted.value = NightClient.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+    }
+
+    private val NIGHT_PERMISSION_RESULT_LISTENER = NightClient.OnPermissionResultListener { _, grantResult, _ ->
         permissionGranted.value = grantResult == PackageManager.PERMISSION_GRANTED
     }
 
@@ -100,19 +97,28 @@ class MainActivity : ComponentActivity() {
         Shizuku.addBinderDeadListener(BINDER_DEAD_LISTENER)
         Shizuku.addRequestPermissionResultListener(REQUEST_PERMISSION_RESULT_LISTENER)
 
-        binderReceived.value = Shizuku.pingBinder()
-        permissionGranted.value = if (Shizuku.pingBinder()) Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED else false
+        NightClient.addBinderReceivedListenerSticky(NIGHT_BINDER_RECEIVED_LISTENER)
+        NightClient.addPermissionResultListener(NIGHT_PERMISSION_RESULT_LISTENER)
 
+        binderReceived.value = NightClient.pingBinder() || Shizuku.pingBinder()
+        permissionGranted.value = when {
+            NightClient.pingBinder() -> NightClient.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+            Shizuku.pingBinder() -> Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+            else -> false
+        }
 
         if (testsList.isEmpty()) {
-            testsList.addAll(listOf(
-                DiagnosticTest("ping", "Binder Service Ping", "Verify binder connectivity state"),
-                DiagnosticTest("latency", "IPC Transaction Speed", "Measure IPC transaction roundtrip delay"),
-                DiagnosticTest("selinux", "SELinux Context Check", "Verify server SELinux confinement domain"),
-                DiagnosticTest("shell", "High-Privilege Shell Spawner", "Spawn process and execute 'id' command"),
-                DiagnosticTest("package", "Package Manager Query", "Query packages via high-privilege IPC"),
-                DiagnosticTest("properties", "System Properties Read", "Access restricted Android system properties")
-            ))
+            testsList.addAll(
+                listOf(
+                    DiagnosticTest("ping", "Dual-Wire Binder Ping", "Verify NightClient & Legacy Shizuku connectivity"),
+                    DiagnosticTest("night_exec", "NightProtocol Fast Exec", "Execute one-shot command over flat Parcel wire"),
+                    DiagnosticTest("latency", "IPC Transaction Speed", "Measure IPC transaction roundtrip delay"),
+                    DiagnosticTest("selinux", "SELinux Context Check", "Verify server SELinux confinement domain"),
+                    DiagnosticTest("shell", "High-Privilege Shell Spawner", "Spawn process and execute 'id' command"),
+                    DiagnosticTest("package", "Package Manager Query", "Query packages via high-privilege IPC"),
+                    DiagnosticTest("properties", "System Properties Read", "Access restricted Android system properties")
+                )
+            )
         }
 
         setContent {
@@ -139,9 +145,23 @@ class MainActivity : ComponentActivity() {
         Shizuku.removeBinderReceivedListener(BINDER_RECEIVED_LISTENER)
         Shizuku.removeBinderDeadListener(BINDER_DEAD_LISTENER)
         Shizuku.removeRequestPermissionResultListener(REQUEST_PERMISSION_RESULT_LISTENER)
+        NightClient.removeBinderReceivedListener(NIGHT_BINDER_RECEIVED_LISTENER)
+        NightClient.removePermissionResultListener(NIGHT_PERMISSION_RESULT_LISTENER)
     }
 
     private fun requestShizukuPermission() {
+        if (NightClient.pingBinder()) {
+            try {
+                if (NightClient.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
+                    Toast.makeText(this, "Permission already granted.", Toast.LENGTH_SHORT).show()
+                } else {
+                    NightClient.requestPermission(1001)
+                }
+                return
+            } catch (e: Throwable) {
+                Toast.makeText(this, "Exception: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
         if (!Shizuku.pingBinder()) {
             Toast.makeText(this, "Error: Nightzuku is inactive.", Toast.LENGTH_SHORT).show()
             return
@@ -166,7 +186,6 @@ class MainActivity : ComponentActivity() {
 
     private fun runAutoTest() {
         lifecycleScope.launch {
-
             for (i in 0 until testsList.size) {
                 testsList[i] = testsList[i].copy(
                     status = TestStatus.IDLE,
@@ -176,28 +195,47 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-
             runTestItem("ping") {
-                val active = Shizuku.pingBinder()
-                if (active) {
+                val nightActive = NightClient.pingBinder()
+                val legacyActive = Shizuku.pingBinder()
+                if (nightActive || legacyActive) {
                     TestResult(
                         status = TestStatus.GOOD,
-                        summary = "Active",
-                        details = "Shizuku service binder is alive and accessible.\nAPI Version: ${Shizuku.getVersion()}\nServer UID: ${Shizuku.getUid()}"
+                        summary = if (nightActive && legacyActive) "Dual-Wire" else if (nightActive) "NightWire" else "LegacyWire",
+                        details = "NightProtocol Active: $nightActive (v${NightClient.getVersion()}, caps=0x${Integer.toHexString(NightClient.getCapabilities())})\n" +
+                            "Legacy Shizuku Active: $legacyActive (v${if (legacyActive) Shizuku.getVersion() else -1})"
                     )
                 } else {
-                    throw IllegalStateException("Binder service is inactive. Make sure the Nightzuku server is running in the background.")
+                    throw IllegalStateException("Binder service is inactive. Make sure the Nightzuku server is running.")
                 }
             }
 
+            runTestItem("night_exec") {
+                if (!NightClient.pingBinder()) {
+                    throw IllegalStateException("NightClient wire is not connected.")
+                }
+                if (NightClient.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+                    throw IllegalStateException("NightClient permission not granted.")
+                }
+                val res = NightClient.execFast(arrayOf("id"))
+                if (res.exitCode == 0) {
+                    TestResult(
+                        status = TestStatus.GOOD,
+                        summary = "exit=0",
+                        details = "NightClient.execFast('id') succeeded in one flat Parcel roundtrip:\n${res.outputText.trim()}"
+                    )
+                } else {
+                    throw IllegalStateException("execFast exited with ${res.exitCode}: ${res.errorText}")
+                }
+            }
 
             runTestItem("latency") {
-                if (!Shizuku.pingBinder()) throw IllegalStateException("Binder is inactive.")
+                if (!Shizuku.pingBinder() && !NightClient.pingBinder()) throw IllegalStateException("Binder is inactive.")
                 val trials = 5
                 val times = LongArray(trials)
                 for (i in 0 until trials) {
                     val start = System.nanoTime()
-                    Shizuku.pingBinder()
+                    if (NightClient.pingBinder()) NightClient.pingBinder() else Shizuku.pingBinder()
                     times[i] = System.nanoTime() - start
                     delay(40)
                 }
@@ -215,13 +253,14 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-
             runTestItem("selinux") {
-                if (!Shizuku.pingBinder()) throw IllegalStateException("Binder is inactive.")
-                if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
-                    throw IllegalStateException("Shizuku permission not granted.")
+                val seContext = if (NightClient.pingBinder()) {
+                    NightClient.getSELinuxContext()
+                } else if (Shizuku.pingBinder()) {
+                    Shizuku.getSELinuxContext()
+                } else {
+                    throw IllegalStateException("Binder is inactive.")
                 }
-                val seContext = Shizuku.getSELinuxContext()
                 if (!seContext.isNullOrEmpty()) {
                     TestResult(
                         status = TestStatus.GOOD,
@@ -233,9 +272,8 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-
             runTestItem("shell") {
-                if (!Shizuku.pingBinder()) throw IllegalStateException("Binder is inactive.")
+                if (!Shizuku.pingBinder()) throw IllegalStateException("Legacy Shizuku wire is inactive.")
                 if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
                     throw IllegalStateException("Shizuku permission not granted.")
                 }
@@ -262,7 +300,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-
             runTestItem("package") {
                 if (!Shizuku.pingBinder()) throw IllegalStateException("Binder is inactive.")
                 if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
@@ -276,22 +313,30 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-
             runTestItem("properties") {
-                if (!Shizuku.pingBinder()) throw IllegalStateException("Binder is inactive.")
-                if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
-                    throw IllegalStateException("Shizuku permission not granted.")
+                val model = if (NightClient.pingBinder() && NightClient.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
+                    NightClient.getSystemProperty("ro.product.model")
+                } else if (Shizuku.pingBinder() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
+                    ShizukuSystemProperties.get("ro.product.model")
+                } else {
+                    throw IllegalStateException("Permission not granted.")
                 }
-                val model = ShizukuSystemProperties.get("ro.product.model")
-                val fingerprint = ShizukuSystemProperties.get("ro.build.fingerprint")
-                val brand = ShizukuSystemProperties.get("ro.product.brand")
+                val fingerprint = if (NightClient.pingBinder()) {
+                    NightClient.getSystemProperty("ro.build.fingerprint")
+                } else {
+                    ShizukuSystemProperties.get("ro.build.fingerprint")
+                }
+                val brand = if (NightClient.pingBinder()) {
+                    NightClient.getSystemProperty("ro.product.brand")
+                } else {
+                    ShizukuSystemProperties.get("ro.product.brand")
+                }
                 TestResult(
                     status = TestStatus.GOOD,
                     summary = model ?: "Success",
-                    details = "Restricted Android System Properties fetched via Shizuku binder successfully:\n- ro.product.brand = $brand\n- ro.product.model = $model\n- ro.build.fingerprint = $fingerprint"
+                    details = "Restricted Android System Properties fetched successfully:\n- ro.product.brand = $brand\n- ro.product.model = $model\n- ro.build.fingerprint = $fingerprint"
                 )
             }
-
 
             exportLogsToFile()
         }
@@ -374,10 +419,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-
-
-
-
 @Composable
 fun MinimalistDashboard(
     binderActive: Boolean,
@@ -400,7 +441,6 @@ fun MinimalistDashboard(
         verticalArrangement = Arrangement.spacedBy(plaqueGap)
     ) {
         Spacer(modifier = Modifier.height(12.dp))
-
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -441,7 +481,6 @@ fun MinimalistDashboard(
 
         Spacer(modifier = Modifier.height(4.dp))
 
-
         PlaqueContainerMinimal(title = "Device Environment", icon = Icons.Rounded.Devices) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -452,7 +491,6 @@ fun MinimalistDashboard(
                 EnvItemMinimal(label = "Device", value = Build.MODEL)
             }
         }
-
 
         PlaqueContainerMinimal(title = "Nightzuku Service State", icon = Icons.Rounded.SettingsInputAntenna) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -480,13 +518,15 @@ fun MinimalistDashboard(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
+                        val ver = if (NightClient.pingBinder()) "Night v${NightClient.getVersion()}" else "Legacy v${Shizuku.getVersion()}"
+                        val uid = if (NightClient.pingBinder()) NightClient.getUid() else Shizuku.getUid()
                         Text(
-                            text = "Manager Version: ${Shizuku.getVersion()}",
+                            text = "Protocol: $ver",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                         )
                         Text(
-                            text = "Privilege UID: ${Shizuku.getUid()}",
+                            text = "Privilege UID: $uid",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                         )
@@ -494,7 +534,6 @@ fun MinimalistDashboard(
                 }
             }
         }
-
 
         Card(
             modifier = Modifier
@@ -545,7 +584,6 @@ fun MinimalistDashboard(
             }
         }
 
-
         Text(
             text = "DIAGNOSTIC VERIFICATION CHECKS",
             style = MaterialTheme.typography.labelMedium,
@@ -569,7 +607,6 @@ fun TestItemCard(
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
-
 
     val isAutoExpanded = test.status == TestStatus.RUNNING || test.status == TestStatus.FAILED
     val isVisible = expanded || isAutoExpanded
@@ -609,7 +646,6 @@ fun TestItemCard(
                 }
 
                 Spacer(modifier = Modifier.width(8.dp))
-
 
                 StatusIndicator(status = test.status, summary = test.summary)
             }
@@ -720,10 +756,6 @@ fun StatusIndicator(status: TestStatus, summary: String) {
     }
 }
 
-
-
-
-
 @Composable
 fun PlaqueContainerMinimal(
     title: String,
@@ -763,7 +795,6 @@ fun PlaqueContainerMinimal(
     }
 }
 
-
 @Composable
 fun MaterialTheme.primaryColorEmulated(): Color = Color(0xFF82C7A5)
 
@@ -798,7 +829,6 @@ fun StatusBadgeMinimal(active: Boolean, activeText: String, inactiveText: String
 
 @Composable
 fun MonetTheme(content: @Composable () -> Unit) {
-
     val monetColorScheme = darkColorScheme(
         primary = Color(0xFF82C7A5),
         onPrimary = Color(0xFF003822),

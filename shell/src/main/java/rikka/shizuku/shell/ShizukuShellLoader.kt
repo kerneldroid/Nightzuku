@@ -21,6 +21,8 @@ import stub.dalvik.system.VMRuntimeHidden
 
 object ShizukuShellLoader {
 
+    private const val ACTION_REQUEST_BINDER_NIGHT = "kerneldroid.nightzuku.intent.action.REQUEST_BINDER"
+
     private var args: Array<String>? = null
     private var callingPackage: String? = null
     private var handler: Handler? = null
@@ -49,7 +51,7 @@ object ShizukuShellLoader {
         val data = Bundle()
         data.putBinder("binder", receiverBinder)
 
-        val intent = Intent("rikka.shizuku.intent.action.REQUEST_BINDER")
+        val intent = Intent(ACTION_REQUEST_BINDER_NIGHT)
             .setPackage(BuildConfig.MANAGER_APPLICATION_ID)
             .addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
             .putExtra("data", data)
@@ -105,12 +107,12 @@ object ShizukuShellLoader {
             System.err.flush()
 
             val activityIntent = Intent.createChooser(
-                Intent("rikka.shizuku.intent.action.REQUEST_BINDER")
+                Intent(ACTION_REQUEST_BINDER_NIGHT)
                     .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT)
                     .putExtra("data", data),
-                "Request binder from Shizuku"
+                "Request binder from Nightzuku"
             )
 
             am.startActivityAsUser(null, callingPackage, activityIntent, null, null, null, 0, 0, null, null, Os.getuid() / 100000)
@@ -132,7 +134,7 @@ object ShizukuShellLoader {
                 .invoke(null, args, callingPackage, binder, handler)
         } catch (tr: ClassNotFoundException) {
             System.err.println("Class not found")
-            System.err.println("Make sure you have Shizuku v12.0.0 or above installed")
+            System.err.println("Make sure you have Nightzuku installed")
             System.err.flush()
             System.exit(1)
         } catch (tr: Throwable) {
@@ -177,8 +179,8 @@ object ShizukuShellLoader {
         handler!!.postDelayed({
             abort(
                 String.format(
-                    "Request timeout. The connection between the current app (%1\$s) and Shizuku app may be blocked by your system. " +
-                        "Please disable all battery optimization features for both current app (%1\$s) and Shizuku app.",
+                    "Request timeout. The connection between the current app (%1\$s) and Nightzuku app may be blocked by your system. " +
+                        "Please disable all battery optimization features for both current app (%1\$s) and Nightzuku app.",
                     packageName
                 )
             )
@@ -210,6 +212,6 @@ object ShizukuShellLoader {
         if (index + 1 < paramTypes.size && paramTypes[index + 1] == Bundle::class.java) {
             return true
         }
-        return intIndex == 1 && index + 1 < paramTypes.size && index + 1 < paramTypes.size && paramTypes[index + 1] != String::class.java
+        return intIndex == 1 && index + 1 < paramTypes.size && paramTypes[index + 1] != String::class.java
     }
 }

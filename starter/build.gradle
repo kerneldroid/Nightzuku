@@ -14,7 +14,6 @@ dependencies {
     implementation project(':common')
     implementation project(':shared')
     implementation project(':server-shared')
-    compileOnly project(':provider')
     implementation 'androidx.annotation:annotation:1.11.0'
     implementation libs.hidden.compat
     compileOnly libs.hidden.stub

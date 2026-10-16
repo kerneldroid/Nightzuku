@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <uses-permission android:name="kerneldroid.nightzuku.permission.API" />
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
+
     <application
         android:name=".ShizuTestApplication"
         android:allowBackup="false"
@@ -19,10 +22,10 @@
             </intent-filter>
         </activity>
 
-        <!-- Required for Shizuku -->
+        <!-- Dual-wire provider authorities for both Nightzuku and legacy Shizuku -->
         <provider
-            android:name="rikka.shizuku.ShizukuProvider"
-            android:authorities="${applicationId}.shizuku"
+            android:name=".NightTestProvider"
+            android:authorities="${applicationId}.nightzuku;${applicationId}.shizuku"
             android:enabled="true"
             android:exported="true"
             android:multiprocess="false"
