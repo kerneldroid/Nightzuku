@@ -60,7 +60,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         }
         val ai = foundAi!!
 
-        managerAppId = ai.uid
+        managerAppId = UserHandleCompat.getAppId(ai.uid)
 
         configManager = getConfigManager()
         clientManager = getClientManager()
@@ -100,7 +100,8 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
     }
 
     override fun checkCallerManagerPermission(func: String, callingUid: Int, callingPid: Int): Boolean {
-        return UserHandleCompat.getAppId(callingUid) == managerAppId
+        return UserHandleCompat.getAppId(callingUid) == managerAppId &&
+            UserHandleCompat.getUserId(callingUid) == 0
     }
 
     private fun checkCallingPermission(): Int {
@@ -122,7 +123,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         callingPid: Int,
         clientRecord: ClientRecord?
     ): Boolean {
-        if (UserHandleCompat.getAppId(callingUid) == managerAppId) {
+        if (checkCallerManagerPermission(func, callingUid, callingPid)) {
             return true
         }
         if (clientRecord == null && checkCallingPermission() == PackageManager.PERMISSION_GRANTED) {
@@ -141,7 +142,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
     }
 
     override fun attachUserService(binder: IBinder, options: Bundle) {
-        enforceManagerPermission("func")
+        enforceManagerPermission("attachUserService")
         super.attachUserService(binder, options)
     }
 
@@ -159,11 +160,12 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
 
         val packages = PackageManagerApis.getPackagesForUidNoThrow(callingUid)
         if (!packages.contains(requestPackageName)) {
-            Service.LOGGER.w("Request package " + requestPackageName + "does not belong to uid " + callingUid)
-            throw SecurityException("Request package " + requestPackageName + "does not belong to uid " + callingUid)
+            Service.LOGGER.w("Request package $requestPackageName does not belong to uid $callingUid")
+            throw SecurityException("Request package $requestPackageName does not belong to uid $callingUid")
         }
 
-        val isManager = ServerConstants.MANAGER_APPLICATION_ID == requestPackageName
+        val isManager = ServerConstants.MANAGER_APPLICATION_ID == requestPackageName &&
+            UserHandleCompat.getUserId(callingUid) == 0
 
         if (clientManager.findClient(callingUid, callingPid) == null) {
             synchronized(this) {
@@ -173,6 +175,8 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                 Service.LOGGER.w("Add client failed")
                 return
             }
+        } else {
+            clientRecord = clientManager.findClient(callingUid, callingPid)
         }
 
         Service.LOGGER.d("attachApplication: %s %d %d", requestPackageName, callingUid, callingPid)
@@ -188,8 +192,9 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         reply.putString(ShizukuApiConstants.BIND_APPLICATION_SERVER_SECONTEXT, OsUtils.getSELinuxContext())
         reply.putInt(ShizukuApiConstants.BIND_APPLICATION_SERVER_PATCH_VERSION, ShizukuApiConstants.SERVER_PATCH_VERSION)
         if (!isManager) {
+            val denied = configManager.find(callingUid)?.isDenied() == true
             reply.putBoolean(ShizukuApiConstants.BIND_APPLICATION_PERMISSION_GRANTED, clientRecord!!.allowed)
-            reply.putBoolean(ShizukuApiConstants.BIND_APPLICATION_SHOULD_SHOW_REQUEST_PERMISSION_RATIONALE, false)
+            reply.putBoolean(ShizukuApiConstants.BIND_APPLICATION_SHOULD_SHOW_REQUEST_PERMISSION_RATIONALE, denied)
         } else {
             try {
                 Android17Compat.grantRuntimePermission(
@@ -240,10 +245,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
     }
 
     override fun dispatchPermissionConfirmationResult(requestUid: Int, requestPid: Int, requestCode: Int, data: Bundle?) {
-        if (UserHandleCompat.getAppId(Binder.getCallingUid()) != managerAppId) {
-            Service.LOGGER.w("dispatchPermissionConfirmationResult called not from the manager package")
-            return
-        }
+        enforceManagerPermission("dispatchPermissionConfirmationResult")
 
         if (data == null) {
             return
@@ -257,14 +259,22 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             requestUid, requestPid, requestCode, allowed.toString(), onetime.toString()
         )
 
+        val uidPackages = PackageManagerApis.getPackagesForUidNoThrow(requestUid).toMutableList()
+        if (!onetime) {
+            configManager.update(
+                requestUid, uidPackages, ConfigManager.MASK_PERMISSION,
+                if (allowed) ConfigManager.FLAG_ALLOWED else ConfigManager.FLAG_DENIED
+            )
+        }
+        val denied = configManager.find(requestUid)?.isDenied() == true
+
         val records = clientManager.findClients(requestUid)
-        val packages = ArrayList<String>()
         if (records.isEmpty()) {
             Service.LOGGER.w("dispatchPermissionConfirmationResult: no client for uid %d was found", requestUid)
         } else {
             for (record in records) {
-                packages.add(record.packageName)
                 record.allowed = allowed
+                pushPermissionState(record, denied)
                 if (record.pid == requestPid) {
                     record.dispatchRequestPermissionResult(requestCode, allowed)
                 }
@@ -272,28 +282,47 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         }
 
         if (!onetime) {
-            configManager.update(
-                requestUid, packages, ConfigManager.MASK_PERMISSION,
-                if (allowed) ConfigManager.FLAG_ALLOWED else ConfigManager.FLAG_DENIED
-            )
+            syncRuntimePermissionsForUid(requestUid, allowed)
         }
+    }
 
-        if (!onetime && allowed) {
-            val userId = UserHandleCompat.getUserId(requestUid)
+    private fun pushPermissionState(record: ClientRecord, shouldShowRationale: Boolean) {
+        val client = record.client ?: return
+        try {
+            val reply = Bundle()
+            reply.putInt(ShizukuApiConstants.BIND_APPLICATION_SERVER_UID, OsUtils.getUid())
+            reply.putInt(
+                ShizukuApiConstants.BIND_APPLICATION_SERVER_VERSION,
+                if (record.apiVersion == -1) 12 else ShizukuApiConstants.SERVER_VERSION
+            )
+            reply.putInt(ShizukuApiConstants.BIND_APPLICATION_SERVER_PATCH_VERSION, ShizukuApiConstants.SERVER_PATCH_VERSION)
+            reply.putString(ShizukuApiConstants.BIND_APPLICATION_SERVER_SECONTEXT, OsUtils.getSELinuxContext())
+            reply.putBoolean(ShizukuApiConstants.BIND_APPLICATION_PERMISSION_GRANTED, record.allowed)
+            reply.putBoolean(ShizukuApiConstants.BIND_APPLICATION_SHOULD_SHOW_REQUEST_PERMISSION_RATIONALE, shouldShowRationale)
+            client.bindApplication(reply)
+        } catch (t: Throwable) {
+            Service.LOGGER.w(t, "Failed to push permission state to uid=%d pid=%d", record.uid, record.pid)
+        }
+    }
 
-            for (packageName in PackageManagerApis.getPackagesForUidNoThrow(requestUid)) {
-                val pi = Android17Compat.getPackageInfo(
-                    packageName, PackageManager.GET_PERMISSIONS.toLong(), userId
-                ) ?: continue
-                val requestedPermissions = pi.requestedPermissions ?: continue
-                if (!requestedPermissions.contains(ServerConstants.PERMISSION)) {
-                    continue
-                }
+    private fun syncRuntimePermissionsForUid(uid: Int, allowed: Boolean) {
+        val userId = UserHandleCompat.getUserId(uid)
+        for (packageName in PackageManagerApis.getPackagesForUidNoThrow(uid)) {
+            val pi = Android17Compat.getPackageInfo(
+                packageName, PackageManager.GET_PERMISSIONS.toLong(), userId
+            ) ?: continue
+            val requestedPermissions = pi.requestedPermissions ?: continue
 
-                if (allowed) {
-                    Android17Compat.grantRuntimePermission(packageName, ServerConstants.PERMISSION, userId)
-                } else {
-                    Android17Compat.revokeRuntimePermission(packageName, ServerConstants.PERMISSION, userId)
+            // Sync Nightzuku's own declared runtime permission
+            if (requestedPermissions.contains(ServerConstants.PERMISSION)) {
+                try {
+                    if (allowed) {
+                        Android17Compat.grantRuntimePermission(packageName, ServerConstants.PERMISSION, userId)
+                    } else {
+                        Android17Compat.revokeRuntimePermission(packageName, ServerConstants.PERMISSION, userId)
+                    }
+                } catch (t: Throwable) {
+                    Service.LOGGER.w(t, "Failed to sync %s for %s", ServerConstants.PERMISSION, packageName)
                 }
             }
         }
@@ -331,63 +360,39 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         return 0
     }
 
-    private fun isManagerOrAuthorized(callingUid: Int): Boolean {
-        val callingAppId = UserHandleCompat.getAppId(callingUid)
-        if (callingAppId == managerAppId || callingUid == 2000 || callingUid == 0) {
-            return true
-        }
-        val packages = PackageManagerApis.getPackagesForUidNoThrow(callingUid)
-        return packages.contains("com.termux")
-    }
-
     override fun getFlagsForUid(uid: Int, mask: Int): Int {
-        if (!isManagerOrAuthorized(Binder.getCallingUid())) {
-            Service.LOGGER.w("getFlagsForUid is allowed to be called only from the manager or authorized clients")
-            return 0
-        }
+        enforceManagerPermission("getFlagsForUid")
         return getFlagsForUidInternal(uid, mask, true)
     }
 
     override fun updateFlagsForUid(uid: Int, mask: Int, value: Int) {
-        if (!isManagerOrAuthorized(Binder.getCallingUid())) {
-            Service.LOGGER.w("updateFlagsForUid is allowed to be called only from the manager or authorized clients")
-            return
-        }
+        enforceManagerPermission("updateFlagsForUid")
 
-        val userId = UserHandleCompat.getUserId(uid)
+        val uidPackages = PackageManagerApis.getPackagesForUidNoThrow(uid).toMutableList()
+        configManager.update(uid, uidPackages, mask, value)
 
         if ((mask and ConfigManager.MASK_PERMISSION) != 0) {
             val allowed = (value and ConfigManager.FLAG_ALLOWED) != 0
+            val denied = (value and ConfigManager.FLAG_DENIED) != 0
 
             val records = clientManager.findClients(uid)
             for (record in records) {
-                if (allowed) {
-                    record.allowed = true
-                } else {
-                    record.allowed = false
+                record.allowed = allowed
+                pushPermissionState(record, denied)
+                if (!allowed) {
                     ActivityManagerApis.forceStopPackageNoThrow(record.packageName, UserHandleCompat.getUserId(record.uid))
                     onPermissionRevoked(record.packageName)
                 }
             }
 
-            for (packageName in PackageManagerApis.getPackagesForUidNoThrow(uid)) {
-                val pi = Android17Compat.getPackageInfo(
-                    packageName, PackageManager.GET_PERMISSIONS.toLong(), userId
-                ) ?: continue
-                val requestedPermissions = pi.requestedPermissions ?: continue
-                if (!requestedPermissions.contains(ServerConstants.PERMISSION)) {
-                    continue
-                }
-
-                if (allowed) {
-                    Android17Compat.grantRuntimePermission(packageName, ServerConstants.PERMISSION, userId)
-                } else {
-                    Android17Compat.revokeRuntimePermission(packageName, ServerConstants.PERMISSION, userId)
+            if (!allowed && records.isEmpty()) {
+                for (packageName in uidPackages) {
+                    onPermissionRevoked(packageName)
                 }
             }
-        }
 
-        configManager.update(uid, PackageManagerApis.getPackagesForUidNoThrow(uid), mask, value)
+            syncRuntimePermissionsForUid(uid, allowed)
+        }
     }
 
     private fun onPermissionRevoked(packageName: String) {
@@ -426,11 +431,11 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                 } else {
                     val metaData = applicationInfo.metaData
                     val requestedPermissions = pi.requestedPermissions
-                    if (metaData != null
-                        && metaData.getBoolean("moe.shizuku.client.V3_SUPPORT", false)
-                        && requestedPermissions != null
-                        && requestedPermissions.contains(ServerConstants.PERMISSION)
-                    ) {
+                    if (requestedPermissions != null && (
+                        requestedPermissions.contains(ServerConstants.PERMISSION) ||
+                        (metaData != null && metaData.getBoolean("moe.shizuku.client.V3_SUPPORT", false) &&
+                            requestedPermissions.contains(ServerConstants.LEGACY_PERMISSION))
+                    )) {
                         list.add(pi)
                     }
                 }
@@ -442,7 +447,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
     public override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
         if (code == ServerConstants.BINDER_TRANSACTION_getApplications) {
             val replyParcel = reply!!
-            if (UserHandleCompat.getAppId(Binder.getCallingUid()) != managerAppId
+            if (!checkCallerManagerPermission("getApplications", Binder.getCallingUid(), Binder.getCallingPid())
                 && checkCallingPermission() != PackageManager.PERMISSION_GRANTED
             ) {
                 replyParcel.writeException(SecurityException("Permission denied"))
@@ -456,7 +461,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             return true
         } else if (code == ServerConstants.BINDER_TRANSACTION_setNightDogEnabled) {
             val replyParcel = reply!!
-            if (UserHandleCompat.getAppId(Binder.getCallingUid()) != managerAppId) {
+            if (!checkCallerManagerPermission("setNightDogEnabled", Binder.getCallingUid(), Binder.getCallingPid())) {
                 replyParcel.writeException(SecurityException("Permission denied"))
                 return true
             }
@@ -469,7 +474,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             return true
         } else if (code == ServerConstants.BINDER_TRANSACTION_getNightDogEnabled) {
             val replyParcel = reply!!
-            if (UserHandleCompat.getAppId(Binder.getCallingUid()) != managerAppId) {
+            if (!checkCallerManagerPermission("getNightDogEnabled", Binder.getCallingUid(), Binder.getCallingPid())) {
                 replyParcel.writeException(SecurityException("Permission denied"))
                 return true
             }
@@ -586,7 +591,9 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                 )) {
                     val requestedPermissions = pi.requestedPermissions ?: continue
 
-                    if (requestedPermissions.contains(ServerConstants.PERMISSION)) {
+                    if (requestedPermissions.contains(ServerConstants.PERMISSION) ||
+                        requestedPermissions.contains(ServerConstants.LEGACY_PERMISSION)
+                    ) {
                         sendBinderToUserApp(binder, pi.packageName, userId)
                     }
                 }

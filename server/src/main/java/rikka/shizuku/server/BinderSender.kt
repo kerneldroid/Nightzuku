@@ -4,7 +4,6 @@ import android.app.ActivityManagerHidden
 import android.app.ActivityManagerHidden.UID_OBSERVER_ACTIVE
 import android.app.ActivityManagerHidden.UID_OBSERVER_CACHED
 import android.app.ActivityManagerHidden.UID_OBSERVER_GONE
-import android.app.ActivityManagerHidden.UID_OBSERVER_IDLE
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.RemoteException
@@ -21,9 +20,6 @@ import rikka.shizuku.server.util.UserHandleCompat
 object BinderSender {
 
     private val logger = Logger("BinderSender")
-
-    private const val PERMISSION_MANAGER = "moe.shizuku.manager.permission.MANAGER"
-    private const val PERMISSION = "moe.shizuku.manager.permission.API_V23"
 
     private var shizukuService: ShizukuService? = null
 
@@ -99,12 +95,6 @@ object BinderSender {
             }
         }
 
-        @Throws(RemoteException::class)
-        override fun onUidIdle(uid: Int, disabled: Boolean) {
-            logger.d("onUidIdle: uid=%d, disabled=%s", uid, disabled.toString())
-            uidStarts(uid)
-        }
-
         override fun onUidGone(uid: Int, disabled: Boolean) {
             logger.d("onUidGone: uid=%d, disabled=%s", uid, disabled.toString())
             uidGone(uid)
@@ -162,20 +152,22 @@ object BinderSender {
             )
             val requestedPermissions = packageInfo?.requestedPermissions ?: continue
 
-            if (requestedPermissions.contains(PERMISSION_MANAGER)) {
+            if (requestedPermissions.contains(ServerConstants.MANAGER_PERMISSION)) {
                 val granted = if (pid == -1) {
-                    Android17Compat.checkPermission(PERMISSION_MANAGER, uid) == PackageManager.PERMISSION_GRANTED
+                    Android17Compat.checkPermission(ServerConstants.MANAGER_PERMISSION, uid) == PackageManager.PERMISSION_GRANTED
                 } else {
-                    ActivityManagerApis.checkPermission(PERMISSION_MANAGER, pid, uid) == PackageManager.PERMISSION_GRANTED
+                    ActivityManagerApis.checkPermission(ServerConstants.MANAGER_PERMISSION, pid, uid) == PackageManager.PERMISSION_GRANTED
                 }
 
-                if (granted && !sentManager) {
+                if (granted && userId == 0 && !sentManager) {
                     ShizukuService.sendBinderToManager(service, userId)
                     sentManager = true
                 }
             }
 
-            if (requestedPermissions.contains(PERMISSION)) {
+            if (requestedPermissions.contains(ServerConstants.PERMISSION) ||
+                requestedPermissions.contains(ServerConstants.LEGACY_PERMISSION)
+            ) {
                 ShizukuService.sendBinderToUserApp(service, packageName, userId)
             }
         }
@@ -196,7 +188,9 @@ object BinderSender {
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            var flags = UID_OBSERVER_GONE or UID_OBSERVER_IDLE or UID_OBSERVER_ACTIVE
+            // Avoid UID_OBSERVER_IDLE: force-stopping a client reports its uid idle during teardown,
+            // which would otherwise re-trigger provider delivery and restart the stopped client.
+            var flags = UID_OBSERVER_GONE or UID_OBSERVER_ACTIVE
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 flags = flags or UID_OBSERVER_CACHED
             }

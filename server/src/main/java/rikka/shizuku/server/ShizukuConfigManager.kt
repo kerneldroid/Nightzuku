@@ -71,6 +71,8 @@ class ShizukuConfigManager : ConfigManager() {
             }
         }
 
+        // Only import pre-existing runtime permission grants for Nightzuku's own declared permission
+        // when no explicit decision is stored in the config database yet.
         for (userId in UserManagerApis.getUserIdsNoThrow()) {
             for (pi in InstalledPackagesCompat.getInstalledPackagesNoThrow(
                 PackageManager.GET_PERMISSIONS.toLong(), userId
@@ -82,6 +84,10 @@ class ShizukuConfigManager : ConfigManager() {
                 }
 
                 val uid = applicationInfo.uid
+                if (findLocked(uid) != null) {
+                    continue
+                }
+
                 val allowed = try {
                     Android17Compat.checkPermission(ServerConstants.PERMISSION, uid) == PackageManager.PERMISSION_GRANTED
                 } catch (e: Throwable) {
@@ -89,11 +95,12 @@ class ShizukuConfigManager : ConfigManager() {
                     continue
                 }
 
-                val packages = ArrayList<String>()
-                packages.add(pi.packageName)
-
-                updateLocked(uid, packages, ConfigManager.MASK_PERMISSION, if (allowed) ConfigManager.FLAG_ALLOWED else 0)
-                changed = true
+                if (allowed) {
+                    val packages = ArrayList<String>()
+                    packages.add(pi.packageName)
+                    updateLocked(uid, packages, ConfigManager.MASK_PERMISSION, ConfigManager.FLAG_ALLOWED)
+                    changed = true
+                }
             }
         }
 

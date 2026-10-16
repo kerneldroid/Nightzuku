@@ -9,8 +9,15 @@ import rikka.shizuku.Shizuku
 
 object ShellBinderRequestHandler {
 
+    const val ACTION_REQUEST_BINDER_NIGHT = "kerneldroid.nightzuku.intent.action.REQUEST_BINDER"
+    const val ACTION_REQUEST_BINDER_LEGACY = "rikka.shizuku.intent.action.REQUEST_BINDER"
+
+    fun isSupportedAction(action: String?): Boolean {
+        return action == ACTION_REQUEST_BINDER_NIGHT || action == ACTION_REQUEST_BINDER_LEGACY
+    }
+
     fun handleRequest(context: Context, intent: Intent): Boolean {
-        if (intent.action != "rikka.shizuku.intent.action.REQUEST_BINDER") {
+        if (!isSupportedAction(intent.action)) {
             return false
         }
 
@@ -18,7 +25,7 @@ object ShellBinderRequestHandler {
 
         val shizukuBinder = Shizuku.getBinder()
         if (shizukuBinder == null) {
-            LOGGER.w("Binder not received or Shizuku service not running")
+            LOGGER.w("Binder not received or Nightzuku service not running")
         }
 
         val data = Parcel.obtain()

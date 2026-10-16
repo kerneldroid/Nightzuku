@@ -1,6 +1,6 @@
 #!/bin/bash
-echo "Testing Shizuku Connector..."
-OUTPUT=$(adb shell content query --uri content://moe.shizuku.privileged.api.connector)
+echo "Testing Nightzuku Connector..."
+OUTPUT=$(adb shell content query --uri content://kerneldroid.nightzuku.connector)
 echo "Content Provider Output: $OUTPUT"
 
 if [[ $OUTPUT == *"command="* ]]; then
@@ -8,6 +8,6 @@ if [[ $OUTPUT == *"command="* ]]; then
     echo "Executing command from provider: $CMD"
     adb shell "$CMD"
 else
-    echo "No command found. Please enable 'Shizuku Connectors' in Lab Features."
-    adb shell am start -n moe.shizuku.privileged.api/moe.shizuku.manager.settings.LabFeaturesActivity
+    echo "No command found. Please enable 'Nightzuku Connectors' in Lab Features."
+    adb shell am start -n kerneldroid.nightzuku/moe.shizuku.manager.settings.LabFeaturesActivity
 fi
