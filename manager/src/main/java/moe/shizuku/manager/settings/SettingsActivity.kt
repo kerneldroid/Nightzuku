@@ -11,6 +11,12 @@ import androidx.activity.compose.setContent
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -289,6 +295,17 @@ class SettingsActivity : AppActivity() {
                     val activeCategory = openCategory
                     BackHandler(enabled = activeCategory != null) { openCategory = null }
 
+                    AnimatedContent(
+                        targetState = activeCategory,
+                        transitionSpec = {
+                            if (targetState != null) {
+                                slideInHorizontally { it } + fadeIn() togetherWith slideOutHorizontally { -it / 3 } + fadeOut()
+                            } else {
+                                slideInHorizontally { -it / 3 } + fadeIn() togetherWith slideOutHorizontally { it } + fadeOut()
+                            }
+                        },
+                        label = "settings-category"
+                    ) { activeCategory ->
                     if (activeCategory == null) {
                         ShizukuLazyScaffold(
                             title = stringResource(R.string.settings_title),
@@ -528,6 +545,7 @@ class SettingsActivity : AppActivity() {
                                 }
                             }
                         }
+                    }
                     }
                 }
             }
