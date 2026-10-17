@@ -68,29 +68,36 @@ class StarterActivity : AppActivity() {
 
         val startedWithRoot = intent.getBooleanExtra(EXTRA_IS_ROOT, true)
 
+        if (Shizuku.pingBinder()) {
+            finish()
+            return
+        }
+
         viewModel.output.observe(this) {
             val output = it.data.orEmpty().trim()
             if (!waitingForService && output.endsWith("info: shizuku_starter exit with 0")) {
                 waitingForService = true
                 viewModel.appendOutput("")
                 viewModel.appendOutput("Waiting for service...")
-
-                val listener = object : Shizuku.OnBinderReceivedListener {
-                    override fun onBinderReceived() {
-                        Shizuku.removeBinderReceivedListener(this)
-                        binderReceivedListener = null
-                        runOnUiThread {
-                            viewModel.appendOutput("Service started, this window will be automatically closed in 3 seconds")
-                            window?.decorView?.postDelayed({
-                                if (!isFinishing) finish()
-                            }, 3000)
-                        }
-                    }
-                }
-                binderReceivedListener = listener
-                Shizuku.addBinderReceivedListenerSticky(listener)
             }
         }
+
+        // Register the sticky listener immediately so the screen closes as soon as the server
+        // binder arrives, without depending on the starter output text.
+        val listener = object : Shizuku.OnBinderReceivedListener {
+            override fun onBinderReceived() {
+                Shizuku.removeBinderReceivedListener(this)
+                binderReceivedListener = null
+                runOnUiThread {
+                    viewModel.appendOutput("Service started")
+                    if (!isFinishing) {
+                        finish()
+                    }
+                }
+            }
+        }
+        binderReceivedListener = listener
+        Shizuku.addBinderReceivedListenerSticky(listener)
 
         setContent {
             val outputResource by viewModel.output.observeAsState()
