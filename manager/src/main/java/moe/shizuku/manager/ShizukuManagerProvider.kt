@@ -8,6 +8,7 @@ import java.util.concurrent.TimeoutException
 import kerneldroid.nightzuku.api.LegacyParcelCodec
 import kerneldroid.nightzuku.api.NightClient
 import kerneldroid.nightzuku.api.NightProtocol
+import moe.shizuku.api.BinderContainer
 import moe.shizuku.manager.utils.Logger.LOGGER
 import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuApiConstants.USER_SERVICE_ARG_TOKEN
@@ -71,7 +72,8 @@ class ShizukuManagerProvider : ShizukuProvider() {
                         )
                         val serverBinder = Shizuku.getBinder()
                         if (serverBinder != null) {
-                            reply = LegacyParcelCodec.createLegacyBinderBundle(serverBinder).apply {
+                            reply = Bundle().apply {
+                                putParcelable(LegacyParcelCodec.LEGACY_BINDER_EXTRA_KEY, BinderContainer(serverBinder))
                                 putBinder(NightProtocol.EXTRA_BINDER, serverBinder)
                             }
                         } else {
