@@ -21,6 +21,7 @@ import android.os.ServiceManager
 import android.os.SystemClock
 import java.util.concurrent.ConcurrentHashMap
 import kerneldroid.nightzuku.api.LegacyParcelCodec
+import moe.shizuku.api.BinderContainer
 import kerneldroid.nightzuku.api.NightProtocol
 import moe.shizuku.common.util.BuildUtils
 import moe.shizuku.common.util.OsUtils
@@ -90,8 +91,8 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         }
 
         mainHandler.post {
-            sendBinderToClient()
             sendBinderToManager()
+            sendBinderToClient()
         }
     }
 
@@ -831,7 +832,9 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                     }
                     method = NightProtocol.METHOD_SEND_BINDER
                 } else {
-                    extra = LegacyParcelCodec.createLegacyBinderBundle(binder)
+                    extra = Bundle().apply {
+                        putParcelable(LegacyParcelCodec.LEGACY_BINDER_EXTRA_KEY, BinderContainer(binder))
+                    }
                     method = "sendBinder"
                 }
 

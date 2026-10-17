@@ -17,6 +17,7 @@ dependencies {
 
     implementation project(':aidl')
     implementation project(':common')
+    compileOnly project(':provider')
     implementation project(':shared')
     implementation project(':starter')
     implementation project(':rish')
