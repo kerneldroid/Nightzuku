@@ -14,18 +14,22 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -232,33 +236,18 @@ class ApplicationManagementActivity : AppActivity() {
                                 }
                             }
                             else -> {
-                                item {
-                                    Surface(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = MaterialTheme.shapes.extraLarge,
-                                        color = MaterialTheme.colorScheme.surfaceContainer,
-                                        tonalElevation = 1.dp
-                                    ) {
-                                        Column {
-                                            packages.forEachIndexed { index, packageInfo ->
-                                                AppPermissionRow(
-                                                    packageInfo = packageInfo,
-                                                    tick = tick,
-                                                    onLimitedAdb = { showAdbLimitedDialog = true },
-                                                    onPermissionChanged = {
-                                                        permissionTick.intValue++
-                                                        viewModel.load(onlyCount = true)
-                                                    }
-                                                )
-                                                if (index != packages.lastIndex) {
-                                                    HorizontalDivider(
-                                                        modifier = Modifier.fillMaxWidth(),
-                                                        color = MaterialTheme.colorScheme.outlineVariant
-                                                    )
-                                                }
-                                            }
+                                itemsIndexed(packages) { index, packageInfo ->
+                                    AppPermissionRow(
+                                        index = index,
+                                        count = packages.size,
+                                        packageInfo = packageInfo,
+                                        tick = tick,
+                                        onLimitedAdb = { showAdbLimitedDialog = true },
+                                        onPermissionChanged = {
+                                            permissionTick.intValue++
+                                            viewModel.load(onlyCount = true)
                                         }
-                                    }
+                                    )
                                 }
                             }
                         }
@@ -310,6 +299,8 @@ class ApplicationManagementActivity : AppActivity() {
 
 @Composable
 private fun AppPermissionRow(
+    index: Int,
+    count: Int,
     packageInfo: PackageInfo,
     tick: Int,
     onLimitedAdb: () -> Unit,
@@ -359,54 +350,58 @@ private fun AppPermissionRow(
         }
     }
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Surface(
-            modifier = Modifier.size(46.dp),
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceContainerHighest
-        ) {
-            Image(
-                bitmap = icon,
-                contentDescription = null,
-                modifier = Modifier.size(46.dp)
-            )
-        }
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(3.dp)
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = packageInfo.packageName,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (requiresRoot) {
-                AssistChip(
-                    onClick = {},
-                    label = {
-                        Text(stringResource(R.string.app_management_item_summary_requires_root))
-                    }
+    SegmentedListItem(
+        onClick = { toggle() },
+        shapes = ListItemDefaults.segmentedShapes(index = index, count = count),
+        colors = ListItemDefaults.segmentedColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        ),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        leadingContent = {
+            Surface(
+                modifier = Modifier.size(44.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceContainerHighest
+            ) {
+                Image(
+                    bitmap = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(44.dp)
                 )
             }
+        },
+        supportingContent = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = packageInfo.packageName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (requiresRoot) {
+                    AssistChip(
+                        onClick = {},
+                        label = {
+                            Text(stringResource(R.string.app_management_item_summary_requires_root))
+                        }
+                    )
+                }
+            }
+        },
+        trailingContent = {
+            ExpressiveSwitch(
+                checked = granted,
+                onCheckedChange = { toggle() }
+            )
         }
-        ExpressiveSwitch(
-            checked = granted,
-            onCheckedChange = { toggle() }
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
