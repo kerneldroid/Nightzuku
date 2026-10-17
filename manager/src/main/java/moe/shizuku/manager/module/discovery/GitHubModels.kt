@@ -41,3 +41,20 @@ data class ContentItem(
     val type: String,
     @SerialName("download_url") val downloadUrl: String? = null
 )
+
+@Serializable
+data class GitHubCommit(
+    val sha: String = "",
+    val commit: Commit = Commit()
+) {
+    @Serializable
+    data class Commit(
+        val author: Author? = null,
+        val message: String? = null
+    )
+
+    @Serializable
+    data class Author(
+        val date: String? = null
+    )
+}

@@ -33,6 +33,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Update
@@ -401,7 +402,7 @@ private fun CatalogListScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun ModuleDetailScreen(
     module: DiscoveredModule,
@@ -554,7 +555,10 @@ private fun ModuleDetailScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.foundation.layout.FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         module.version?.let {
                             DetailChip(text = "v$it", color = MaterialTheme.colorScheme.secondaryContainer, onColor = MaterialTheme.colorScheme.onSecondaryContainer)
                         }
@@ -564,8 +568,17 @@ private fun ModuleDetailScreen(
                             color = MaterialTheme.colorScheme.secondaryContainer,
                             onColor = MaterialTheme.colorScheme.onSecondaryContainer
                         )
+                        DetailChip(
+                            text = formatCount(module.downloads),
+                            icon = { Icon(Icons.Rounded.CloudDownload, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer) },
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            onColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
                         if (module.isOfficial) {
                             DetailChip(text = "Official", color = MaterialTheme.colorScheme.tertiaryContainer, onColor = MaterialTheme.colorScheme.onTertiaryContainer)
+                        }
+                        if (isModuleOutdated(module)) {
+                            DetailChip(text = stringResource(R.string.modules_outdated), color = MaterialTheme.colorScheme.errorContainer, onColor = MaterialTheme.colorScheme.onErrorContainer)
                         }
                         if (installed) {
                             DetailChip(text = "Installed", color = MaterialTheme.colorScheme.primaryContainer, onColor = MaterialTheme.colorScheme.onPrimaryContainer)
@@ -624,6 +637,19 @@ private fun DetailChip(
     }
 }
 
+private const val OUTDATED_THRESHOLD_MS = 90L * 24 * 60 * 60 * 1000
+
+private fun isModuleOutdated(module: DiscoveredModule): Boolean {
+    return module.lastCommitAt > 0L &&
+            System.currentTimeMillis() - module.lastCommitAt > OUTDATED_THRESHOLD_MS
+}
+
+private fun formatCount(value: Long): String = when {
+    value >= 1_000_000 -> String.format(Locale.US, "%.1fM", value / 1_000_000.0)
+    value >= 1_000 -> String.format(Locale.US, "%.1fk", value / 1_000.0)
+    else -> value.toString()
+}
+
 @Composable
 private fun SortChipRow(sortMode: SortMode, onSortChange: (SortMode) -> Unit) {
     val labels = listOf(
@@ -648,6 +674,7 @@ private fun SortChipRow(sortMode: SortMode, onSortChange: (SortMode) -> Unit) {
     }
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun CatalogModuleCard(
     module: DiscoveredModule,
@@ -672,10 +699,15 @@ private fun CatalogModuleCard(
                     Text(module.author ?: module.repoFullName.substringBefore('/'), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 module.version?.let { DetailChip(text = it, color = MaterialTheme.colorScheme.secondaryContainer, onColor = MaterialTheme.colorScheme.onSecondaryContainer) }
                 DetailChip(text = "${module.stars}", icon = { Icon(Icons.Rounded.Star, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer) }, color = MaterialTheme.colorScheme.secondaryContainer, onColor = MaterialTheme.colorScheme.onSecondaryContainer)
+                DetailChip(text = formatCount(module.downloads), icon = { Icon(Icons.Rounded.CloudDownload, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer) }, color = MaterialTheme.colorScheme.secondaryContainer, onColor = MaterialTheme.colorScheme.onSecondaryContainer)
                 if (module.isOfficial) DetailChip(text = stringResource(R.string.modules_catalog_sort_official), color = MaterialTheme.colorScheme.tertiaryContainer, onColor = MaterialTheme.colorScheme.onTertiaryContainer)
+                if (isModuleOutdated(module)) DetailChip(text = stringResource(R.string.modules_outdated), color = MaterialTheme.colorScheme.errorContainer, onColor = MaterialTheme.colorScheme.onErrorContainer)
                 if (installed) DetailChip(text = "Installed", color = MaterialTheme.colorScheme.primaryContainer, onColor = MaterialTheme.colorScheme.onPrimaryContainer)
             }
             module.repoDescription?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis) }

@@ -18,5 +18,7 @@ data class DiscoveredModule(
     val subPath: String?,
     val lastChecked: Long,
     val isValid: Boolean,
-    val isOfficial: Boolean = false
+    val isOfficial: Boolean = false,
+    val downloads: Long = 0,
+    val lastCommitAt: Long = 0L
 )

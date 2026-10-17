@@ -313,6 +313,7 @@ With %1$s, in any terminal app, you can connect to and interact with the shell r
     <string name="modules_catalog_sort_oldest">Oldest</string>
     <string name="modules_catalog_sort_stars">Stars</string>
     <string name="modules_catalog_sort_official">Official</string>
+    <string name="modules_outdated">Outdated</string>
     <string name="modules_catalog_install_sources">Install from sources</string>
     <string name="modules_catalog_install_release">Download release ZIP</string>
     <string name="modules_catalog_install_description">Choose how to install this module:</string>

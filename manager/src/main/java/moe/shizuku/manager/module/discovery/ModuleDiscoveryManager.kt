@@ -11,6 +11,7 @@ import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import moe.shizuku.manager.module.catalog.TokenStore
+import moe.shizuku.manager.module.update.GitHubRelease
 import java.util.concurrent.TimeUnit
 
 class ModuleDiscoveryManager private constructor(context: Context) {
@@ -164,7 +165,85 @@ class ModuleDiscoveryManager private constructor(context: Context) {
             }
         }
 
-        return modules.sortedByDescending { it.stars }
+        return enrich(modules.sortedByDescending { it.stars }, auth)
+    }
+
+    /**
+     * Adds the real download count (summed from GitHub release assets) and the last commit date of
+     * each module's own folder. Using the folder-scoped commit date means a module whose directory
+     * stopped updating is flagged while sibling modules in the same repo keep updating.
+     */
+    private fun enrich(modules: List<DiscoveredModule>, authHeader: String?): List<DiscoveredModule> {
+        if (modules.isEmpty()) return modules
+        val downloadsByRepo = mutableMapOf<String, Long>()
+        val lastCommitByPath = mutableMapOf<String, Long>()
+        return modules.map { module ->
+            if (rateLimit.isExhausted()) return@map module
+            val owner = module.repoFullName.substringBefore('/')
+            val repo = module.repoFullName.substringAfter('/')
+            val path = module.subPath?.trim('/').orEmpty()
+
+            val downloads = downloadsByRepo.getOrPut(module.repoFullName) {
+                fetchDownloads(owner, repo, authHeader)
+            }
+            val lastCommitAt = lastCommitByPath.getOrPut("${module.repoFullName}#$path") {
+                fetchLastCommitAt(owner, repo, path, authHeader)
+            }
+            module.copy(downloads = downloads, lastCommitAt = lastCommitAt)
+        }
+    }
+
+    private fun githubGet(url: String, authHeader: String?): String? {
+        val builder = Request.Builder()
+            .url(url)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+        authHeader?.let { builder.header("Authorization", it) }
+        return try {
+            client.newCall(builder.build()).execute().use { resp ->
+                rateLimit.update(resp.headers)
+                if (resp.isSuccessful) resp.body?.string() else null
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "GitHub GET failed: $url", e)
+            null
+        }
+    }
+
+    private fun fetchDownloads(owner: String, repo: String, authHeader: String?): Long {
+        val body = githubGet("https://api.github.com/repos/$owner/$repo/releases?per_page=30", authHeader)
+            ?: return 0L
+        return try {
+            json.decodeFromString<List<GitHubRelease>>(body)
+                .sumOf { release -> release.assets.sumOf { it.downloadCount } }
+        } catch (e: Exception) {
+            0L
+        }
+    }
+
+    private fun fetchLastCommitAt(owner: String, repo: String, path: String, authHeader: String?): Long {
+        val pathQuery = if (path.isNotBlank()) {
+            "&path=" + java.net.URLEncoder.encode(path, "UTF-8")
+        } else ""
+        val body = githubGet("https://api.github.com/repos/$owner/$repo/commits?per_page=1$pathQuery", authHeader)
+            ?: return 0L
+        return try {
+            json.decodeFromString<List<GitHubCommit>>(body).firstOrNull()
+                ?.commit?.author?.date?.let { parseGithubDate(it) } ?: 0L
+        } catch (e: Exception) {
+            0L
+        }
+    }
+
+    private fun parseGithubDate(date: String?): Long {
+        if (date.isNullOrBlank()) return 0L
+        return try {
+            val fmt = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
+            fmt.timeZone = java.util.TimeZone.getTimeZone("UTC")
+            fmt.parse(date)?.time ?: 0L
+        } catch (e: Exception) {
+            0L
+        }
     }
 
     suspend fun getOfficialModules(): List<DiscoveredModule> {

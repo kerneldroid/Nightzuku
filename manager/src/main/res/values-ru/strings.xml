@@ -307,6 +307,7 @@
     <string name="modules_catalog_sort_oldest">Старые</string>
     <string name="modules_catalog_sort_stars">По звёздам</string>
     <string name="modules_catalog_sort_official">Официальные</string>
+    <string name="modules_outdated">Устарел</string>
     <string name="modules_catalog_install_sources">Установить из исходников</string>
     <string name="modules_catalog_install_release">Скачать ZIP-релиз</string>
     <string name="modules_catalog_install_description">Выберите способ установки этого модуля:</string>
