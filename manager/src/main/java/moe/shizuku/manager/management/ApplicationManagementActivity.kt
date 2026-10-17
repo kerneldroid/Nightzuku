@@ -33,6 +33,7 @@ import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableIntStateOf
@@ -104,6 +105,14 @@ class ApplicationManagementActivity : AppActivity() {
             val packages = packagesResource?.data.orEmpty()
             val tick = permissionTick.intValue
             var showAdbLimitedDialog by remember { mutableStateOf(false) }
+
+            // Keep the granted/not-granted state fresh without requiring a manual refresh.
+            LaunchedEffect(Unit) {
+                while (true) {
+                    kotlinx.coroutines.delay(2500)
+                    permissionTick.intValue++
+                }
+            }
 
             val isWatch = moe.shizuku.manager.utils.EnvironmentUtils.isWatch(this@ApplicationManagementActivity)
             val isTv = moe.shizuku.manager.utils.EnvironmentUtils.isTV(this@ApplicationManagementActivity)
@@ -184,6 +193,7 @@ class ApplicationManagementActivity : AppActivity() {
                     ShizukuLazyScaffold(
                         title = stringResource(R.string.home_app_management_title),
                         onNavigateUp = { finish() },
+                        verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
                         actions = {
                             if (packages.isNotEmpty()) {
                                 var menuExpanded by remember { mutableStateOf(false) }
