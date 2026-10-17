@@ -404,7 +404,7 @@ class ModulesActivity : AppActivity() {
                         Row(
                             modifier = Modifier
                                 .height(36.dp)
-                                .padding(end = 4.dp)
+                                .padding(end = 10.dp)
                                 .clip(MaterialTheme.shapes.small),
                             horizontalArrangement = Arrangement.spacedBy(0.dp)
                         ) {
@@ -669,8 +669,8 @@ private fun ModuleCard(
         Column {
             ModuleBanner(module)
             Column(
-                modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
