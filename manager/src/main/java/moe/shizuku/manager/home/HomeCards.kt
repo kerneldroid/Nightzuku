@@ -550,8 +550,8 @@ internal fun StatusHero(
         tonalElevation = 0.dp
     ) {
         Column(
-            modifier = Modifier.padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             AnimatedContent(
                 targetState = running,
@@ -568,11 +568,11 @@ internal fun StatusHero(
                 label = "status_hero_header"
             ) { isRunning ->
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.Top
                 ) {
                     Surface(
-                        modifier = Modifier.size(52.dp),
+                        modifier = Modifier.size(40.dp),
                         shape = CircleShape,
                         color = if (isRunning) {
                             MaterialTheme.colorScheme.primary
@@ -589,14 +589,14 @@ internal fun StatusHero(
                                 } else {
                                     MaterialTheme.colorScheme.onSecondaryContainer
                                 },
-                                modifier = Modifier.size(28.dp)
+                                modifier = Modifier.size(22.dp)
                             )
                         }
                     }
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
                             text = title,
-                            style = MaterialTheme.typography.headlineMedium,
+                            style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.SemiBold,
                             color = if (isRunning) {
                                 MaterialTheme.colorScheme.onPrimaryContainer
@@ -607,7 +607,7 @@ internal fun StatusHero(
                         if (summary.isNotBlank()) {
                             Text(
                                 text = summary,
-                                style = MaterialTheme.typography.bodyLarge,
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = if (isRunning) {
                                     MaterialTheme.colorScheme.onPrimaryContainer
                                 } else {
@@ -636,7 +636,7 @@ internal fun StatusHero(
                     onClick = cta.onClick,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp),
+                        .height(48.dp),
                     shape = MaterialTheme.shapes.extraLargeIncreased
                 ) {
                     ShizukuIcon(
@@ -670,7 +670,7 @@ internal fun HeroFactChip(
         Text(
             text = text,
             style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
         )
     }
 }
@@ -948,7 +948,9 @@ internal fun buildServiceSummary(context: android.content.Context, status: Servi
     if (!status.isRunning) return ""
 
     val user = if (status.uid == 0) "root" else "adb"
-    val version = "${status.apiVersion}.${status.patchVersion}"
+    // Show the real release version of the installed app/server instead of the stale
+    // API constants (which reported "13.6" while the app was already "13.7.1").
+    val version = BuildConfig.VERSION_NAME.substringBefore(".r")
     val latestVersion = "${Shizuku.getLatestServiceVersion()}.${ShizukuApiConstants.SERVER_PATCH_VERSION}"
     val raw = if (
         status.apiVersion != Shizuku.getLatestServiceVersion() ||
