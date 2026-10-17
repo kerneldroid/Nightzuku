@@ -107,6 +107,7 @@ abstract class HomeActivity : AppActivity() {
             var showAdbDiscoveryDialog by remember { mutableStateOf(false) }
             var showWadbNotEnabledDialog by remember { mutableStateOf(false) }
             var showAdbPairDialog by remember { mutableStateOf(false) }
+            var showStartMethodDialog by remember { mutableStateOf(false) }
 
             ShizukuExpressiveTheme {
                 Box(modifier = Modifier.fillMaxSize()) {
@@ -126,7 +127,13 @@ abstract class HomeActivity : AppActivity() {
                         onModules = { startActivity(Intent(this@HomeActivity, ModulesActivity::class.java)) },
                         onManageApps = { startActivity(Intent(this@HomeActivity, ApplicationManagementActivity::class.java)) },
                         onTerminal = { startActivity(Intent(this@HomeActivity, ShellTutorialActivity::class.java)) },
-                        onStartRoot = ::startRoot,
+                        onStartRoot = {
+                            if (EnvironmentUtils.isRooted() && canUseWirelessAdb()) {
+                                showStartMethodDialog = true
+                            } else {
+                                startRoot()
+                            }
+                        },
                         onStartWirelessAdb = { 
                             runWithLocalNetworkAccess { 
                                 startWirelessAdb(
@@ -219,6 +226,25 @@ abstract class HomeActivity : AppActivity() {
                             onDismiss = { showAdbPairDialog = false }
                         )
                     }
+
+                    if (showStartMethodDialog) {
+                        HomeStartMethodDialog(
+                            onDismiss = { showStartMethodDialog = false },
+                            onRoot = {
+                                showStartMethodDialog = false
+                                startRoot()
+                            },
+                            onAdb = {
+                                showStartMethodDialog = false
+                                runWithLocalNetworkAccess {
+                                    startWirelessAdb(
+                                        onShowDiscovery = { showAdbDiscoveryDialog = true },
+                                        onShowNotEnabled = { showWadbNotEnabledDialog = true }
+                                    )
+                                }
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -270,6 +296,9 @@ abstract class HomeActivity : AppActivity() {
             }
         )
     }
+
+    private fun canUseWirelessAdb(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R || EnvironmentUtils.getAdbTcpPort() > 0
 
     private fun startWirelessAdb(onShowDiscovery: () -> Unit, onShowNotEnabled: () -> Unit) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {

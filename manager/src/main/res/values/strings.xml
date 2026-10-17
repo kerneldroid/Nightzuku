@@ -8,6 +8,10 @@
     <string name="home_status_service_is_running">%1$s is running</string>
     <string name="home_status_service_not_running">%1$s is not running</string>
     <string name="home_status_service_version">Version %2$s, %1$s</string>
+    <string name="home_start_method_title">Start service as</string>
+    <string name="home_start_method_message">Both root and ADB are available. Choose which identity should start the Nightzuku service.</string>
+    <string name="home_start_method_root">Root</string>
+    <string name="home_start_method_adb">ADB (shell uid 2000)</string>
     <string name="home_status_service_version_update"><![CDATA[Version %2$s, %1$s<br>Start again to update to version %3$s]]></string>
     <string name="home_hero_adb_full">ADB: full access</string>
     <string name="home_hero_adb_limited">ADB: limited access</string>

@@ -3,6 +3,10 @@
     <string name="home_status_service_is_running">Nightzuku запущен</string>
     <string name="home_status_service_not_running">Nightzuku не запущен</string>
     <string name="home_status_service_version">Версия %2$s, %1$s</string>
+    <string name="home_start_method_title">Запуск службы от</string>
+    <string name="home_start_method_message">Доступны и root, и ADB. Выберите, от какого пользователя запускать службу Nightzuku.</string>
+    <string name="home_start_method_root">Root</string>
+    <string name="home_start_method_adb">ADB (shell uid 2000)</string>
     <string name="home_status_service_version_update"><![CDATA[Версия %2$s, %1$s<br>Запустите снова для обновления до версии %3$s]]></string>
     <string name="home_hero_adb_full">ADB: полный доступ</string>
     <string name="home_hero_adb_limited">ADB: ограниченный доступ</string>

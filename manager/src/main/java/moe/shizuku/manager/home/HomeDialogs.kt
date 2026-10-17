@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -193,6 +194,83 @@ fun HomeStopDialog(
                 }
             },
             dismissButton = {
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun HomeStartMethodDialog(
+    onDismiss: () -> Unit,
+    onRoot: () -> Unit,
+    onAdb: () -> Unit
+) {
+    val context = LocalContext.current
+    val isWatch = EnvironmentUtils.isWatch(context)
+    val isTv = EnvironmentUtils.isTV(context)
+    val title = stringResource(R.string.home_start_method_title)
+    val message = stringResource(R.string.home_start_method_message)
+    val rootLabel = stringResource(R.string.home_start_method_root)
+    val adbLabel = stringResource(R.string.home_start_method_adb)
+
+    if (isWatch) {
+        moe.shizuku.manager.ui.compose.WearShizukuTheme {
+            WearAlertDialog(
+                visible = true,
+                onDismissRequest = onDismiss,
+                title = { WearText(title) }
+            ) {
+                item {
+                    WearButton(onClick = onRoot, modifier = Modifier.fillMaxWidth()) {
+                        WearText(rootLabel)
+                    }
+                }
+                item {
+                    WearFilledTonalButton(onClick = onAdb, modifier = Modifier.fillMaxWidth()) {
+                        WearText(adbLabel)
+                    }
+                }
+                item {
+                    WearFilledTonalButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                        WearText(stringResource(android.R.string.cancel))
+                    }
+                }
+            }
+        }
+    } else if (isTv) {
+        moe.shizuku.manager.ui.compose.TvShizukuTheme {
+            AlertDialog(
+                onDismissRequest = onDismiss,
+                title = { TvText(title) },
+                text = { TvText(message) },
+                confirmButton = {
+                    TvButton(onClick = onRoot) { TvText(rootLabel) }
+                },
+                dismissButton = {
+                    TvOutlinedButton(onClick = onAdb) { TvText(adbLabel) }
+                },
+                containerColor = TvMaterialTheme.colorScheme.surfaceVariant,
+                shape = TvMaterialTheme.shapes.extraLarge
+            )
+        }
+    } else {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text(title) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilledTonalButton(onClick = onRoot, modifier = Modifier.fillMaxWidth()) {
+                        Text(rootLabel)
+                    }
+                    FilledTonalButton(onClick = onAdb, modifier = Modifier.fillMaxWidth()) {
+                        Text(adbLabel)
+                    }
+                }
+            },
+            confirmButton = {
                 TextButton(onClick = onDismiss) {
                     Text(stringResource(android.R.string.cancel))
                 }
