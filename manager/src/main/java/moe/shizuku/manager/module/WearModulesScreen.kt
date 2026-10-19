@@ -16,12 +16,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Extension
-import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.SystemUpdateAlt
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -36,21 +38,23 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
-import androidx.wear.compose.material3.lazy.rememberTransformationSpec
-import androidx.wear.compose.material3.lazy.transformedHeight
-import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.material3.Button as WearButton
 import androidx.wear.compose.material3.ButtonDefaults as WearButtonDefaults
+import androidx.wear.compose.material3.CardDefaults as WearCardDefaults
 import androidx.wear.compose.material3.CheckboxButton as WearCheckboxButton
 import androidx.wear.compose.material3.Icon as WearIcon
 import androidx.wear.compose.material3.IconButton as WearIconButton
 import androidx.wear.compose.material3.IconButtonDefaults as WearIconButtonDefaults
 import androidx.wear.compose.material3.MaterialTheme as WearMaterialTheme
+import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text as WearText
 import androidx.wear.compose.material3.TitleCard as WearTitleCard
-import androidx.wear.compose.material3.CardDefaults as WearCardDefaults
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
 import moe.shizuku.manager.R
+import moe.shizuku.manager.module.update.UpdateResult
+import moe.shizuku.manager.nightdog.NightDogClient
 import moe.shizuku.manager.ui.compose.WearScreenScaffold
 import moe.shizuku.manager.ui.compose.WearScreenTitle
 
@@ -59,6 +63,10 @@ import moe.shizuku.manager.ui.compose.WearScreenTitle
 fun WearModulesScreen(
     modules: List<AdbModule>,
     busyId: String?,
+    isCheckingModules: Boolean = false,
+    checkReport: NightDogClient.ModuleCheckReport? = null,
+    onCheckModules: () -> Unit = {},
+    onUpdateModule: (AdbModule, UpdateResult?) -> Unit = { _, _ -> },
     onToggle: (AdbModule) -> Unit,
     onRunAction: (AdbModule) -> Unit,
     onRunService: (AdbModule) -> Unit,
@@ -123,6 +131,34 @@ fun WearModulesScreen(
                 }
             }
 
+            item {
+                WearButton(
+                    onClick = onCheckModules,
+                    enabled = !isCheckingModules,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                    colors = WearButtonDefaults.filledTonalButtonColors()
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        WearIcon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        WearText(
+                            text = if (isCheckingModules) {
+                                stringResource(R.string.modules_background_check_running)
+                            } else {
+                                stringResource(R.string.modules_background_check_short)
+                            }
+                        )
+                    }
+                }
+            }
+
             if (modules.isEmpty()) {
                 item {
                     WearText(
@@ -137,12 +173,14 @@ fun WearModulesScreen(
             items(modules, key = { it.id }) { module ->
                 val isBusy = busyId == module.id
                 val trusted = ModuleSettings.isModuleTrusted(module.id)
+                val health = checkReport?.healthByModule?.get(module.id)
+                val updateRes = checkReport?.updatesByModule?.get(module.id)
                 var expanded by remember { mutableStateOf(false) }
 
                 val containerColor = if (trusted) WearMaterialTheme.colorScheme.tertiaryContainer
-                                    else WearMaterialTheme.colorScheme.surfaceContainer
+                else WearMaterialTheme.colorScheme.surfaceContainer
                 val contentColor = if (trusted) WearMaterialTheme.colorScheme.onTertiaryContainer
-                                  else WearMaterialTheme.colorScheme.onSurface
+                else WearMaterialTheme.colorScheme.onSurface
                 val iconTint = if (trusted) WearMaterialTheme.colorScheme.tertiary else WearMaterialTheme.colorScheme.primary
 
                 WearTitleCard(
@@ -185,8 +223,17 @@ fun WearModulesScreen(
                     )
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
+                        val versionLine = buildString {
+                            append("v${module.version ?: "1.0"}")
+                            if (updateRes?.hasUpdate == true) {
+                                append(" → v${updateRes.latestVersion ?: "new"}")
+                            }
+                            if (health != null && !health.healthy) {
+                                append(" • !")
+                            }
+                        }
                         WearText(
-                            text = "v${module.version ?: "1.0"}",
+                            text = versionLine,
                             style = WearMaterialTheme.typography.labelSmall,
                             color = if (trusted) contentColor.copy(alpha = 0.8f) else WearMaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -221,6 +268,14 @@ fun WearModulesScreen(
                                         modifier = Modifier.size(WearIconButtonDefaults.DefaultButtonSize)
                                     ) {
                                         WearIcon(Icons.Rounded.Terminal, contentDescription = null)
+                                    }
+                                }
+                                if (updateRes?.hasUpdate == true) {
+                                    WearIconButton(
+                                        onClick = { onUpdateModule(module, updateRes) },
+                                        modifier = Modifier.size(WearIconButtonDefaults.DefaultButtonSize)
+                                    ) {
+                                        WearIcon(Icons.Rounded.SystemUpdateAlt, contentDescription = null)
                                     }
                                 }
 

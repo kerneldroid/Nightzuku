@@ -34,7 +34,7 @@ class ShizukuApplication : Application() {
         ShizukuSettings.initialize(context)
         LocaleDelegate.defaultLocale = ShizukuSettings.getLocale()
         AppCompatDelegate.setDefaultNightMode(ShizukuSettings.getNightMode())
-        NightDogClient.init()
+        NightDogClient.init(context)
     }
 
     override fun onCreate() {

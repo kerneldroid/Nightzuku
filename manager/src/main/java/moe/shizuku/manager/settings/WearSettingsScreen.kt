@@ -2,19 +2,15 @@ package moe.shizuku.manager.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.RestartAlt
+import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -44,6 +40,10 @@ fun WearSettingsScreen(
     moduleAccessMode: moe.shizuku.manager.module.ModuleSettings.AccessMode,
     onModuleAccessModeClick: () -> Unit,
     onCustomPermissionsClick: () -> Unit,
+    allowBackgroundActions: Boolean,
+    onAllowBackgroundActionsChange: (Boolean) -> Unit,
+    backgroundCheckEnabled: Boolean,
+    onBackgroundCheckEnabledChange: (Boolean) -> Unit,
     onGitHubTokenClick: () -> Unit,
 
     showNightDialog: Boolean,
@@ -60,6 +60,8 @@ fun WearSettingsScreen(
     val accessModeTitle = stringResource(R.string.modules_access_mode)
     val accessModeSummary = stringResource(moduleAccessMode.labelRes)
     val customPermissionsTitle = stringResource(R.string.modules_custom_permissions)
+    val backgroundActionsTitle = stringResource(R.string.modules_background_actions)
+    val backgroundCheckTitle = stringResource(R.string.modules_background_check_title)
     val labFeaturesTitle = stringResource(R.string.lab_features_title)
 
     val transformationSpec = rememberTransformationSpec()
@@ -149,6 +151,32 @@ fun WearSettingsScreen(
                         title = { WearText(customPermissionsTitle) }
                     )
                 }
+            }
+
+            item {
+                WearSwitchButton(
+                    checked = allowBackgroundActions,
+                    onCheckedChange = onAllowBackgroundActionsChange,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                    label = { WearText(backgroundActionsTitle) },
+                    icon = { WearIcon(Icons.Rounded.PlayArrow, contentDescription = null) }
+                )
+            }
+
+            item {
+                WearSwitchButton(
+                    checked = backgroundCheckEnabled,
+                    onCheckedChange = onBackgroundCheckEnabledChange,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                    label = { WearText(backgroundCheckTitle) },
+                    icon = { WearIcon(Icons.Rounded.TaskAlt, contentDescription = null) }
+                )
             }
 
             item {

@@ -43,6 +43,7 @@ object NightDog {
     private val lastBeatTime = AtomicLong(0L)
     private val beatCount = AtomicLong(0L)
     private val totalRebinds = AtomicInteger(0)
+    @Volatile
     private var startTimeMs = 0L
     private var timeoutMs = DEFAULT_TIMEOUT_MS
     private var pollIntervalMs = DEFAULT_POLL_INTERVAL_MS
@@ -106,6 +107,7 @@ object NightDog {
             rebindAttempts.clear()
             pendingRebinds.clear()
             lastBeatTime.set(0L)
+            startTimeMs = 0L
             listener = null
 
             watchdogThread?.quitSafely()
@@ -123,7 +125,17 @@ object NightDog {
 
     fun getBoundServiceCount(): Int = bindings.size
 
+    fun getBoundServiceNames(): List<String> = bindings.keys.toList().sorted()
+
     fun getTotalRebinds(): Int = totalRebinds.get()
+
+    fun getBeatCount(): Long = beatCount.get()
+
+    fun getUptimeMs(): Long {
+        val start = startTimeMs
+        if (!started.get() || start <= 0L) return 0L
+        return (SystemClock.uptimeMillis() - start).coerceAtLeast(0L)
+    }
 
     private fun unlinkAllServices() {
         for ((name, recipient) in deathRecipients) {

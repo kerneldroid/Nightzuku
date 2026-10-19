@@ -5,17 +5,13 @@
 
 package moe.shizuku.manager.module.update
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -23,34 +19,33 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import moe.shizuku.manager.R
 import moe.shizuku.manager.module.ModuleSettings
 import moe.shizuku.manager.module.catalog.TokenStore
+import moe.shizuku.manager.nightdog.NightDogClient
 import moe.shizuku.manager.ui.compose.SettingsItem
 import moe.shizuku.manager.ui.compose.SettingsSection
 import moe.shizuku.manager.ui.compose.SettingsSwitchItem
 import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
-import moe.shizuku.manager.ui.compose.ShizukuIcon
 import moe.shizuku.manager.ui.compose.ShizukuLazyScaffold
 
 @Composable
@@ -58,17 +53,103 @@ fun UpdateSettingsScreen(
     onNavigateUp: () -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var backgroundCheckEnabled by remember { mutableStateOf(ModuleSettings.isBackgroundCheckEnabled()) }
+    var allowBackgroundActions by remember { mutableStateOf(ModuleSettings.allowBackgroundActions()) }
     var catalogEnabled by remember { mutableStateOf(ModuleSettings.isCatalogEnabled()) }
     var updateFrequency by remember { mutableStateOf(ModuleSettings.getUpdateFrequency()) }
     var installMode by remember { mutableStateOf(ModuleSettings.getInstallMode()) }
     var githubPat by remember { mutableStateOf(TokenStore.getToken(context) ?: "") }
     var showPatDialog by remember { mutableStateOf(false) }
 
+    val isChecking by NightDogClient.isCheckingModules.collectAsState()
+    val lastReport by NightDogClient.lastCheckReport.collectAsState()
+
+    val checkSummary = when {
+        isChecking -> stringResource(R.string.modules_background_check_running)
+        lastReport != null -> {
+            val report = lastReport!!
+            stringResource(
+                R.string.modules_background_check_report_summary,
+                report.healthyModules,
+                report.totalModules,
+                report.updatesAvailableCount,
+                report.issuesCount
+            )
+        }
+        else -> stringResource(R.string.modules_background_check_never)
+    }
+
     ShizukuExpressiveTheme {
         ShizukuLazyScaffold(
             title = stringResource(R.string.update_settings_title),
             onNavigateUp = onNavigateUp
         ) {
+            item {
+                SettingsSection(title = stringResource(R.string.nightdog_section_title)) {
+                    SettingsSwitchItem(
+                        index = 0,
+                        count = 3,
+                        icon = R.drawable.ic_shield_24,
+                        title = stringResource(R.string.modules_background_check_title),
+                        summary = stringResource(R.string.modules_background_check_summary),
+                        checked = backgroundCheckEnabled,
+                        onCheckedChange = {
+                            backgroundCheckEnabled = it
+                            ModuleSettings.setBackgroundCheckEnabled(it)
+                            if (it) {
+                                NightDogClient.ensurePeriodicLoop()
+                            }
+                        }
+                    )
+                    SettingsSwitchItem(
+                        index = 1,
+                        count = 3,
+                        icon = R.drawable.ic_terminal_24,
+                        title = stringResource(R.string.modules_background_actions),
+                        summary = stringResource(R.string.modules_background_actions_summary),
+                        checked = allowBackgroundActions,
+                        onCheckedChange = {
+                            allowBackgroundActions = it
+                            ModuleSettings.setAllowBackgroundActions(it)
+                        }
+                    )
+                    SettingsItem(
+                        index = 2,
+                        count = 3,
+                        icon = R.drawable.ic_server_restart,
+                        title = stringResource(R.string.modules_background_check_run_now),
+                        summary = checkSummary,
+                        showChevron = false,
+                        onClick = {
+                            if (!isChecking) {
+                                scope.launch {
+                                    val report = NightDogClient.runManualCheck(
+                                        context = context,
+                                        checkUpdates = true,
+                                        forceRunServices = true
+                                    )
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(
+                                            R.string.modules_background_check_toast,
+                                            report.healthyModules,
+                                            report.totalModules,
+                                            report.updatesAvailableCount
+                                        ),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+
+            item {
+                Spacer(Modifier.height(8.dp))
+            }
+
             item {
                 SettingsSection(title = stringResource(R.string.update_settings_catalog)) {
                     SettingsSwitchItem(

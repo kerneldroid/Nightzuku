@@ -7,8 +7,6 @@
 )
 
 package moe.shizuku.manager.module
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.MaterialTheme
 
 import android.content.Intent
 import android.graphics.BitmapFactory
@@ -31,8 +29,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -44,26 +42,30 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CornerSize
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.neverEqualPolicy
@@ -73,7 +75,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -81,23 +82,26 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
-import moe.shizuku.manager.R
-import moe.shizuku.manager.app.AppActivity
+import androidx.tv.material3.Button as TvButton
+import androidx.tv.material3.MaterialTheme as TvMaterialTheme
+import androidx.tv.material3.OutlinedButton as TvOutlinedButton
+import androidx.tv.material3.Text as TvText
 import androidx.wear.compose.material3.AlertDialog as WearAlertDialog
 import androidx.wear.compose.material3.Button as WearButton
 import androidx.wear.compose.material3.FilledTonalButton as WearFilledTonalButton
 import androidx.wear.compose.material3.MaterialTheme as WearMaterialTheme
 import androidx.wear.compose.material3.Text as WearText
-import androidx.tv.material3.Button as TvButton
-import androidx.tv.material3.OutlinedButton as TvOutlinedButton
-import androidx.tv.material3.Text as TvText
-import androidx.tv.material3.MaterialTheme as TvMaterialTheme
+import kotlinx.coroutines.launch
+import moe.shizuku.manager.R
+import moe.shizuku.manager.app.AppActivity
+import moe.shizuku.manager.module.update.ModuleInstaller
+import moe.shizuku.manager.module.update.UpdateResult
+import moe.shizuku.manager.nightdog.NightDogClient
+import moe.shizuku.manager.ui.compose.ExpressiveSwitch
 import moe.shizuku.manager.ui.compose.MonospaceLog
 import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
 import moe.shizuku.manager.ui.compose.ShizukuIcon
 import moe.shizuku.manager.ui.compose.ShizukuLazyScaffold
-import moe.shizuku.manager.ui.compose.ExpressiveSwitch
 
 class ModulesActivity : AppActivity() {
 
@@ -119,10 +123,68 @@ class ModulesActivity : AppActivity() {
             var deleteTarget by remember { mutableStateOf<AdbModule?>(null) }
             var pendingCommand by remember { mutableStateOf<ModuleCommandRequest?>(null) }
             var runningModuleId by remember { mutableStateOf<String?>(null) }
+            var allowBackgroundActions by remember { mutableStateOf(ModuleSettings.allowBackgroundActions()) }
 
-            fun reload() {
+            val isCheckingModules by NightDogClient.isCheckingModules.collectAsState()
+            val checkReport by NightDogClient.lastCheckReport.collectAsState()
+
+            fun reload(refreshHealth: Boolean = true) {
                 scope.launch {
+                    allowBackgroundActions = ModuleSettings.allowBackgroundActions()
                     modules = AdbModuleManager.listModules(context)
+                    if (refreshHealth) {
+                        NightDogClient.runBackgroundCheck(
+                            context = context,
+                            forceUpdateCheck = false,
+                            runServices = false
+                        )
+                    }
+                }
+            }
+
+            fun runManualCheckNow() {
+                if (isCheckingModules) return
+                scope.launch {
+                    val report = NightDogClient.runManualCheck(
+                        context = context,
+                        checkUpdates = true,
+                        forceRunServices = true
+                    )
+                    modules = AdbModuleManager.listModules(context)
+                    Toast.makeText(
+                        context,
+                        context.getString(
+                            R.string.modules_background_check_toast,
+                            report.healthyModules,
+                            report.totalModules,
+                            report.updatesAvailableCount
+                        ),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+
+            fun updateModuleNow(module: AdbModule, updateResult: UpdateResult?) {
+                scope.launch {
+                    runningModuleId = module.id
+                    ModuleInstaller.getInstance().updateModule(context, module, updateResult)
+                        .onSuccess { updated ->
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.modules_update_success, updated.name, updated.version ?: ""),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            modules = AdbModuleManager.listModules(context)
+                            NightDogClient.runManualCheck(context, checkUpdates = true, forceRunServices = false)
+                        }
+                        .onFailure { err ->
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.modules_install_failed, err.message ?: err.javaClass.simpleName),
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    runningModuleId = null
                 }
             }
 
@@ -136,6 +198,7 @@ class ModulesActivity : AppActivity() {
                         context.getString(R.string.modules_action_failed) to (it.message ?: it.javaClass.simpleName)
                     }
                     runningModuleId = null
+                    reload(refreshHealth = true)
                 }
             }
 
@@ -152,7 +215,7 @@ class ModulesActivity : AppActivity() {
                             context.getString(R.string.modules_install_success, module.name),
                             Toast.LENGTH_SHORT
                         ).show()
-                        reload()
+                        reload(refreshHealth = true)
                     }.onFailure {
                         Toast.makeText(
                             context,
@@ -164,7 +227,13 @@ class ModulesActivity : AppActivity() {
             }
 
             LaunchedEffect(reloadTrigger) {
+                allowBackgroundActions = ModuleSettings.allowBackgroundActions()
                 modules = AdbModuleManager.listModules(context)
+                NightDogClient.runBackgroundCheck(
+                    context = context,
+                    forceUpdateCheck = false,
+                    runServices = false
+                )
             }
 
             val isWatch = moe.shizuku.manager.utils.EnvironmentUtils.isWatch(this@ModulesActivity)
@@ -173,99 +242,106 @@ class ModulesActivity : AppActivity() {
             if (isWatch) {
                 moe.shizuku.manager.ui.compose.WearShizukuTheme {
 
-                if (showCatalog) {
-                    moe.shizuku.manager.module.catalog.WearCatalogScreen(
-                        onBack = { showCatalog = false },
-                        onModuleInstalled = { showCatalog = false; reload() }
-                    )
-                } else {
-                WearModulesScreen(
-                    modules = modules,
-                    busyId = runningModuleId,
-                    onToggle = { module ->
-                        scope.launch {
-                            AdbModuleManager.setEnabled(module, !module.enabled)
-                            reload()
-                        }
-                    },
-                    onRunAction = { module -> runModuleAction(module) },
-                    onRunService = { module ->
-                        scope.launch {
-                            runningModuleId = module.id
-                            output = runCatching {
-                                val result = AdbModuleManager.runService(module)
-                                context.getString(R.string.modules_service_result, result.exitCode) to result.combinedOutput
-                            }.getOrElse {
-                                context.getString(R.string.modules_service_failed) to (it.message ?: it.javaClass.simpleName)
-                            }
-                            runningModuleId = null
-                        }
-                    },
-                    onDelete = { module -> deleteTarget = module },
-                    onTrustChange = { module, trusted ->
-                        scope.launch {
-                            ModuleSettings.setModuleTrusted(module.id, trusted)
-                            AdbModuleManager.setEnabled(module, trusted)
-                            reload()
-                        }
-                    },
-                    onOpenWebUi = { module ->
-                        startActivity(
-                            Intent(this@ModulesActivity, ModuleWebViewActivity::class.java)
-                                .putExtra(ModuleWebViewActivity.EXTRA_MODULE_ID, module.id)
+                    if (showCatalog) {
+                        moe.shizuku.manager.module.catalog.WearCatalogScreen(
+                            onBack = { showCatalog = false },
+                            onModuleInstalled = { showCatalog = false; reload() }
                         )
-                    },
-                    onInstallZip = { zipLauncher.launch(MODULE_MIME_TYPES) },
-                    onOpenCatalog = { showCatalog = true }
-                )
-                }
-
-                output?.let { (title, text) ->
-                    WearAlertDialog(
-                        visible = true,
-                        onDismissRequest = { output = null },
-                        title = { WearText(title) },
-                        text = {
-                            WearText(
-                                text = text,
-                                style = WearMaterialTheme.typography.bodySmall,
-                                modifier = Modifier.padding(8.dp)
-                            )
-                        },
-                        confirmButton = {
-                            WearButton(onClick = { output = null }) {
-                                WearText(stringResource(android.R.string.ok))
-                            }
-                        }
-                    )
-                }
-
-                deleteTarget?.let { module ->
-                    WearAlertDialog(
-                        visible = true,
-                        onDismissRequest = { deleteTarget = null },
-                        title = { WearText(stringResource(R.string.modules_delete_title)) },
-                        text = { WearText(stringResource(R.string.modules_delete_message, module.name)) },
-                        confirmButton = {
-                            WearButton(
-                                onClick = {
-                                    scope.launch {
-                                        AdbModuleManager.delete(module)
-                                        deleteTarget = null
-                                        reload()
-                                    }
+                    } else {
+                        WearModulesScreen(
+                            modules = modules,
+                            busyId = runningModuleId,
+                            isCheckingModules = isCheckingModules,
+                            checkReport = checkReport,
+                            onCheckModules = { runManualCheckNow() },
+                            onUpdateModule = { module, updateRes -> updateModuleNow(module, updateRes) },
+                            onToggle = { module ->
+                                scope.launch {
+                                    AdbModuleManager.setEnabled(module, !module.enabled)
+                                    reload()
                                 }
-                            ) {
-                                WearText(stringResource(R.string.modules_delete))
+                            },
+                            onRunAction = { module -> runModuleAction(module) },
+                            onRunService = { module ->
+                                scope.launch {
+                                    runningModuleId = module.id
+                                    output = runCatching {
+                                        val result = AdbModuleManager.runService(module)
+                                        context.getString(R.string.modules_service_result, result.exitCode) to result.combinedOutput
+                                    }.getOrElse {
+                                        context.getString(R.string.modules_service_failed) to (it.message ?: it.javaClass.simpleName)
+                                    }
+                                    runningModuleId = null
+                                    reload(refreshHealth = true)
+                                }
+                            },
+                            onDelete = { module -> deleteTarget = module },
+                            onTrustChange = { module, trusted ->
+                                scope.launch {
+                                    ModuleSettings.setModuleTrusted(module.id, trusted)
+                                    if (trusted && !module.enabled) {
+                                        AdbModuleManager.setEnabled(module, true)
+                                    }
+                                    reload()
+                                }
+                            },
+                            onOpenWebUi = { module ->
+                                startActivity(
+                                    Intent(this@ModulesActivity, ModuleWebViewActivity::class.java)
+                                        .putExtra(ModuleWebViewActivity.EXTRA_MODULE_ID, module.id)
+                                )
+                            },
+                            onInstallZip = { zipLauncher.launch(MODULE_MIME_TYPES) },
+                            onOpenCatalog = { showCatalog = true }
+                        )
+                    }
+
+                    output?.let { (title, text) ->
+                        WearAlertDialog(
+                            visible = true,
+                            onDismissRequest = { output = null },
+                            title = { WearText(title) },
+                            text = {
+                                WearText(
+                                    text = text,
+                                    style = WearMaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.padding(8.dp)
+                                )
+                            },
+                            confirmButton = {
+                                WearButton(onClick = { output = null }) {
+                                    WearText(stringResource(android.R.string.ok))
+                                }
                             }
-                        },
-                        dismissButton = {
-                            WearFilledTonalButton(onClick = { deleteTarget = null }) {
-                                WearText(stringResource(android.R.string.cancel))
+                        )
+                    }
+
+                    deleteTarget?.let { module ->
+                        WearAlertDialog(
+                            visible = true,
+                            onDismissRequest = { deleteTarget = null },
+                            title = { WearText(stringResource(R.string.modules_delete_title)) },
+                            text = { WearText(stringResource(R.string.modules_delete_message, module.name)) },
+                            confirmButton = {
+                                WearButton(
+                                    onClick = {
+                                        scope.launch {
+                                            AdbModuleManager.delete(module)
+                                            deleteTarget = null
+                                            reload()
+                                        }
+                                    }
+                                ) {
+                                    WearText(stringResource(R.string.modules_delete))
+                                }
+                            },
+                            dismissButton = {
+                                WearFilledTonalButton(onClick = { deleteTarget = null }) {
+                                    WearText(stringResource(android.R.string.cancel))
+                                }
                             }
-                        }
-                    )
-                }
+                        )
+                    }
 
                 }
             } else if (isTv) {
@@ -279,103 +355,110 @@ class ModulesActivity : AppActivity() {
                             )
                         } else if (showLabFeatures) {
                             moe.shizuku.manager.settings.TvLabMenuScreen(
-                                onNavigateUp = { showLabFeatures = false }
+                                onNavigateUp = { showLabFeatures = false; reload() }
                             )
                         } else {
-                        TvModulesScreen(
-                            modules = modules,
-                            onNavigateUp = { finish() },
-                            onInstallZip = { zipLauncher.launch(MODULE_MIME_TYPES) },
-                            onToggle = { module ->
-                                scope.launch {
-                                    AdbModuleManager.setEnabled(module, !module.enabled)
-                                    reload()
-                                }
-                            },
-                            onRunAction = { module ->
-                                if (!ModuleSettings.isModuleTrusted(module.id) && ModuleSettings.recommandForAction()) {
-                                    pendingCommand = ModuleCommandRequest(
-                                        module = module,
-                                        source = ModuleCommandSource.ACTION,
-                                        command = module.actionCommandPreview()
-                                    )
-                                } else {
-                                    runModuleAction(module)
-                                }
-                            },
-                            onRunService = { module ->
-                                scope.launch {
-                                    runningModuleId = module.id
-                                    output = runCatching {
-                                        val result = AdbModuleManager.runService(module)
-                                        context.getString(R.string.modules_service_result, result.exitCode) to result.combinedOutput
-                                    }.getOrElse {
-                                        context.getString(R.string.modules_service_failed) to (it.message ?: it.javaClass.simpleName)
-                                    }
-                                    runningModuleId = null
-                                }
-                            },
-                            onDelete = { deleteTarget = it },
-                            onTrustChange = { module, trusted ->
-                                scope.launch {
-                                    ModuleSettings.setModuleTrusted(module.id, trusted)
-                                    AdbModuleManager.setEnabled(module, trusted)
-                                    reload()
-                                }
-                            },
-                            onOpenWebUi = { module ->
-                                startActivity(
-                                    Intent(this@ModulesActivity, ModuleWebViewActivity::class.java)
-                                        .putExtra(ModuleWebViewActivity.EXTRA_MODULE_ID, module.id)
-                                )
-                            },
-                            onOpenCatalog = { showCatalog = true },
-                            onLabFeatures = { showLabFeatures = true }
-                        )
-
-                        output?.let { (title, text) ->
-                            AlertDialog(
-                                onDismissRequest = { output = null },
-                                title = { TvText(title) },
-                                text = { MonospaceLog(text) },
-                                confirmButton = {
-                                    TvButton(onClick = { output = null }) {
-                                        TvText(stringResource(android.R.string.ok))
+                            TvModulesScreen(
+                                modules = modules,
+                                isCheckingModules = isCheckingModules,
+                                checkReport = checkReport,
+                                onNavigateUp = { finish() },
+                                onInstallZip = { zipLauncher.launch(MODULE_MIME_TYPES) },
+                                onCheckModules = { runManualCheckNow() },
+                                onUpdateModule = { module, updateRes -> updateModuleNow(module, updateRes) },
+                                onToggle = { module ->
+                                    scope.launch {
+                                        AdbModuleManager.setEnabled(module, !module.enabled)
+                                        reload()
                                     }
                                 },
-                                containerColor = TvMaterialTheme.colorScheme.surfaceVariant,
-                                shape = TvMaterialTheme.shapes.extraLarge
-                            )
-                        }
-
-                        deleteTarget?.let { module ->
-                            AlertDialog(
-                                onDismissRequest = { deleteTarget = null },
-                                title = { TvText(stringResource(R.string.modules_delete_title)) },
-                                text = { TvText(stringResource(R.string.modules_delete_message, module.name)) },
-                                confirmButton = {
-                                    TvButton(
-                                        onClick = {
-                                            scope.launch {
-                                                AdbModuleManager.delete(module)
-                                                deleteTarget = null
-                                                reload()
-                                            }
+                                onRunAction = { module ->
+                                    if (!ModuleSettings.isModuleTrusted(module.id) && ModuleSettings.recommandForAction()) {
+                                        pendingCommand = ModuleCommandRequest(
+                                            module = module,
+                                            source = ModuleCommandSource.ACTION,
+                                            command = module.actionCommandPreview()
+                                        )
+                                    } else {
+                                        runModuleAction(module)
+                                    }
+                                },
+                                onRunService = { module ->
+                                    scope.launch {
+                                        runningModuleId = module.id
+                                        output = runCatching {
+                                            val result = AdbModuleManager.runService(module)
+                                            context.getString(R.string.modules_service_result, result.exitCode) to result.combinedOutput
+                                        }.getOrElse {
+                                            context.getString(R.string.modules_service_failed) to (it.message ?: it.javaClass.simpleName)
                                         }
-                                    ) {
-                                        TvText(stringResource(R.string.modules_delete))
+                                        runningModuleId = null
+                                        reload(refreshHealth = true)
                                     }
                                 },
-                                dismissButton = {
-                                    TvOutlinedButton(onClick = { deleteTarget = null }) {
-                                        TvText(stringResource(android.R.string.cancel))
+                                onDelete = { deleteTarget = it },
+                                onTrustChange = { module, trusted ->
+                                    scope.launch {
+                                        ModuleSettings.setModuleTrusted(module.id, trusted)
+                                        if (trusted && !module.enabled) {
+                                            AdbModuleManager.setEnabled(module, true)
+                                        }
+                                        reload()
                                     }
                                 },
-                                containerColor = TvMaterialTheme.colorScheme.surfaceVariant,
-                                shape = TvMaterialTheme.shapes.extraLarge
+                                onOpenWebUi = { module ->
+                                    startActivity(
+                                        Intent(this@ModulesActivity, ModuleWebViewActivity::class.java)
+                                            .putExtra(ModuleWebViewActivity.EXTRA_MODULE_ID, module.id)
+                                    )
+                                },
+                                onOpenCatalog = { showCatalog = true },
+                                onLabFeatures = { showLabFeatures = true }
                             )
+
+                            output?.let { (title, text) ->
+                                AlertDialog(
+                                    onDismissRequest = { output = null },
+                                    title = { TvText(title) },
+                                    text = { MonospaceLog(text) },
+                                    confirmButton = {
+                                        TvButton(onClick = { output = null }) {
+                                            TvText(stringResource(android.R.string.ok))
+                                        }
+                                    },
+                                    containerColor = TvMaterialTheme.colorScheme.surfaceVariant,
+                                    shape = TvMaterialTheme.shapes.extraLarge
+                                )
+                            }
+
+                            deleteTarget?.let { module ->
+                                AlertDialog(
+                                    onDismissRequest = { deleteTarget = null },
+                                    title = { TvText(stringResource(R.string.modules_delete_title)) },
+                                    text = { TvText(stringResource(R.string.modules_delete_message, module.name)) },
+                                    confirmButton = {
+                                        TvButton(
+                                            onClick = {
+                                                scope.launch {
+                                                    AdbModuleManager.delete(module)
+                                                    deleteTarget = null
+                                                    reload()
+                                                }
+                                            }
+                                        ) {
+                                            TvText(stringResource(R.string.modules_delete))
+                                        }
+                                    },
+                                    dismissButton = {
+                                        TvOutlinedButton(onClick = { deleteTarget = null }) {
+                                            TvText(stringResource(android.R.string.cancel))
+                                        }
+                                    },
+                                    containerColor = TvMaterialTheme.colorScheme.surfaceVariant,
+                                    shape = TvMaterialTheme.shapes.extraLarge
+                                )
+                            }
                         }
-                    }
                     }
                 }
             } else {
@@ -396,171 +479,205 @@ class ModulesActivity : AppActivity() {
                             onNavigateUp = { showCatalog = false; reload() }
                         )
                     } else {
-                ShizukuExpressiveTheme {
-                ShizukuLazyScaffold(
-                    title = stringResource(R.string.modules_title),
-                    onNavigateUp = { finish() },
-                    actions = {
-                        Row(
-                            modifier = Modifier
-                                .height(36.dp)
-                                .padding(end = 10.dp)
-                                .clip(MaterialTheme.shapes.small),
-                            horizontalArrangement = Arrangement.spacedBy(0.dp)
-                        ) {
-                            if (modules.isNotEmpty()) {
-                                Box(
-                                    modifier = Modifier
-                                        .height(36.dp)
-                                        .clip(MaterialTheme.shapes.small.copy(topEnd = CornerSize(0.dp), bottomEnd = CornerSize(0.dp)))
-                                        .background(MaterialTheme.colorScheme.secondaryContainer)
-                                        .clickable { zipLauncher.launch(MODULE_MIME_TYPES) }
-                                        .padding(horizontal = 16.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        ShizukuIcon(
-                                            R.drawable.ic_outline_arrow_upward_24,
+                        ShizukuExpressiveTheme {
+                            ShizukuLazyScaffold(
+                                title = stringResource(R.string.modules_title),
+                                onNavigateUp = { finish() },
+                                actions = {
+                                    Row(
+                                        modifier = Modifier
+                                            .height(36.dp)
+                                            .padding(end = 10.dp)
+                                            .clip(MaterialTheme.shapes.small),
+                                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        if (modules.isNotEmpty()) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .height(36.dp)
+                                                    .clip(MaterialTheme.shapes.small.copy(topEnd = CornerSize(0.dp), bottomEnd = CornerSize(0.dp)))
+                                                    .background(MaterialTheme.colorScheme.secondaryContainer)
+                                                    .clickable { zipLauncher.launch(MODULE_MIME_TYPES) }
+                                                    .padding(horizontal = 14.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    ShizukuIcon(
+                                                        R.drawable.ic_outline_arrow_upward_24,
+                                                        modifier = Modifier
+                                                            .padding(end = 6.dp)
+                                                            .size(16.dp)
+                                                    )
+                                                    Text(
+                                                        stringResource(R.string.modules_install_zip),
+                                                        style = MaterialTheme.typography.labelLarge
+                                                    )
+                                                }
+                                            }
+                                            Box(
+                                                modifier = Modifier
+                                                    .height(36.dp)
+                                                    .background(MaterialTheme.colorScheme.secondaryContainer)
+                                                    .clickable(enabled = !isCheckingModules) { runManualCheckNow() }
+                                                    .padding(horizontal = 12.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                ShizukuIcon(R.drawable.ic_server_restart, modifier = Modifier.size(18.dp))
+                                            }
+                                        }
+                                        Box(
                                             modifier = Modifier
-                                                .padding(end = 6.dp)
-                                                .size(16.dp)
-                                        )
-                                        Text(
-                                            stringResource(R.string.modules_install_zip),
-                                            style = MaterialTheme.typography.labelLarge
+                                                .height(36.dp)
+                                                .clip(MaterialTheme.shapes.small.copy(topStart = CornerSize(0.dp), bottomStart = CornerSize(0.dp)))
+                                                .background(MaterialTheme.colorScheme.secondaryContainer)
+                                                .clickable { showCatalog = true }
+                                                .padding(horizontal = 12.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            ShizukuIcon(R.drawable.ic_outline_store_24, modifier = Modifier.size(18.dp))
+                                        }
+                                    }
+                                }
+                            ) {
+                                if (modules.isNotEmpty()) {
+                                    item {
+                                        NightDogModuleCheckBanner(
+                                            isChecking = isCheckingModules,
+                                            report = checkReport,
+                                            allowBackgroundActions = allowBackgroundActions,
+                                            onToggleBackgroundActions = { enabled ->
+                                                allowBackgroundActions = enabled
+                                                ModuleSettings.setAllowBackgroundActions(enabled)
+                                            },
+                                            onRunCheck = { runManualCheckNow() }
                                         )
                                     }
                                 }
-                            }
-                            Box(
-                                modifier = Modifier
-                                    .height(36.dp)
-                                    .clip(MaterialTheme.shapes.small.copy(topStart = CornerSize(0.dp), bottomStart = CornerSize(0.dp)))
-                                    .background(MaterialTheme.colorScheme.secondaryContainer)
-                                    .clickable { showCatalog = true }
-                                    .padding(horizontal = 12.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                ShizukuIcon(R.drawable.ic_outline_store_24, modifier = Modifier.size(18.dp))
-                            }
-                        }
-                    }
-                ) {
-                    item {
-                        AnimatedContent(targetState = modules.isEmpty(), label = "module-empty-state") { empty ->
-                            if (empty) {
-                                EmptyModulesCard(onInstall = { zipLauncher.launch(MODULE_MIME_TYPES) })
-                            }
-                        }
-                    }
-                    items(modules, key = { it.id }) { module ->
-                        ModuleCard(
-                            module = module,
-                            busy = runningModuleId == module.id,
-                            trusted = ModuleSettings.isModuleTrusted(module.id),
-                            modifier = Modifier.animateItem(),
-                            onToggle = {
-                                scope.launch {
-                                    AdbModuleManager.setEnabled(module, !module.enabled)
-                                    reload()
+                                item {
+                                    AnimatedContent(targetState = modules.isEmpty(), label = "module-empty-state") { empty ->
+                                        if (empty) {
+                                            EmptyModulesCard(onInstall = { zipLauncher.launch(MODULE_MIME_TYPES) })
+                                        }
+                                    }
                                 }
-                            },
-                            onRunAction = {
-                                if (!ModuleSettings.isModuleTrusted(module.id) && ModuleSettings.recommandForAction()) {
-                                    pendingCommand = ModuleCommandRequest(
+                                items(modules, key = { it.id }) { module ->
+                                    val health = checkReport?.healthByModule?.get(module.id)
+                                    val updateRes = checkReport?.updatesByModule?.get(module.id)
+                                    ModuleCard(
                                         module = module,
-                                        source = ModuleCommandSource.ACTION,
-                                        command = module.actionCommandPreview()
+                                        busy = runningModuleId == module.id,
+                                        trusted = ModuleSettings.isModuleTrusted(module.id),
+                                        health = health,
+                                        updateResult = updateRes,
+                                        modifier = Modifier.animateItem(),
+                                        onToggle = {
+                                            scope.launch {
+                                                AdbModuleManager.setEnabled(module, !module.enabled)
+                                                reload()
+                                            }
+                                        },
+                                        onRunAction = {
+                                            if (!ModuleSettings.isModuleTrusted(module.id) && ModuleSettings.recommandForAction()) {
+                                                pendingCommand = ModuleCommandRequest(
+                                                    module = module,
+                                                    source = ModuleCommandSource.ACTION,
+                                                    command = module.actionCommandPreview()
+                                                )
+                                            } else {
+                                                runModuleAction(module)
+                                            }
+                                        },
+                                        onRunService = {
+                                            scope.launch {
+                                                runningModuleId = module.id
+                                                output = runCatching {
+                                                    val result = AdbModuleManager.runService(module)
+                                                    context.getString(R.string.modules_service_result, result.exitCode) to result.combinedOutput
+                                                }.getOrElse {
+                                                    context.getString(R.string.modules_service_failed) to (it.message ?: it.javaClass.simpleName)
+                                                }
+                                                runningModuleId = null
+                                                reload(refreshHealth = true)
+                                            }
+                                        },
+                                        onOpenWebUi = {
+                                            startActivity(
+                                                Intent(this@ModulesActivity, ModuleWebViewActivity::class.java)
+                                                    .putExtra(ModuleWebViewActivity.EXTRA_MODULE_ID, module.id)
+                                            )
+                                        },
+                                        onUpdate = {
+                                            updateModuleNow(module, updateRes)
+                                        },
+                                        onDelete = { deleteTarget = module },
+                                        onTrustChange = { trusted ->
+                                            scope.launch {
+                                                ModuleSettings.setModuleTrusted(module.id, trusted)
+                                                if (trusted && !module.enabled) {
+                                                    AdbModuleManager.setEnabled(module, true)
+                                                }
+                                                reload()
+                                            }
+                                        }
                                     )
-                                } else {
-                                    runModuleAction(module)
-                                }
-                            },
-                            onRunService = {
-                                scope.launch {
-                                    runningModuleId = module.id
-                                    output = runCatching {
-                                        val result = AdbModuleManager.runService(module)
-                                        context.getString(R.string.modules_service_result, result.exitCode) to result.combinedOutput
-                                    }.getOrElse {
-                                        context.getString(R.string.modules_service_failed) to (it.message ?: it.javaClass.simpleName)
-                                    }
-                                    runningModuleId = null
-                                }
-                            },
-                            onOpenWebUi = {
-                                startActivity(
-                                    Intent(this@ModulesActivity, ModuleWebViewActivity::class.java)
-                                        .putExtra(ModuleWebViewActivity.EXTRA_MODULE_ID, module.id)
-                                )
-                            },
-                            onDelete = { deleteTarget = module },
-                            onTrustChange = { trusted ->
-                                scope.launch {
-                                    ModuleSettings.setModuleTrusted(module.id, trusted)
-                                    AdbModuleManager.setEnabled(module, trusted)
-                                    reload()
                                 }
                             }
-                        )
+
+                            output?.let { (title, text) ->
+                                AlertDialog(
+                                    onDismissRequest = { output = null },
+                                    title = { Text(title) },
+                                    text = { MonospaceLog(text) },
+                                    confirmButton = {
+                                        TextButton(onClick = { output = null }) {
+                                            Text(stringResource(android.R.string.ok))
+                                        }
+                                    }
+                                )
+                            }
+
+                            deleteTarget?.let { module ->
+                                AlertDialog(
+                                    onDismissRequest = { deleteTarget = null },
+                                    title = { Text(stringResource(R.string.modules_delete_title)) },
+                                    text = { Text(stringResource(R.string.modules_delete_message, module.name)) },
+                                    confirmButton = {
+                                        TextButton(
+                                            onClick = {
+                                                scope.launch {
+                                                    AdbModuleManager.delete(module)
+                                                    deleteTarget = null
+                                                    reload()
+                                                }
+                                            }
+                                        ) {
+                                            Text(stringResource(R.string.modules_delete))
+                                        }
+                                    },
+                                    dismissButton = {
+                                        TextButton(onClick = { deleteTarget = null }) {
+                                            Text(stringResource(android.R.string.cancel))
+                                        }
+                                    }
+                                )
+                            }
+
+                            pendingCommand?.let { request ->
+                                ReCommandDialog(
+                                    request = request,
+                                    busy = runningModuleId == request.module.id,
+                                    onDismiss = { pendingCommand = null },
+                                    onReject = { pendingCommand = null },
+                                    onApprove = {
+                                        pendingCommand = null
+                                        runModuleAction(request.module)
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
-
-                output?.let { (title, text) ->
-                    AlertDialog(
-                        onDismissRequest = { output = null },
-                        title = { Text(title) },
-                        text = { MonospaceLog(text) },
-                        confirmButton = {
-                            TextButton(onClick = { output = null }) {
-                                Text(stringResource(android.R.string.ok))
-                            }
-                        }
-                    )
-                }
-
-                deleteTarget?.let { module ->
-                    AlertDialog(
-                        onDismissRequest = { deleteTarget = null },
-                        title = { Text(stringResource(R.string.modules_delete_title)) },
-                        text = { Text(stringResource(R.string.modules_delete_message, module.name)) },
-                        confirmButton = {
-                            TextButton(
-                                onClick = {
-                                    scope.launch {
-                                        AdbModuleManager.delete(module)
-                                        deleteTarget = null
-                                        reload()
-                                    }
-                                }
-                            ) {
-                                Text(stringResource(R.string.modules_delete))
-                            }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = { deleteTarget = null }) {
-                                Text(stringResource(android.R.string.cancel))
-                            }
-                        }
-                    )
-                }
-
-                pendingCommand?.let { request ->
-                    ReCommandDialog(
-                        request = request,
-                        busy = runningModuleId == request.module.id,
-                        onDismiss = { pendingCommand = null },
-                        onReject = { pendingCommand = null },
-                        onApprove = {
-                            pendingCommand = null
-                            runModuleAction(request.module)
-                        }
-                    )
-                }
             }
-                }
-            }
-                }
         }
     }
 
@@ -588,6 +705,99 @@ private fun AdbModule.actionCommandPreview(): String {
 }
 
 private const val MAX_RECOMMAND_COMMAND_CHARS = 64 * 1024
+
+@Composable
+private fun NightDogModuleCheckBanner(
+    isChecking: Boolean,
+    report: NightDogClient.ModuleCheckReport?,
+    allowBackgroundActions: Boolean,
+    onToggleBackgroundActions: (Boolean) -> Unit,
+    onRunCheck: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 1.dp
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ShizukuIcon(
+                    R.drawable.ic_shield_24,
+                    modifier = Modifier.size(22.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.modules_background_check_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = when {
+                            isChecking -> stringResource(R.string.modules_background_check_running)
+                            report != null -> stringResource(
+                                R.string.modules_background_check_report_summary,
+                                report.healthyModules,
+                                report.totalModules,
+                                report.updatesAvailableCount,
+                                report.issuesCount
+                            )
+                            else -> stringResource(R.string.modules_background_check_never)
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                FilledTonalButton(
+                    onClick = onRunCheck,
+                    enabled = !isChecking
+                ) {
+                    if (isChecking) {
+                        LoadingIndicator(Modifier.size(16.dp))
+                    } else {
+                        ShizukuIcon(
+                            R.drawable.ic_server_restart,
+                            modifier = Modifier
+                                .padding(end = 6.dp)
+                                .size(16.dp)
+                        )
+                        Text(stringResource(R.string.modules_background_check_short))
+                    }
+                }
+            }
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.modules_background_actions),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = stringResource(R.string.modules_background_actions_summary),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                ExpressiveSwitch(
+                    checked = allowBackgroundActions,
+                    onCheckedChange = onToggleBackgroundActions
+                )
+            }
+        }
+    }
+}
 
 @Composable
 private fun EmptyModulesCard(onInstall: () -> Unit) {
@@ -629,11 +839,14 @@ private fun ModuleCard(
     module: AdbModule,
     busy: Boolean,
     trusted: Boolean,
+    health: ModuleHealthStatus?,
+    updateResult: UpdateResult?,
     modifier: Modifier = Modifier,
     onToggle: () -> Unit,
     onRunAction: () -> Unit,
     onRunService: () -> Unit,
     onOpenWebUi: () -> Unit,
+    onUpdate: () -> Unit,
     onDelete: () -> Unit,
     onTrustChange: (Boolean) -> Unit
 ) {
@@ -704,7 +917,12 @@ private fun ModuleCard(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                ModuleChips(module, trusted)
+                ModuleChips(
+                    module = module,
+                    trusted = trusted,
+                    health = health,
+                    updateResult = updateResult
+                )
                 AnimatedVisibility(
                     visible = busy,
                     enter = fadeIn(tween(180)) + expandVertically(tween(180)),
@@ -720,9 +938,11 @@ private fun ModuleCard(
                     ModuleActions(
                         module = module,
                         busy = busy,
+                        hasUpdate = updateResult?.hasUpdate == true,
                         onRunAction = onRunAction,
                         onRunService = onRunService,
                         onOpenWebUi = onOpenWebUi,
+                        onUpdate = onUpdate,
                         onDelete = onDelete,
                         trusted = trusted,
                         showTrustAction = showTrustAction,
@@ -738,7 +958,12 @@ private fun ModuleCard(
 }
 
 @Composable
-private fun ModuleChips(module: AdbModule, trusted: Boolean) {
+private fun ModuleChips(
+    module: AdbModule,
+    trusted: Boolean,
+    health: ModuleHealthStatus?,
+    updateResult: UpdateResult?
+) {
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -750,6 +975,56 @@ private fun ModuleChips(module: AdbModule, trusted: Boolean) {
         AssistChip(onClick = {}, label = { Text(module.formattedSize) })
         if (trusted) {
             AssistChip(onClick = {}, label = { Text(stringResource(R.string.modules_full_trust)) })
+        }
+        if (module.hasService) {
+            val bgAllowed = ModuleSettings.canRunBackground(module) && ModuleSettings.canRunService(module)
+            AssistChip(
+                onClick = {},
+                label = {
+                    Text(
+                        stringResource(
+                            if (bgAllowed) R.string.modules_background_allowed
+                            else R.string.modules_background_blocked
+                        )
+                    )
+                }
+            )
+        }
+        if (health != null) {
+            if (health.healthy) {
+                AssistChip(
+                    onClick = {},
+                    label = { Text(stringResource(R.string.modules_health_ok)) }
+                )
+            } else {
+                AssistChip(
+                    onClick = {},
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        labelColor = MaterialTheme.colorScheme.onErrorContainer
+                    ),
+                    label = {
+                        Text(health.issues.firstOrNull() ?: stringResource(R.string.modules_health_issue))
+                    }
+                )
+            }
+        }
+        if (updateResult?.hasUpdate == true) {
+            AssistChip(
+                onClick = {},
+                colors = AssistChipDefaults.assistChipColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    labelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                ),
+                label = {
+                    Text(
+                        stringResource(
+                            R.string.modules_update_available_chip,
+                            updateResult.latestVersion ?: "new"
+                        )
+                    )
+                }
+            )
         }
     }
 }
@@ -784,11 +1059,13 @@ private fun RunningRow() {
 private fun ModuleActions(
     module: AdbModule,
     busy: Boolean,
+    hasUpdate: Boolean,
     trusted: Boolean,
     showTrustAction: Boolean,
     onRunAction: () -> Unit,
     onRunService: () -> Unit,
     onOpenWebUi: () -> Unit,
+    onUpdate: () -> Unit,
     onDelete: () -> Unit,
     onTrustChange: (Boolean) -> Unit
 ) {
@@ -819,6 +1096,15 @@ private fun ModuleActions(
                 ModuleSettings.canRunBackground(module),
             onClick = onRunService
         )
+        if (hasUpdate) {
+            ModuleButton(
+                label = R.string.modules_update_action,
+                icon = R.drawable.ic_outline_arrow_upward_24,
+                primary = true,
+                enabled = !busy,
+                onClick = onUpdate
+            )
+        }
         if (showTrustAction) {
             ModuleButton(
                 label = if (trusted) R.string.modules_untrust else R.string.modules_trust,

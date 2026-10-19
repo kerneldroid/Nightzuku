@@ -8,6 +8,9 @@ object ModuleSettings {
 
     private const val KEY_ACCESS_MODE = "adb_modules_access_mode"
     private const val KEY_ALLOW_BACKGROUND_ACTIONS = "adb_modules_allow_background_actions"
+    private const val KEY_BACKGROUND_CHECK_ENABLED = "adb_modules_background_check"
+    private const val KEY_LAST_BACKGROUND_CHECK_TIME = "adb_modules_last_background_check_time"
+    private const val KEY_LAST_UPDATE_CHECK_TIME = "adb_modules_last_update_check_time"
     private const val KEY_CUSTOM_ACTION = "adb_modules_custom_action"
     private const val KEY_CUSTOM_SERVICE = "adb_modules_custom_service"
     private const val KEY_CUSTOM_WEB_BRIDGE = "adb_modules_custom_web_bridge"
@@ -20,6 +23,9 @@ object ModuleSettings {
     private const val KEY_UPDATE_FREQUENCY = "adb_modules_update_frequency"
     private const val KEY_INSTALL_MODE = "adb_modules_install_mode"
     private const val KEY_CATALOG_ENABLED = "adb_modules_catalog_enabled"
+
+    private const val DAY_MS = 24L * 60L * 60L * 1000L
+    private const val WEEK_MS = 7L * DAY_MS
 
     enum class AccessMode(
         val value: String,
@@ -73,6 +79,39 @@ object ModuleSettings {
 
     fun setAllowBackgroundActions(value: Boolean) {
         ShizukuSettings.getPreferences().edit().putBoolean(KEY_ALLOW_BACKGROUND_ACTIONS, value).apply()
+    }
+
+    fun isBackgroundCheckEnabled(): Boolean {
+        return ShizukuSettings.getPreferences().getBoolean(KEY_BACKGROUND_CHECK_ENABLED, true)
+    }
+
+    fun setBackgroundCheckEnabled(value: Boolean) {
+        ShizukuSettings.getPreferences().edit().putBoolean(KEY_BACKGROUND_CHECK_ENABLED, value).apply()
+    }
+
+    fun getLastBackgroundCheckTime(): Long {
+        return ShizukuSettings.getPreferences().getLong(KEY_LAST_BACKGROUND_CHECK_TIME, 0L)
+    }
+
+    fun setLastBackgroundCheckTime(timestampMs: Long) {
+        ShizukuSettings.getPreferences().edit().putLong(KEY_LAST_BACKGROUND_CHECK_TIME, timestampMs).apply()
+    }
+
+    fun getLastUpdateCheckTime(): Long {
+        return ShizukuSettings.getPreferences().getLong(KEY_LAST_UPDATE_CHECK_TIME, 0L)
+    }
+
+    fun setLastUpdateCheckTime(timestampMs: Long) {
+        ShizukuSettings.getPreferences().edit().putLong(KEY_LAST_UPDATE_CHECK_TIME, timestampMs).apply()
+    }
+
+    fun isUpdateCheckDue(nowMs: Long = System.currentTimeMillis()): Boolean {
+        val last = getLastUpdateCheckTime()
+        return when (getUpdateFrequency()) {
+            UpdateFrequency.MANUAL -> false
+            UpdateFrequency.DAILY -> last <= 0L || (nowMs - last) >= DAY_MS
+            UpdateFrequency.WEEKLY -> last <= 0L || (nowMs - last) >= WEEK_MS
+        }
     }
 
     fun getCustomPermissions(): CustomPermissions {

@@ -41,6 +41,24 @@ data class AdbModule(
 
     val lastServiceLog: File
         get() = logsDir.resolve("service-last.log")
+
+    val lastActionExitCode: Int?
+        get() = parseExitCode(lastActionLog)
+
+    val lastServiceExitCode: Int?
+        get() = parseExitCode(lastServiceLog)
+
+    private fun parseExitCode(logFile: File): Int? {
+        if (!logFile.isFile) return null
+        return runCatching {
+            logFile.useLines { lines ->
+                lines.firstOrNull { it.startsWith("exitCode=") }
+                    ?.substringAfter("exitCode=")
+                    ?.trim()
+                    ?.toIntOrNull()
+            }
+        }.getOrNull()
+    }
 }
 
 data class ModuleActionResult(
@@ -58,3 +76,11 @@ data class ModuleActionResult(
             if (isBlank()) append("No output.")
         }
 }
+
+data class ModuleHealthStatus(
+    val moduleId: String,
+    val healthy: Boolean,
+    val lastActionExitCode: Int? = null,
+    val lastServiceExitCode: Int? = null,
+    val issues: List<String> = emptyList()
+)

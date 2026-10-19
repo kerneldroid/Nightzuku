@@ -173,9 +173,21 @@ With %1$s, in any terminal app, you can connect to and interact with the shell r
     <string name="modules_permission_web_download">WebUI download()</string>
     <string name="modules_permission_web_download_summary">Allow HTTPS file downloads into the WebUI folder, except index.html.</string>
     <string name="modules_background_actions">Allow background actions</string>
-    <string name="modules_background_actions_summary">Permit installed modules to request background ADB work in full access mode</string>
+    <string name="modules_background_actions_summary">Permit installed modules to run background service.sh scripts</string>
     <string name="modules_background_allowed">Background allowed</string>
     <string name="modules_background_blocked">Background blocked</string>
+    <string name="modules_background_check_title">Background module check (NightDog)</string>
+    <string name="modules_background_check_summary">Verify module integrity, service.sh status, and updates in background</string>
+    <string name="modules_background_check_short">Check modules</string>
+    <string name="modules_background_check_run_now">Run module &amp; server check now</string>
+    <string name="modules_background_check_running">Checking modules and server…</string>
+    <string name="modules_background_check_never">Tap to check module health, background services, and updates</string>
+    <string name="modules_background_check_report_summary">Healthy: %1$d/%2$d • Updates: %3$d • Issues: %4$d</string>
+    <string name="modules_background_check_toast">Checked: %1$d/%2$d healthy, %3$d update(s)</string>
+    <string name="modules_health_ok">Healthy</string>
+    <string name="modules_health_issue">Issue detected</string>
+    <string name="modules_update_available_chip">Update: v%s</string>
+    <string name="modules_update_success">Updated %1$s (%2$s)</string>
     <string name="modules_install_zip">Install ZIP</string>
     <string name="modules_empty_title">No modules installed</string>
     <string name="modules_empty_summary">ADB modules use a KernelSU/Magisk-style ZIP with module.prop, optional banner, WebUI, action.sh and service.sh.</string>
@@ -271,14 +283,18 @@ With %1$s, in any terminal app, you can connect to and interact with the shell r
     <string name="lab_features_summary">Experimental features</string>
     <string name="shizuku_connectors_title">Nightzuku Connectors</string>
     <string name="shizuku_connectors_summary">Allow plugins to activate Nightzuku</string>
+    <string name="nightdog_section_title">NightDog &amp; Module Watchdog</string>
     <string name="nightdog_title">NightDog Watchdog</string>
     <string name="nightdog_summary">Monitor server health and recover from hangs or dead system services</string>
     <string name="nightdog_description">NightDog monitors the server main thread via periodic heartbeats and tracks critical system services (package, activity, user, appops) using Binder linkToDeath. If the server hangs or loses critical bindings, NightDog terminates the stuck process so the starter daemon can restart it automatically.</string>
+    <string name="nightdog_status_active_summary">NightDog active (services: %1$d, rebinds: %2$d)</string>
+    <string name="nightdog_status_inactive_summary">NightDog inactive</string>
     <string name="unsafe_warning_title">Warning</string>
     <string name="unsafe_warning_message">Enabling this feature is UNSAFE. Are you sure?</string>
 
     <!-- Update Settings -->
-    <string name="update_settings_title">Update Settings</string>
+    <string name="update_settings_title">Update &amp; Check Settings</string>
+    <string name="update_settings_entry_summary">Configure background module checks, update frequency, catalog, and GitHub token</string>
     <string name="update_settings_catalog">Module Catalog</string>
     <string name="update_settings_catalog_enabled">Enable catalog</string>
     <string name="update_settings_catalog_enabled_summary">Show discovered modules from GitHub Topics</string>

@@ -3,6 +3,7 @@ package moe.shizuku.manager.module.update
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import moe.shizuku.manager.module.AdbModule
 import moe.shizuku.manager.module.AdbModuleManager
 import moe.shizuku.manager.module.ModuleSettings
 import moe.shizuku.manager.module.discovery.ContentItem
@@ -31,13 +32,65 @@ class ModuleInstaller private constructor() {
     private val rateLimit = RateLimitTracker()
     private val sourceZipBuilder = SourceZipBuilder.getInstance()
 
+    suspend fun updateModule(
+        context: Context,
+        module: AdbModule,
+        updateResult: UpdateResult? = null
+    ): Result<AdbModule> = withContext(Dispatchers.IO) {
+        try {
+            cleanupOldZips(context)
+            val directUrl = updateResult?.downloadUrl?.takeIf { it.isNotBlank() }
+            if (directUrl != null) {
+                val zipUri = downloadDirectZip(context, module.id, directUrl)
+                if (zipUri != null) {
+                    val updated = AdbModuleManager.install(context, zipUri)
+                    return@withContext Result.success(updated)
+                }
+            }
+
+            val resolved = UpdateChecker.getInstance().resolveOwnerAndRepo(module)
+                ?: return@withContext Result.failure(
+                    IllegalStateException("Не удалось определить репозиторий GitHub для модуля ${module.id}")
+                )
+            val (owner, repo, subPath) = resolved
+            installModule(context, module.id, owner, repo, subPath)
+        } catch (e: Exception) {
+            Log.e(TAG, "Update failed for ${module.id}", e)
+            Result.failure(e)
+        }
+    }
+
+    private fun downloadDirectZip(context: Context, moduleId: String, downloadUrl: String): Uri? {
+        val cacheDir = File(context.cacheDir, "module_zips").apply { mkdirs() }
+        val zipFile = File(cacheDir, "$moduleId-update.zip")
+        return try {
+            val request = Request.Builder()
+                .url(downloadUrl)
+                .header("Accept", "application/octet-stream")
+                .build()
+            client.newCall(request).execute().use { resp ->
+                if (!resp.isSuccessful) return null
+                resp.body?.byteStream()?.use { input ->
+                    zipFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                if (zipFile.length() > 0) Uri.fromFile(zipFile) else null
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Direct update ZIP download failed: $downloadUrl", e)
+            zipFile.delete()
+            null
+        }
+    }
+
     suspend fun installModule(
         context: Context,
         moduleId: String,
         owner: String,
         repo: String,
         subPath: String? = null
-    ): Result<moe.shizuku.manager.module.AdbModule> = withContext(Dispatchers.IO) {
+    ): Result<AdbModule> = withContext(Dispatchers.IO) {
         try {
             cleanupOldZips(context)
 

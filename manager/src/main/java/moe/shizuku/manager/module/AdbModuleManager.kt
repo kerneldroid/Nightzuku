@@ -61,6 +61,64 @@ object AdbModuleManager {
             .orEmpty()
     }
 
+    suspend fun inspectModuleHealth(module: AdbModule): ModuleHealthStatus = withContext(Dispatchers.IO) {
+        val issues = mutableListOf<String>()
+        val dir = module.directory
+
+        if (!dir.isDirectory) {
+            issues += "Каталог модуля отсутствует"
+        } else {
+            val propFile = dir.resolve("module.prop")
+            if (!propFile.isFile || !propFile.canRead()) {
+                issues += "Повреждён или недоступен module.prop"
+            }
+            markScriptsExecutable(dir)
+        }
+
+        module.actionScript?.let { script ->
+            if (!script.isFile) {
+                issues += "Отсутствует action.sh"
+            } else if (script.length() == 0L) {
+                issues += "Пустой скрипт action.sh"
+            } else if (script.length() > MAX_SCRIPT_BYTES) {
+                issues += "Слишком большой action.sh (${script.length() / 1024} КБ)"
+            }
+        }
+
+        module.serviceScript?.let { script ->
+            if (!script.isFile) {
+                issues += "Отсутствует service.sh"
+            } else if (script.length() == 0L) {
+                issues += "Пустой скрипт service.sh"
+            } else if (script.length() > MAX_SCRIPT_BYTES) {
+                issues += "Слишком большой service.sh (${script.length() / 1024} КБ)"
+            }
+        }
+
+        module.webRoot?.let { webDir ->
+            val indexHtml = webDir.resolve("index.html").takeIf { it.isFile }
+                ?: webDir.resolve("index.htm").takeIf { it.isFile }
+            if (indexHtml == null || indexHtml.length() == 0L) {
+                issues += "Повреждён WebUI (отсутствует index.html)"
+            }
+        }
+
+        val lastActionExit = module.lastActionExitCode
+        val lastServiceExit = module.lastServiceExitCode
+
+        if (lastServiceExit != null && lastServiceExit != 0) {
+            issues += "service.sh завершился с кодом $lastServiceExit"
+        }
+
+        ModuleHealthStatus(
+            moduleId = module.id,
+            healthy = issues.isEmpty(),
+            lastActionExitCode = lastActionExit,
+            lastServiceExitCode = lastServiceExit,
+            issues = issues
+        )
+    }
+
     suspend fun install(context: Context, uri: Uri): AdbModule = withContext(Dispatchers.IO) {
         cleanupStagingDirs(context)
         val temp = File.createTempFile("module-", ".zip", context.cacheDir)
@@ -174,18 +232,20 @@ object AdbModuleManager {
         runModuleScript(module, script, module.lastServiceLog)
     }
 
-    suspend fun runEnabledServicesIfAllowed(context: Context): List<Pair<AdbModule, ModuleActionResult>> =
-        withContext(Dispatchers.IO) {
-            if (servicesStartedForBinder) return@withContext emptyList()
-            if (!Shizuku.pingBinder()) return@withContext emptyList()
+    suspend fun runEnabledServicesIfAllowed(
+        context: Context,
+        force: Boolean = false
+    ): List<Pair<AdbModule, ModuleActionResult>> = withContext(Dispatchers.IO) {
+        if (!force && servicesStartedForBinder) return@withContext emptyList()
+        if (!Shizuku.pingBinder()) return@withContext emptyList()
 
-            servicesStartedForBinder = true
-            listModules(context)
-                .filter { it.enabled && it.hasService && ModuleSettings.canRunService(it) && ModuleSettings.canRunBackground(it) }
-                .mapNotNull { module ->
-                    runCatching { module to runService(module) }.getOrNull()
-                }
-        }
+        servicesStartedForBinder = true
+        listModules(context)
+            .filter { it.enabled && it.hasService && ModuleSettings.canRunService(it) && ModuleSettings.canRunBackground(it) }
+            .mapNotNull { module ->
+                runCatching { module to runService(module) }.getOrNull()
+            }
+    }
 
     fun resetServiceRunGuard() {
         servicesStartedForBinder = false

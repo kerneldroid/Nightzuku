@@ -16,20 +16,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.tv.material3.ClickableSurfaceDefaults as TvClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme as TvMaterialTheme
@@ -37,14 +36,20 @@ import androidx.tv.material3.Surface as TvSurface
 import androidx.tv.material3.SurfaceDefaults as TvSurfaceDefaults
 import androidx.tv.material3.Text as TvText
 import moe.shizuku.manager.R
+import moe.shizuku.manager.module.update.UpdateResult
+import moe.shizuku.manager.nightdog.NightDogClient
 import moe.shizuku.manager.ui.compose.ShizukuIcon
 import moe.shizuku.manager.ui.compose.TvMenuButton
 
 @Composable
 fun TvModulesScreen(
     modules: List<AdbModule>,
+    isCheckingModules: Boolean = false,
+    checkReport: NightDogClient.ModuleCheckReport? = null,
     onNavigateUp: () -> Unit,
     onInstallZip: () -> Unit,
+    onCheckModules: () -> Unit = {},
+    onUpdateModule: (AdbModule, UpdateResult?) -> Unit = { _, _ -> },
     onToggle: (AdbModule) -> Unit,
     onRunAction: (AdbModule) -> Unit,
     onRunService: (AdbModule) -> Unit,
@@ -59,15 +64,34 @@ fun TvModulesScreen(
         Column(
             modifier = Modifier
                 .padding(32.dp)
-                .size(width = 300.dp, height = 500.dp),
+                .size(width = 300.dp, height = 560.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             TvText(
                 text = stringResource(R.string.modules_title),
                 style = TvMaterialTheme.typography.headlineMedium,
                 color = TvMaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(bottom = 24.dp)
+                modifier = Modifier.padding(bottom = 8.dp)
             )
+
+            if (checkReport != null || isCheckingModules) {
+                TvText(
+                    text = if (isCheckingModules) {
+                        stringResource(R.string.modules_background_check_running)
+                    } else {
+                        stringResource(
+                            R.string.modules_background_check_report_summary,
+                            checkReport!!.healthyModules,
+                            checkReport.totalModules,
+                            checkReport.updatesAvailableCount,
+                            checkReport.issuesCount
+                        )
+                    },
+                    style = TvMaterialTheme.typography.bodySmall,
+                    color = TvMaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+            }
 
             TvMenuButton(
                 icon = R.drawable.ic_arrow_back_24,
@@ -79,6 +103,12 @@ fun TvModulesScreen(
                 icon = R.drawable.ic_outline_arrow_upward_24,
                 label = R.string.modules_install_zip,
                 onClick = onInstallZip
+            )
+
+            TvMenuButton(
+                icon = R.drawable.ic_server_restart,
+                label = R.string.modules_background_check_short,
+                onClick = onCheckModules
             )
 
             TvMenuButton(
@@ -116,12 +146,17 @@ fun TvModulesScreen(
             ) {
                 items(modules) { module ->
                     val isTrusted = ModuleSettings.isModuleTrusted(module.id)
+                    val health = checkReport?.healthByModule?.get(module.id)
+                    val updateRes = checkReport?.updatesByModule?.get(module.id)
                     TvModuleCard(
                         module = module,
                         isTrusted = isTrusted,
+                        health = health,
+                        updateResult = updateRes,
                         onToggle = { onToggle(module) },
                         onRunAction = { onRunAction(module) },
                         onRunService = { onRunService(module) },
+                        onUpdate = { onUpdateModule(module, updateRes) },
                         onDelete = { onDelete(module) },
                         onTrustChange = { onTrustChange(module, it) },
                         onOpenWebUi = { onOpenWebUi(module) }
@@ -136,9 +171,12 @@ fun TvModulesScreen(
 private fun TvModuleCard(
     module: AdbModule,
     isTrusted: Boolean,
+    health: ModuleHealthStatus?,
+    updateResult: UpdateResult?,
     onToggle: () -> Unit,
     onRunAction: () -> Unit,
     onRunService: () -> Unit,
+    onUpdate: () -> Unit,
     onDelete: () -> Unit,
     onTrustChange: (Boolean) -> Unit,
     onOpenWebUi: () -> Unit
@@ -183,6 +221,22 @@ private fun TvModuleCard(
                     if (isTrusted) {
                         TvText(
                             text = stringResource(R.string.tv_status_trusted),
+                            color = TvMaterialTheme.colorScheme.primary,
+                            style = TvMaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                    if (health != null && !health.healthy) {
+                        TvText(
+                            text = health.issues.firstOrNull() ?: stringResource(R.string.modules_health_issue),
+                            color = TvMaterialTheme.colorScheme.error,
+                            style = TvMaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                    if (updateResult?.hasUpdate == true) {
+                        TvText(
+                            text = stringResource(R.string.modules_update_available_chip, updateResult.latestVersion ?: "new"),
                             color = TvMaterialTheme.colorScheme.primary,
                             style = TvMaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.ExtraBold
@@ -237,6 +291,13 @@ private fun TvModuleCard(
                         label = R.string.modules_open_webui,
                         icon = R.drawable.ic_outline_open_in_new_24,
                         onClick = onOpenWebUi
+                    )
+                }
+                if (updateResult?.hasUpdate == true) {
+                    TvSmallButton(
+                        label = R.string.modules_update_action,
+                        icon = R.drawable.ic_outline_arrow_upward_24,
+                        onClick = onUpdate
                     )
                 }
 

@@ -609,6 +609,25 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             replyParcel.writeNoException()
             replyParcel.writeInt(if (configManager.getNightDogEnabled()) 1 else 0)
             return true
+        } else if (code == ServerConstants.BINDER_TRANSACTION_getNightDogStatus) {
+            val replyParcel = reply!!
+            if (!checkCallerManagerPermission("getNightDogStatus", Binder.getCallingUid(), Binder.getCallingPid())) {
+                replyParcel.writeException(SecurityException("Permission denied"))
+                return true
+            }
+            data.enforceInterface(ShizukuApiConstants.BINDER_DESCRIPTOR)
+            val statusBundle = Bundle().apply {
+                putBoolean("enabled", configManager.getNightDogEnabled())
+                putBoolean("started", NightDog.isStarted())
+                putInt("boundServicesCount", NightDog.getBoundServiceCount())
+                putInt("totalRebinds", NightDog.getTotalRebinds())
+                putLong("beatCount", NightDog.getBeatCount())
+                putLong("uptimeMs", NightDog.getUptimeMs())
+                putStringArrayList("boundServices", ArrayList(NightDog.getBoundServiceNames()))
+            }
+            replyParcel.writeNoException()
+            replyParcel.writeBundle(statusBundle)
+            return true
         } else if (code == ServerConstants.BINDER_TRANSACTION_claimUserServiceLaunch) {
             val replyParcel = reply!!
             if (Binder.getCallingUid() != OsUtils.getUid()) {
@@ -770,11 +789,6 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         @JvmStatic
         fun sendBinderToManager(binder: Binder, userId: Int) {
             sendBinderToUserApp(ClientRouting.Wire.SHIZUKU, binder, ServerConstants.MANAGER_APPLICATION_ID, userId, true)
-        }
-
-        @Deprecated("typo, use sendBinderToManager")
-        fun sendBinderToManger(binder: Binder, userId: Int) {
-            sendBinderToManager(binder, userId)
         }
 
         @JvmStatic

@@ -42,6 +42,10 @@ fun TvSettingsScreen(
     onUseSystemColorChange: (Boolean) -> Unit,
     moduleAccessMode: ModuleSettings.AccessMode,
     onModuleAccessModeClick: () -> Unit,
+    allowBackgroundActions: Boolean,
+    onAllowBackgroundActionsChange: (Boolean) -> Unit,
+    backgroundCheckEnabled: Boolean,
+    onBackgroundCheckEnabledChange: (Boolean) -> Unit,
     recommandWebUi: Boolean,
     onRecommandWebUiChange: (Boolean) -> Unit,
     recommandAction: Boolean,
@@ -134,6 +138,22 @@ fun TvSettingsScreen(
                     title = stringResource(R.string.modules_access_mode),
                     summary = stringResource(moduleAccessMode.labelRes),
                     onClick = onModuleAccessModeClick
+                )
+            }
+            item {
+                TvSettingsToggleRow(
+                    title = stringResource(R.string.modules_background_actions),
+                    summary = stringResource(R.string.modules_background_actions_summary),
+                    checked = allowBackgroundActions,
+                    onCheckedChange = onAllowBackgroundActionsChange
+                )
+            }
+            item {
+                TvSettingsToggleRow(
+                    title = stringResource(R.string.modules_background_check_title),
+                    summary = stringResource(R.string.modules_background_check_summary),
+                    checked = backgroundCheckEnabled,
+                    onCheckedChange = onBackgroundCheckEnabledChange
                 )
             }
             item {

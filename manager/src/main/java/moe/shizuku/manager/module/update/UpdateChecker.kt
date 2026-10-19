@@ -66,7 +66,7 @@ class UpdateChecker private constructor() {
             }
     }
 
-    private fun resolveOwnerAndRepo(module: AdbModule): Triple<String, String, String?>? {
+    fun resolveOwnerAndRepo(module: AdbModule): Triple<String, String, String?>? {
         val sourceProps = readSourceProp(module)
         val sourceOwner = sourceProps["owner"]?.takeIf { it.isNotBlank() }
         val sourceRepo = sourceProps["repo"]?.takeIf { it.isNotBlank() }

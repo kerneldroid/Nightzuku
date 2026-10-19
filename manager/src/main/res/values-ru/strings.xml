@@ -173,6 +173,18 @@
     <string name="modules_background_actions_summary">Позволить установленным модулям запускать фоновые сервисы (service.sh)</string>
     <string name="modules_background_allowed">Фон разрешён</string>
     <string name="modules_background_blocked">Фон заблокирован</string>
+    <string name="modules_background_check_title">Фоновая проверка модулей (NightDog)</string>
+    <string name="modules_background_check_summary">Проверка целостности модулей, статуса service.sh и обновлений в фоне</string>
+    <string name="modules_background_check_short">Проверить</string>
+    <string name="modules_background_check_run_now">Проверить модули и сервер сейчас</string>
+    <string name="modules_background_check_running">Проверка модулей и сервера…</string>
+    <string name="modules_background_check_never">Нажмите для проверки целостности модулей, фоновых сервисов и обновлений</string>
+    <string name="modules_background_check_report_summary">Исправно: %1$d/%2$d • Обновлений: %3$d • Проблем: %4$d</string>
+    <string name="modules_background_check_toast">Проверено: исправно %1$d из %2$d, обновлений: %3$d</string>
+    <string name="modules_health_ok">Исправен</string>
+    <string name="modules_health_issue">Ошибка модуля</string>
+    <string name="modules_update_available_chip">Обновление: v%s</string>
+    <string name="modules_update_success">Обновлён %1$s (%2$s)</string>
     <string name="modules_install_zip">Установить ZIP</string>
     <string name="modules_empty_title">Модули не установлены</string>
     <string name="modules_empty_summary">ADB-модули используют ZIP в стиле KernelSU/Magisk с module.prop, опциональным баннером, WebUI, action.sh и service.sh.</string>
@@ -265,14 +277,18 @@
     <string name="lab_features_summary">Экспериментальные возможности</string>
     <string name="shizuku_connectors_title">Подключатели Nightzuku</string>
     <string name="shizuku_connectors_summary">Разрешить плагинам активировать Nightzuku</string>
+    <string name="nightdog_section_title">NightDog и фоновая проверка модулей</string>
     <string name="nightdog_title">Сторожевой таймер NightDog</string>
     <string name="nightdog_summary">Мониторинг здоровья сервера и автовосстановление при зависаниях</string>
     <string name="nightdog_description">NightDog отслеживает отзывчивость главного потока сервера через периодические сигналы (heartbeat) и состояние критических системных служб (package, activity, user, appops) через Binder linkToDeath. При зависании сервера или потере служб NightDog перезапускает процесс через загрузчик.</string>
+    <string name="nightdog_status_active_summary">NightDog активен (служб: %1$d, перепривязок: %2$d)</string>
+    <string name="nightdog_status_inactive_summary">NightDog неактивен</string>
     <string name="unsafe_warning_title">Внимание</string>
     <string name="unsafe_warning_message">Включение этой функции НЕБЕЗОПАСНО. Вы уверены?</string>
 
     <!-- Update Settings -->
-    <string name="update_settings_title">Настройки обновлений</string>
+    <string name="update_settings_title">Обновления и фоновая проверка</string>
+    <string name="update_settings_entry_summary">Фоновая проверка модулей, частота обновлений, каталог и токен GitHub</string>
     <string name="update_settings_catalog">Каталог модулей</string>
     <string name="update_settings_catalog_enabled">Включить каталог</string>
     <string name="update_settings_catalog_enabled_summary">Показывать обнаруженные модули из GitHub Topics</string>
