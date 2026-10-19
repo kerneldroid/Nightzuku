@@ -7,7 +7,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.view.Menu
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -134,18 +133,18 @@ abstract class HomeActivity : AppActivity() {
                                 startRoot()
                             }
                         },
-                        onStartWirelessAdb = { 
-                            runWithLocalNetworkAccess { 
+                        onStartWirelessAdb = {
+                            runWithLocalNetworkAccess {
                                 startWirelessAdb(
                                     onShowDiscovery = { showAdbDiscoveryDialog = true },
                                     onShowNotEnabled = { showWadbNotEnabledDialog = true }
-                                ) 
-                            } 
+                                )
+                            }
                         },
-                        onPairWirelessAdb = { 
-                            runWithLocalNetworkAccess { 
-                                pairWirelessAdb(onShowPair = { showAdbPairDialog = true }) 
-                            } 
+                        onPairWirelessAdb = {
+                            runWithLocalNetworkAccess {
+                                pairWirelessAdb(onShowPair = { showAdbPairDialog = true })
+                            }
                         },
                         onOpenWirelessGuide = { CustomTabsHelper.launchUrlOrCopy(this@HomeActivity, Helps.ADB_ANDROID11.get()) },
                         onShowAdbCommand = { showAdbCommandDialog = true },
@@ -162,7 +161,7 @@ abstract class HomeActivity : AppActivity() {
                         HomeAboutDialog(
                             onDismiss = { showAboutDialog = false },
                             onSourceCode = {
-                                CustomTabsHelper.launchUrlOrCopy(this@HomeActivity, "https://github.com/RikkaApps/Shizuku")
+                                CustomTabsHelper.launchUrlOrCopy(this@HomeActivity, "https://github.com/kerneldroid/Nightzuku")
                             }
                         )
                     }
@@ -278,17 +277,6 @@ abstract class HomeActivity : AppActivity() {
         Shizuku.removeBinderDeadListener(binderDeadListener)
     }
 
-    override fun onPrepareOptionsMenu(menu: Menu): Boolean {
-        menu.clear()
-        return false
-    }
-
-    private fun showAboutDialog() {
-    }
-
-    private fun showStopDialog() {
-    }
-
     private fun startRoot() {
         startActivity(
             Intent(this, StarterActivity::class.java).apply {
@@ -331,9 +319,6 @@ abstract class HomeActivity : AppActivity() {
         }
     }
 
-    private fun showAdbCommandDialog() {
-    }
-
     private fun runWithLocalNetworkAccess(action: () -> Unit) {
         val state = buildLocalNetworkPermissionState()
         if (!state.required || state.granted) {
@@ -367,7 +352,7 @@ abstract class HomeActivity : AppActivity() {
             permission = permission,
             required = permission != null,
             granted = permission == null ||
-                    ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+                ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
         )
     }
 

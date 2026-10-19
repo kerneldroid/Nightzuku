@@ -3,7 +3,8 @@ package rikka.shizuku.server
 import android.os.FileObserver
 import android.util.Log
 import java.io.File
-import java.util.*
+import java.util.Collections
+import java.util.HashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
 interface ApkChangedListener {
@@ -16,13 +17,12 @@ object ApkChangedObservers {
 
     @JvmStatic
     fun start(apkPath: String, listener: ApkChangedListener) {
-
-
-
-        val path = File(apkPath).parent!!
-        val observer = observers.getOrPut(path) {
-            ApkChangedObserver(path).apply {
-                startWatching()
+        val path = File(apkPath).parent ?: return
+        val observer = synchronized(observers) {
+            observers.getOrPut(path) {
+                ApkChangedObserver(path).apply {
+                    startWatching()
+                }
             }
         }
         observer.addListener(listener)
@@ -30,30 +30,36 @@ object ApkChangedObservers {
 
     @JvmStatic
     fun stop(listener: ApkChangedListener) {
-        val pathToRemove = mutableListOf<String>()
+        val toStop = mutableListOf<ApkChangedObserver>()
 
         synchronized(observers) {
-            for ((path, observer) in observers) {
+            val iterator = observers.entries.iterator()
+            while (iterator.hasNext()) {
+                val entry = iterator.next()
+                val observer = entry.value
                 observer.removeListener(listener)
-
                 if (!observer.hasListeners()) {
-                    pathToRemove.add(path)
+                    toStop.add(observer)
+                    iterator.remove()
                 }
             }
         }
 
-        for (path in pathToRemove) {
-            observers.remove(path)?.stopWatching()
+        for (observer in toStop) {
+            observer.stopWatching()
         }
     }
 }
 
-class ApkChangedObserver(private val path: String) : FileObserver(path, DELETE) {
+class ApkChangedObserver(private val path: String) : FileObserver(
+    path,
+    DELETE or DELETE_SELF or MOVE_SELF or MOVED_FROM
+) {
 
     private val listeners = CopyOnWriteArrayList<ApkChangedListener>()
 
     fun addListener(listener: ApkChangedListener): Boolean {
-        return listeners.add(listener)
+        return listeners.addIfAbsent(listener)
     }
 
     fun removeListener(listener: ApkChangedListener): Boolean {
@@ -67,11 +73,14 @@ class ApkChangedObserver(private val path: String) : FileObserver(path, DELETE) 
     override fun onEvent(event: Int, path: String?) {
         Log.d("ShizukuServer", "onEvent: ${eventToString(event)} $path")
 
-        if ((event and 0x00008000 /* IN_IGNORED */) != 0 || path == null) {
+        if ((event and 0x00008000 /* IN_IGNORED */) != 0) {
             return
         }
 
-        if (path == "base.apk") {
+        val dirRemoved = (event and (DELETE_SELF or MOVE_SELF)) != 0
+        val baseApkRemoved = path == "base.apk" && (event and (DELETE or MOVED_FROM)) != 0
+
+        if (dirRemoved || baseApkRemoved) {
             stopWatching()
             ArrayList(listeners).forEach { it.onApkChanged() }
         }

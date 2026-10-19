@@ -3,8 +3,8 @@ package moe.shizuku.manager.module
 import android.annotation.SuppressLint
 import android.os.Bundle
 import android.webkit.CookieManager
-import android.webkit.WebSettings
 import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.setContent
@@ -12,28 +12,45 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.wear.compose.material3.Button as WearButton
+import androidx.wear.compose.material3.FilledTonalButton as WearFilledTonalButton
+import androidx.wear.compose.material3.MaterialTheme as WearMaterialTheme
+import androidx.wear.compose.material3.Text as WearText
+import moe.shizuku.manager.R
 import moe.shizuku.manager.app.AppActivity
 import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
 import moe.shizuku.manager.ui.compose.ShizukuScaffold
-import androidx.compose.ui.res.stringResource
-import androidx.wear.compose.material3.MaterialTheme as WearMaterialTheme
-import androidx.wear.compose.material3.Text as WearText
-import androidx.wear.compose.material3.Button as WearButton
-import androidx.wear.compose.material3.FilledTonalButton as WearFilledTonalButton
-import moe.shizuku.manager.R
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 class ModuleWebViewActivity : AppActivity() {
+
+    private var activeWebView: WebView? = null
+
+    override fun onDestroy() {
+        activeWebView?.let { webView ->
+            try {
+                webView.stopLoading()
+                webView.removeJavascriptInterface("Shizuku")
+                webView.removeJavascriptInterface("Nightzuku")
+                webView.destroy()
+            } catch (_: Throwable) {
+            }
+        }
+        activeWebView = null
+        super.onDestroy()
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -60,15 +77,26 @@ class ModuleWebViewActivity : AppActivity() {
                 (module.declaresShellBridge || trusted) &&
                 (!webNetworkAllowed || trusted)
 
+            DisposableEffect(Unit) {
+                onDispose {
+                    pendingDecision?.invoke(false)
+                    pendingDecision = null
+                }
+            }
+
             val isWatch = moe.shizuku.manager.utils.EnvironmentUtils.isWatch(this@ModuleWebViewActivity)
             if (isWatch) {
                 moe.shizuku.manager.ui.compose.WearShizukuTheme {
                     var webViewCrashError by remember { mutableStateOf<String?>(null) }
 
-                    androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize().background(WearMaterialTheme.colorScheme.background)) {
+                    androidx.compose.foundation.layout.Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(WearMaterialTheme.colorScheme.background)
+                    ) {
                         if (webViewCrashError == null) {
                             AndroidView(
-                                factory = { context ->
+                                factory = {
                                     val wrapper = android.widget.FrameLayout(this@ModuleWebViewActivity)
                                     val webView = try {
                                         WebView(this@ModuleWebViewActivity)
@@ -78,57 +106,30 @@ class ModuleWebViewActivity : AppActivity() {
                                         }
                                         return@AndroidView wrapper
                                     }
-                                    wrapper.addView(webView, android.widget.FrameLayout.LayoutParams(
-                                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                                        android.view.ViewGroup.LayoutParams.MATCH_PARENT
-                                    ))
-                                    webView.apply {
-                                        settings.javaScriptEnabled = true
-                                        settings.domStorageEnabled = true
-                                        settings.allowFileAccess = true
-                                        settings.allowContentAccess = false
-                                        @Suppress("DEPRECATION")
-                                        settings.allowFileAccessFromFileURLs = trusted
-                                        @Suppress("DEPRECATION")
-                                        settings.allowUniversalAccessFromFileURLs = trusted
-                                        settings.blockNetworkLoads = !webNetworkAllowed
-                                        settings.cacheMode = WebSettings.LOAD_DEFAULT
-                                        settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-
-                                        settings.useWideViewPort = true
-                                        settings.loadWithOverviewMode = true
-                                        settings.textZoom = 85
-
-                                        CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
-                                        webViewClient = object : LocalModuleWebViewClient(module, webNetworkAllowed) {
-                                            override fun onPageFinished(view: WebView?, url: String?) {
-                                                super.onPageFinished(view, url)
-                                                view?.loadUrl("javascript:(function() { " +
-                                                    "var meta = document.createElement('meta'); " +
-                                                    "meta.name = 'viewport'; " +
-                                                    "meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'; " +
-                                                    "document.getElementsByTagName('head')[0].appendChild(meta); " +
-                                                    "})()")
-                                            }
+                                    activeWebView = webView
+                                    wrapper.addView(
+                                        webView,
+                                        android.widget.FrameLayout.LayoutParams(
+                                            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                            android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                                        )
+                                    )
+                                    configureModuleWebView(
+                                        webView = webView,
+                                        module = module,
+                                        index = index,
+                                        trusted = trusted,
+                                        webNetworkAllowed = webNetworkAllowed,
+                                        exposeBridge = exposeBridge,
+                                        isWatch = true,
+                                        onPendingCommand = { req, cb ->
+                                            pendingCommand = req
+                                            pendingDecision = cb
                                         }
-                                        if (exposeBridge) {
-                                            addJavascriptInterface(
-                                                ModuleJsBridge(
-                                                    module,
-                                                    commandReviewer = { request ->
-                                                        confirmCommandOnUiThread(request) { pendingRequest, callback ->
-                                                            pendingCommand = pendingRequest
-                                                            pendingDecision = callback
-                                                        }
-                                                    }
-                                                ),
-                                                "Shizuku"
-                                            )
-                                        }
-                                        loadUrl(index.toURI().toString())
-                                    }
+                                    )
+                                    wrapper
                                 },
-                                modifier = androidx.compose.ui.Modifier.fillMaxSize()
+                                modifier = Modifier.fillMaxSize()
                             )
                         }
                     }
@@ -140,13 +141,24 @@ class ModuleWebViewActivity : AppActivity() {
                             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
                         ) {
                             moe.shizuku.manager.ui.compose.WearShizukuTheme {
-                                androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize().background(WearMaterialTheme.colorScheme.background)) {
+                                androidx.compose.foundation.layout.Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(WearMaterialTheme.colorScheme.background)
+                                ) {
                                     moe.shizuku.manager.ui.compose.WearScreenScaffold { scrollState ->
                                         androidx.wear.compose.foundation.lazy.TransformingLazyColumn(
                                             state = scrollState,
-                                            contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 32.dp, bottom = 32.dp, start = 8.dp, end = 8.dp),
+                                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                                top = 32.dp,
+                                                bottom = 32.dp,
+                                                start = 8.dp,
+                                                end = 8.dp
+                                            ),
                                             verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
-                                            modifier = Modifier.fillMaxSize().background(WearMaterialTheme.colorScheme.background)
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(WearMaterialTheme.colorScheme.background)
                                         ) {
                                             item {
                                                 WearText(
@@ -194,15 +206,22 @@ class ModuleWebViewActivity : AppActivity() {
                             moe.shizuku.manager.ui.compose.WearScreenScaffold { scrollState ->
                                 androidx.wear.compose.foundation.lazy.TransformingLazyColumn(
                                     state = scrollState,
-                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 32.dp, bottom = 32.dp, start = 8.dp, end = 8.dp),
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                        top = 32.dp,
+                                        bottom = 32.dp,
+                                        start = 8.dp,
+                                        end = 8.dp
+                                    ),
                                     verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
-                                    modifier = Modifier.fillMaxSize().background(WearMaterialTheme.colorScheme.background)
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(WearMaterialTheme.colorScheme.background)
                                 ) {
                                     item {
                                         WearText(
                                             text = warningTitle,
                                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                            modifier = androidx.compose.ui.Modifier.fillMaxWidth(),
+                                            modifier = Modifier.fillMaxWidth(),
                                             color = WearMaterialTheme.colorScheme.primary,
                                             style = WearMaterialTheme.typography.titleMedium
                                         )
@@ -211,7 +230,7 @@ class ModuleWebViewActivity : AppActivity() {
                                         WearText(
                                             text = request.command,
                                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                            modifier = androidx.compose.ui.Modifier.fillMaxWidth()
+                                            modifier = Modifier.fillMaxWidth()
                                         )
                                     }
                                     item {
@@ -221,7 +240,7 @@ class ModuleWebViewActivity : AppActivity() {
                                                 pendingCommand = null
                                                 pendingDecision = null
                                             },
-                                            modifier = androidx.compose.ui.Modifier.fillMaxWidth()
+                                            modifier = Modifier.fillMaxWidth()
                                         ) {
                                             WearText(okText)
                                         }
@@ -233,7 +252,7 @@ class ModuleWebViewActivity : AppActivity() {
                                                 pendingCommand = null
                                                 pendingDecision = null
                                             },
-                                            modifier = androidx.compose.ui.Modifier.fillMaxWidth()
+                                            modifier = Modifier.fillMaxWidth()
                                         ) {
                                             WearText(cancelText)
                                         }
@@ -251,54 +270,24 @@ class ModuleWebViewActivity : AppActivity() {
                     ) { padding ->
                         AndroidView(
                             factory = { context ->
-                                WebView(context).apply {
-                                    settings.javaScriptEnabled = true
-                                    settings.domStorageEnabled = true
-                                    settings.allowFileAccess = true
-                                    settings.allowContentAccess = false
-                                    @Suppress("DEPRECATION")
-                                    settings.allowFileAccessFromFileURLs = trusted
-                                    @Suppress("DEPRECATION")
-                                    settings.allowUniversalAccessFromFileURLs = trusted
-                                    settings.blockNetworkLoads = !webNetworkAllowed
-                                    settings.cacheMode = WebSettings.LOAD_DEFAULT
-                                    settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-
-                                    settings.useWideViewPort = true
-                                    settings.loadWithOverviewMode = true
-                                    if (isWatch) settings.textZoom = 85
-
-                                    CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
-                                    webViewClient = object : LocalModuleWebViewClient(module, webNetworkAllowed) {
-                                        override fun onPageFinished(view: WebView?, url: String?) {
-                                            super.onPageFinished(view, url)
-                                            view?.loadUrl("javascript:(function() { " +
-                                                "var meta = document.createElement('meta'); " +
-                                                "meta.name = 'viewport'; " +
-                                                "meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'; " +
-                                                "document.getElementsByTagName('head')[0].appendChild(meta); " +
-                                                "})()")
+                                WebView(context).also { webView ->
+                                    activeWebView = webView
+                                    configureModuleWebView(
+                                        webView = webView,
+                                        module = module,
+                                        index = index,
+                                        trusted = trusted,
+                                        webNetworkAllowed = webNetworkAllowed,
+                                        exposeBridge = exposeBridge,
+                                        isWatch = false,
+                                        onPendingCommand = { req, cb ->
+                                            pendingCommand = req
+                                            pendingDecision = cb
                                         }
-                                    }
-                                    if (exposeBridge) {
-                                        addJavascriptInterface(
-                                            ModuleJsBridge(
-                                                module,
-                                                commandReviewer = { request ->
-                                                    confirmCommandOnUiThread(request) { pendingRequest, callback ->
-                                                        pendingCommand = pendingRequest
-                                                        pendingDecision = callback
-                                                    }
-                                                }
-                                            ),
-                                            "Shizuku"
-                                        )
-                                    }
-                                    loadUrl(index.toURI().toString())
+                                    )
                                 }
                             },
-                            modifier = androidx.compose.ui.Modifier
-                                .padding(padding)
+                            modifier = Modifier.padding(padding)
                         )
                     }
 
@@ -324,6 +313,63 @@ class ModuleWebViewActivity : AppActivity() {
                     }
                 }
             }
+        }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun configureModuleWebView(
+        webView: WebView,
+        module: AdbModule,
+        index: File,
+        trusted: Boolean,
+        webNetworkAllowed: Boolean,
+        exposeBridge: Boolean,
+        isWatch: Boolean,
+        onPendingCommand: (ModuleCommandRequest, (Boolean) -> Unit) -> Unit
+    ) {
+        webView.apply {
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            settings.allowFileAccess = true
+            settings.allowContentAccess = false
+            @Suppress("DEPRECATION")
+            settings.allowFileAccessFromFileURLs = trusted
+            @Suppress("DEPRECATION")
+            settings.allowUniversalAccessFromFileURLs = trusted
+            settings.blockNetworkLoads = !webNetworkAllowed
+            settings.cacheMode = WebSettings.LOAD_DEFAULT
+            settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+
+            settings.useWideViewPort = true
+            settings.loadWithOverviewMode = true
+            if (isWatch) settings.textZoom = 85
+
+            CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
+            webViewClient = object : LocalModuleWebViewClient(module, webNetworkAllowed) {
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    super.onPageFinished(view, url)
+                    view?.loadUrl(
+                        "javascript:(function() { " +
+                            "if (!document.querySelector('meta[name=\"viewport\"]')) { " +
+                            "var meta = document.createElement('meta'); " +
+                            "meta.name = 'viewport'; " +
+                            "meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'; " +
+                            "document.getElementsByTagName('head')[0].appendChild(meta); " +
+                            "} })()"
+                    )
+                }
+            }
+            if (exposeBridge) {
+                val bridge = ModuleJsBridge(
+                    module,
+                    commandReviewer = { request ->
+                        confirmCommandOnUiThread(request, onPendingCommand)
+                    }
+                )
+                addJavascriptInterface(bridge, "Shizuku")
+                addJavascriptInterface(bridge, "Nightzuku")
+            }
+            loadUrl(index.toURI().toString())
         }
     }
 

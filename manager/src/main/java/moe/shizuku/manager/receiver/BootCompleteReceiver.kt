@@ -37,7 +37,7 @@ class BootCompleteReceiver : BroadcastReceiver() {
         if (UserHandleCompat.myUserId() > 0 || Shizuku.pingBinder()) return
 
         if (ShizukuSettings.getLastLaunchMode() == LaunchMethod.ROOT) {
-            rootStart(context)
+            rootStart()
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
             && context.checkSelfPermission(WRITE_SECURE_SETTINGS) == PackageManager.PERMISSION_GRANTED
             && ShizukuSettings.getLastLaunchMode() == LaunchMethod.ADB) {
@@ -47,9 +47,8 @@ class BootCompleteReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun rootStart(context: Context) {
+    private fun rootStart() {
         if (!Shell.getShell().isRoot) {
-
             Shell.getCachedShell()?.close()
             return
         }
@@ -65,26 +64,29 @@ class BootCompleteReceiver : BroadcastReceiver() {
         Settings.Global.putLong(cr, "adb_allowed_connection_time", 0L)
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
-            val latch = CountDownLatch(1)
-            val adbMdns = AdbMdns(context, AdbMdns.TLS_CONNECT) { (host, port) ->
-                if (port <= 0) return@AdbMdns
-                try {
-                    val keystore = PreferenceAdbKeyStore(ShizukuSettings.getPreferences())
-                    val key = AdbKey(keystore, "shizuku")
-                    val client = AdbClient(host, port, key)
-                    client.connect()
-                    client.shellCommand(Starter.internalCommand, null)
-                    client.close()
-                } catch (_: Exception) {
+            try {
+                val latch = CountDownLatch(1)
+                val adbMdns = AdbMdns(context, AdbMdns.TLS_CONNECT) { (host, port) ->
+                    if (port <= 0) return@AdbMdns
+                    try {
+                        val keystore = PreferenceAdbKeyStore(ShizukuSettings.getPreferences())
+                        val key = AdbKey(keystore, "shizuku")
+                        AdbClient(host, port, key).use { client ->
+                            client.connect()
+                            client.shellCommand(Starter.internalCommand, null)
+                        }
+                    } catch (_: Exception) {
+                    }
+                    latch.countDown()
                 }
-                latch.countDown()
+                if (Settings.Global.getInt(cr, "adb_wifi_enabled", 0) == 1) {
+                    adbMdns.start()
+                    latch.await(3, TimeUnit.SECONDS)
+                    adbMdns.stop()
+                }
+            } finally {
+                pending.finish()
             }
-            if (Settings.Global.getInt(cr, "adb_wifi_enabled", 0) == 1) {
-                adbMdns.start()
-                latch.await(3, TimeUnit.SECONDS)
-                adbMdns.stop()
-            }
-            pending.finish()
         }
     }
 }

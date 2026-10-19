@@ -6,12 +6,9 @@
 package moe.shizuku.manager.home
 
 import android.Manifest.permission.WRITE_SECURE_SETTINGS
-import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -29,39 +26,36 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.MutableLiveData
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
+import androidx.tv.material3.Button as TvButton
+import androidx.tv.material3.ExperimentalTvMaterial3Api
+import androidx.tv.material3.MaterialTheme as TvMaterialTheme
+import androidx.tv.material3.OutlinedButton as TvOutlinedButton
+import androidx.tv.material3.Text as TvText
 import androidx.wear.compose.material3.AlertDialog as WearAlertDialog
 import androidx.wear.compose.material3.Button as WearButton
 import androidx.wear.compose.material3.FilledTonalButton as WearFilledTonalButton
 import androidx.wear.compose.material3.MaterialTheme as WearMaterialTheme
 import androidx.wear.compose.material3.Text as WearText
-import androidx.tv.material3.MaterialTheme as TvMaterialTheme
-import androidx.tv.material3.Text as TvText
-import androidx.tv.material3.Button as TvButton
-import androidx.tv.material3.OutlinedButton as TvOutlinedButton
-import androidx.tv.material3.ExperimentalTvMaterial3Api
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import moe.shizuku.manager.R
 import moe.shizuku.manager.ShizukuSettings
-import moe.shizuku.manager.ui.compose.MonospaceLog
 import moe.shizuku.manager.adb.AdbInvalidPairingCodeException
 import moe.shizuku.manager.adb.AdbKey
 import moe.shizuku.manager.adb.AdbKeyException
 import moe.shizuku.manager.adb.AdbMdns
 import moe.shizuku.manager.adb.AdbPairingClient
 import moe.shizuku.manager.adb.PreferenceAdbKeyStore
-import moe.shizuku.manager.starter.Starter
+import moe.shizuku.manager.ui.compose.MonospaceLog
 import moe.shizuku.manager.utils.EnvironmentUtils
 import java.net.ConnectException
 
@@ -594,6 +588,7 @@ private sealed class PairingStatus {
 @Composable
 fun HomeAdbPairDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val isWatch = EnvironmentUtils.isWatch(context)
     val isTv = EnvironmentUtils.isTV(context)
 
@@ -644,17 +639,20 @@ fun HomeAdbPairDialog(onDismiss: () -> Unit) {
         if (p in 1..65535 && pairingCode.length == 6) {
             isPairing = true
             val prefs = ShizukuSettings.getPreferences()
-            val scope = kotlinx.coroutines.MainScope()
             scope.launch(Dispatchers.IO) {
                 try {
                     val key = AdbKey(PreferenceAdbKeyStore(prefs), "shizuku")
                     val host = if (p == discoveredPort && discoveredHost.isNotEmpty()) discoveredHost else "127.0.0.1"
-                    AdbPairingClient(host, p, pairingCode, key).runCatching { start() }
-                        .onSuccess {
-                            if (it) result.postValue(PairingStatus.Success)
-                            else result.postValue(PairingStatus.Error(Exception("Pairing failed")))
+                    runCatching {
+                        AdbPairingClient(host, p, pairingCode, key).use { client ->
+                            client.start()
                         }
-                        .onFailure { result.postValue(PairingStatus.Error(it)) }
+                    }.onSuccess {
+                        if (it) result.postValue(PairingStatus.Success)
+                        else result.postValue(PairingStatus.Error(Exception("Pairing failed")))
+                    }.onFailure {
+                        result.postValue(PairingStatus.Error(it))
+                    }
                 } catch (e: Throwable) {
                     result.postValue(PairingStatus.Error(AdbKeyException(e)))
                 }

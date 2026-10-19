@@ -1,7 +1,7 @@
 <resources>
     <!-- Home - Status -->
-    <string name="home_status_service_is_running">Nightzuku запущен</string>
-    <string name="home_status_service_not_running">Nightzuku не запущен</string>
+    <string name="home_status_service_is_running">%1$s запущен</string>
+    <string name="home_status_service_not_running">%1$s не запущен</string>
     <string name="home_status_service_version">Версия %2$s, %1$s</string>
     <string name="home_start_method_title">Запуск службы от</string>
     <string name="home_start_method_message">Доступны и root, и ADB. Выберите, от какого пользователя запускать службу Nightzuku.</string>
@@ -18,9 +18,7 @@
 
     <!-- Home - Adb -->
     <string name="home_adb_title"><![CDATA[Начните с подключения к компьютеру]]></string>
-    <string name="home_adb_description"><![CDATA[Для устройств без root необходимо использовать adb для запуска Nightzuku (требуется подключение к компьютеру). Этот процесс нужно повторять после каждого перезапуска устройства. Пожалуйста, <b><a href=\"%1$s\">прочитайте справку</a></b>.]]>
-
-Примечание: Nightzuku — это современная замена Shizuku. Пожалуйста, удалите старое официальное приложение Shizuku, чтобы избежать конфликтов.</string>
+    <string name="home_adb_description"><![CDATA[Для устройств без root необходимо использовать adb для запуска Nightzuku (требуется подключение к компьютеру). Этот процесс нужно повторять после каждого перезапуска устройства. Пожалуйста, <b><a href=\"%1$s\">прочитайте справку</a></b>.]]></string>
     <string name="home_adb_button_view_help">Справка</string>
     <string name="home_adb_button_view_command">Посмотреть команду</string>
     <string name="home_adb_dialog_view_command_message"><![CDATA[<font face=\"monospace\">%1$s</font><br><br>* Есть дополнительные условия, убедитесь, что вы прочитали справку.]]></string>
@@ -29,9 +27,7 @@
 
     <!-- Home - Wireless Adb -->
     <string name="home_wireless_adb_title"><![CDATA[Запуск через беспроводную отладку]]></string>
-    <string name="home_wireless_adb_description"><![CDATA[На Android 11 и выше можно включить беспроводную отладку и запустить Nightzuku прямо с устройства, без подключения к компьютеру.<p>Сначала ознакомьтесь с пошаговым руководством.]]>
-
-Примечание: Nightzuku — это современная замена Shizuku. Пожалуйста, удалите старое официальное приложение Shizuku, чтобы избежать конфликтов.</string>
+    <string name="home_wireless_adb_description"><![CDATA[На Android 11 и выше можно включить беспроводную отладку и запустить Nightzuku прямо с устройства, без подключения к компьютеру.<p>Сначала ознакомьтесь с пошаговым руководством.]]></string>
     <string name="home_wireless_adb_description_pre_11"><![CDATA[До Android 11 подключение к компьютеру необходимо для включения беспроводной отладки.]]></string>
     <string name="home_wireless_adb_view_guide_button">Пошаговое руководство</string>
     <string name="home_local_network_title">Доступ к локальной сети</string>
@@ -43,7 +39,7 @@
 
     <!-- Adb -->
     <string name="dialog_adb_discovery">Поиск службы беспроводной отладки</string>
-    <string name="dialog_adb_discovery_message">Включите \"Беспроводную отладку\" в \"Параметрах разработчика\". \"Беспроводная отладка\" автоматически отключается при смене сети.\n\nНе отключайте \"Параметры разработчика\" и \"Отладку по USB\", иначе Nightzuku будет остановлен.</string>
+    <string name="dialog_adb_discovery_message">Включите \"Беспроводную отладку\" в \"Параметрах разработчика\". \"Беспроводная отладкa\" автоматически отключается при смене сети.\n\nНе отключайте \"Параметры разработчика\" и \"Отладку по USB\", иначе Nightzuku будет остановлен.</string>
     <string name="dialog_adb_discovery_message_toggle_wireless_debugging">Если поиск продолжается, попробуйте отключить и снова включить \"Беспроводную отладку\".</string>
     <string name="dialog_adb_port">Порт</string>
     <string name="dialog_adb_invalid_port">Порт — целое число от 1 до 65535.</string>
@@ -63,7 +59,7 @@
     <string name="notification_settings">Настройки уведомлений</string>
     <string name="adb_pairing_tutorial_title">Сопряжение Nightzuku с вашим устройством</string>
     <string name="adb_pairing_tutorial_content_notification">Уведомление от Nightzuku поможет завершить сопряжение.</string>
-    <string name="adb_pairing_tutorial_content_steps">Перейдите в \"Параметры разработчика\" → \"Беспроводная отладка\". Нажмите \"Сопряжение устройства с кодом\" — появится ш��стизначный код.</string>
+    <string name="adb_pairing_tutorial_content_steps">Перейдите в \"Параметры разработчика\" → \"Беспроводная отладка\". Нажмите \"Сопряжение устройства с кодом\" — появится шестизначный код.</string>
     <string name="adb_pairing_tutorial_content_enter_pairing_code">Введите код в уведомлении для завершения сопряжения.</string>
     <string name="adb_pairing_tutorial_content_notification_blocked">Для сопряжения нужно взаимодействовать с уведомлением от Nightzuku. Разрешите Nightzuku отправлять уведомления.</string>
     <string name="adb_pairing_tutorial_content_miui">Пользователям MIUI может потребоваться переключить стиль уведомлений на \"Android\" в \"Уведомления\" → \"Панель уведомлений\" в настройках системы.</string>
@@ -71,13 +67,11 @@
     <string name="adb_pairing_tutorial_content_left_is_clickable">Обратите внимание: левая часть опции \"Беспроводная отладка\" кликабельна — она откроет новую страницу. Просто включить переключатель справа недостаточно.</string>
     <string name="adb_pairing_tutorial_content_finish">Вернитесь в Nightzuku и запустите Nightzuku.</string>
     <string name="adb_pairing_tutorial_content_network">Nightzuku нужен доступ к локальной сети. Это управляется разрешением сети.</string>
-    <string name="adb_pairing_tutorial_content_network_limation_not_foreground">Некоторые системы (например MIUI) запрещают приложениям доступ к сети, когда они не на переднем плане, даже при использовании foreground service. Отключите оптимацию батареи для Nightzuku на таких системах.</string>
+    <string name="adb_pairing_tutorial_content_network_limation_not_foreground">Некоторые системы (например MIUI) запрещают приложениям доступ к сети, когда они не на переднем плане, даже при использовании foreground service. Отключите оптимизацию батареи для Nightzuku на таких системах.</string>
 
     <!-- Home - Root -->
     <string name="home_root_title"><![CDATA[Запуск (для устройств с root)]]></string>
-    <string name="home_root_description"><![CDATA[Кроме того, Nightzuku может автоматически запускаться при загрузке. Если этого не происходит, проверьте, не ограничивает ли ваша система или сторонние инструменты Nightzuku.<br>Можете обратиться к %s.]]>
-
-Примечание: Nightzuku — это современная замена Shizuku. Пожалуйста, удалите старое официальное приложение Shizuku, чтобы избежать конфликтов.</string>
+    <string name="home_root_description"><![CDATA[Кроме того, Nightzuku может автоматически запускаться при загрузке. Если этого не происходит, проверьте, не ограничивает ли ваша система или сторонние инструменты Nightzuku.<br>Можете обратиться к %s.]]></string>
     <string name="home_root_description_sui"><![CDATA[Если вы используете Magisk, попробуйте %1$s. Для root-пользователей это в конечном счёте заменит Nightzuku. Приложениям потребуется небольшая доработка для использования %2$s.]]></string>
     <string name="home_root_button_start">Запуск</string>
     <string name="home_root_button_restart">Перезапуск</string>
@@ -172,11 +166,11 @@
     <string name="modules_permission_web_bridge">WebUI shell-мост</string>
     <string name="modules_permission_web_bridge_summary">Предоставить window.Nightzuku только для локального WebUI и только при отключённом интернете в WebView.</string>
     <string name="modules_permission_web_network">Интернет в WebView</string>
-    <string name="modules_permission_web_network_summary">Разрешить HTTPS-навигацию/ресурсы. Отключает暴露暴露暴露 shell-моста для этого WebView.</string>
+    <string name="modules_permission_web_network_summary">Разрешить HTTPS-навигацию/ресурсы. Отключает доступ к shell-мосту для этого WebView.</string>
     <string name="modules_permission_web_download">Загрузка WebUI()</string>
     <string name="modules_permission_web_download_summary">Разрешить HTTPS-загрузку файлов в папку WebUI, кроме index.html.</string>
     <string name="modules_background_actions">Разрешить фоновые действия</string>
-    <string name="modules_background_actions_summary">Позволить установленным модулям запрашивать фоновую ADB-работу в режиме полного доступа</string>
+    <string name="modules_background_actions_summary">Позволить установленным модулям запускать фоновые сервисы (service.sh)</string>
     <string name="modules_background_allowed">Фон разрешён</string>
     <string name="modules_background_blocked">Фон заблокирован</string>
     <string name="modules_install_zip">Установить ZIP</string>
@@ -215,6 +209,7 @@
     <string name="modules_recommand_webui_summary">Показывать диалог подтверждения перед shell-выполнением в WebUI.</string>
     <string name="modules_recommand_action">ReCommand для действий</string>
     <string name="modules_recommand_action_summary">Показывать диалог подтверждения перед action.sh.</string>
+    <string name="modules_update_action">Обновить</string>
 
     <!-- About -->
     <string name="action_about">О приложении</string>
@@ -251,7 +246,7 @@
 
     <!-- Starter -->
     <string name="starter">Загрузчик</string>
-    <string name="start_with_root_failed">Не удалось запустить службу: root-доступ не получен или устройство не.rootовано.</string>
+    <string name="start_with_root_failed">Не удалось запустить службу: root-доступ не получен или на устройстве нет root-прав.</string>
 
     <!-- Misc -->
     <string name="dialog_cannot_open_browser_title">Не удалось открыть браузер</string>
@@ -262,7 +257,7 @@
     <string name="dialog_legacy_not_support_title">%1$s не поддерживает современный Nightzuku</string>
     <string name="dialog_legacy_not_support_message"><![CDATA[Устаревший Nightzuku не поддерживается с марта 2019 года. Также он не работает на новых версиях Android.<p>Попросите разработчика <b>%1$s</b> обновить приложение.]]></string>
     <string name="dialog_requesting_legacy_title">%1$s запрашивает устаревший Nightzuku</string>
-    <string name="dialog_requesting_legacy_message"><![CDATA[<b>%1$s</b> поддерживает современный Nightzuku, но запрашует устаревший. Возможно, Nightzuku не запущен — проверьте в приложении.<p>Устаревший Nightzuku не поддерживается с марта 2019 года.]]></string>
+    <string name="dialog_requesting_legacy_message"><![CDATA[<b>%1$s</b> поддерживает современный Nightzuku, но запрашивает устаревший. Возможно, Nightzuku не запущен — проверьте в приложении.<p>Устаревший Nightzuku не поддерживается с марта 2019 года.]]></string>
     <string name="dialog_requesting_legacy_button_open_shizuku">Открыть Nightzuku</string>
 
     <!-- Lab Features -->
@@ -320,6 +315,7 @@
     <string name="modules_catalog_token_required">Требуется токен GitHub</string>
     <string name="modules_catalog_token_hint">GitHub Personal Access Token</string>
     <string name="modules_catalog_token_description">Токен нужен для поиска модулей на GitHub. Создать его можно на github.com/settings/tokens</string>
+    <string name="modules_catalog_token_format_warning">Токен должен начинаться с ghp_ или github_pat_ и содержать не менее 30 символов</string>
     <string name="modules_catalog_loading">Загрузка каталога…</string>
     <string name="modules_catalog_error">Не удалось загрузить каталог</string>
     <string name="modules_catalog_install">Установить</string>
@@ -327,4 +323,16 @@
     <string name="modules_catalog_view_github">Открыть на GitHub</string>
     <string name="modules_catalog_skip_token">Пропустить</string>
     <string name="modules_catalog_open">Открыть каталог</string>
+
+    <!-- TV Status -->
+    <string name="tv_status_active">АКТИВЕН</string>
+    <string name="tv_status_disabled">ОТКЛЮЧЁН</string>
+    <string name="tv_status_trusted">ДОВЕРЕННЫЙ</string>
+
+    <!-- Wear Catalog -->
+    <string name="wear_catalog_sort_newest">Новые</string>
+    <string name="wear_catalog_sort_stars">Звёзды</string>
+    <string name="wear_catalog_sort_official">Официальные</string>
+    <string name="wear_catalog_sort_by">Сортировка</string>
+    <string name="wear_catalog_filter">Фильтр</string>
 </resources>

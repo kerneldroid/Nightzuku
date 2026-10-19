@@ -27,14 +27,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.CloudDownload
-import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Update
 import androidx.compose.material3.AlertDialog
@@ -87,8 +84,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import moe.shizuku.manager.R
 import moe.shizuku.manager.module.AdbModuleManager
 import moe.shizuku.manager.module.ModuleSettings
@@ -98,12 +93,22 @@ import moe.shizuku.manager.module.update.ModuleInstaller
 import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
 import moe.shizuku.manager.ui.compose.ShizukuIcon
 import moe.shizuku.manager.ui.compose.ShizukuLazyScaffold
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 private enum class SortMode { NEWEST, OLDEST, STARS, OFFICIAL }
 
 private const val MAX_BANNER_BYTES = 512 * 1024
 private const val MAX_README_CHARS = 16000
+
+private val sharedCatalogHttpClient: OkHttpClient by lazy {
+    OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
+        .build()
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -127,18 +132,26 @@ fun CatalogScreen(onNavigateUp: () -> Unit) {
     var pendingDangerModule by remember { mutableStateOf<DiscoveredModule?>(null) }
     var showDangerDialog by remember { mutableStateOf(false) }
     var dangerReason by remember { mutableStateOf<String?>(null) }
-    val client = remember { OkHttpClient() }
 
     LaunchedEffect(token) {
-        if (token.isNullOrBlank()) { showTokenDialog = true; isLoading = false }
-        else {
+        if (token.isNullOrBlank()) {
+            showTokenDialog = true
+            isLoading = false
+        } else {
             val cached = discoveryManager.getModules(forceRefresh = false)
-            if (cached.isNotEmpty()) { modules = cached; isLoading = false }
-            else {
-                isLoading = true; error = null
-                try { modules = discoveryManager.getModules(forceRefresh = true) }
-                catch (e: Exception) { error = e.message }
-                finally { isLoading = false }
+            if (cached.isNotEmpty()) {
+                modules = cached
+                isLoading = false
+            } else {
+                isLoading = true
+                error = null
+                try {
+                    modules = discoveryManager.getModules(forceRefresh = true)
+                } catch (e: Exception) {
+                    error = e.message
+                } finally {
+                    isLoading = false
+                }
             }
         }
     }
@@ -177,9 +190,6 @@ fun CatalogScreen(onNavigateUp: () -> Unit) {
                     onInstall = { showInstallDialog = activeModule },
                     onViewOnGitHub = {
                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(activeModule.repoUrl)))
-                    },
-                    onRefreshInstalled = {
-                        scope.launch { installedIds = AdbModuleManager.listModules(context).map { it.id }.toSet() }
                     }
                 )
             } else {
@@ -193,17 +203,21 @@ fun CatalogScreen(onNavigateUp: () -> Unit) {
                     onSortChange = { sortMode = it },
                     onRefresh = {
                         scope.launch {
-                            isLoading = true; error = null
+                            isLoading = true
+                            error = null
                             try {
                                 modules = discoveryManager.getModules(forceRefresh = true)
                                 installedIds = AdbModuleManager.listModules(context).map { it.id }.toSet()
-                            } catch (e: Exception) { error = e.message }
-                            finally { isLoading = false }
+                            } catch (e: Exception) {
+                                error = e.message
+                            } finally {
+                                isLoading = false
+                            }
                         }
                     },
                     onCardClick = {
                         scope.launch {
-                            val isDanger = withContext(Dispatchers.IO) { checkModuleDanger(client, it) }
+                            val isDanger = withContext(Dispatchers.IO) { checkModuleDanger(sharedCatalogHttpClient, it) }
                             if (isDanger != null) {
                                 pendingDangerModule = it
                                 dangerReason = isDanger
@@ -224,8 +238,15 @@ fun CatalogScreen(onNavigateUp: () -> Unit) {
 
         if (showTokenDialog) {
             TokenInputDialog(
-                onDismiss = { showTokenDialog = false; if (TokenStore.getToken(context).isNullOrBlank()) onNavigateUp() },
-                onTokenSet = { pat -> TokenStore.setToken(context, pat); token = pat; showTokenDialog = false }
+                onDismiss = {
+                    showTokenDialog = false
+                    if (TokenStore.getToken(context).isNullOrBlank()) onNavigateUp()
+                },
+                onTokenSet = { pat ->
+                    TokenStore.setToken(context, pat)
+                    token = pat
+                    showTokenDialog = false
+                }
             )
         }
 
@@ -246,10 +267,21 @@ fun CatalogScreen(onNavigateUp: () -> Unit) {
                             onSuccess = {
                                 installedIds = AdbModuleManager.listModules(context).map { it.id }.toSet()
                                 installedModuleName = module.moduleName
-                                Toast.makeText(context, context.getString(R.string.modules_install_success, module.moduleName), Toast.LENGTH_SHORT).show()
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.modules_install_success, module.moduleName),
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             },
                             onFailure = {
-                                Toast.makeText(context, context.getString(R.string.modules_catalog_install_failed, it.message ?: it.javaClass.simpleName), Toast.LENGTH_LONG).show()
+                                Toast.makeText(
+                                    context,
+                                    context.getString(
+                                        R.string.modules_catalog_install_failed,
+                                        it.message ?: it.javaClass.simpleName
+                                    ),
+                                    Toast.LENGTH_LONG
+                                ).show()
                             }
                         )
                     }
@@ -261,7 +293,11 @@ fun CatalogScreen(onNavigateUp: () -> Unit) {
             AlertDialog(
                 onDismissRequest = { installedModuleName = null },
                 title = { Text(stringResource(R.string.modules_install_success, name)) },
-                confirmButton = { TextButton(onClick = { installedModuleName = null; onNavigateUp() }) { Text(stringResource(android.R.string.ok)) } }
+                confirmButton = {
+                    TextButton(onClick = { installedModuleName = null; onNavigateUp() }) {
+                        Text(stringResource(android.R.string.ok))
+                    }
+                }
             )
         }
 
@@ -277,8 +313,16 @@ fun CatalogScreen(onNavigateUp: () -> Unit) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         dangerReason?.let {
-                            Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.errorContainer) {
-                                Text(it, modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                            Surface(
+                                shape = MaterialTheme.shapes.small,
+                                color = MaterialTheme.colorScheme.errorContainer
+                            ) {
+                                Text(
+                                    it,
+                                    modifier = Modifier.padding(12.dp),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
                             }
                         }
                         Text("Do you want to continue anyway?", style = MaterialTheme.typography.bodyMedium)
@@ -316,11 +360,14 @@ private suspend fun checkModuleDanger(client: OkHttpClient, module: DiscoveredMo
                 client.newCall(req).execute().use { resp ->
                     if (resp.isSuccessful) {
                         val size = resp.header("Content-Length")?.toLongOrNull() ?: 0L
-                        if (size > MAX_BANNER_BYTES) return@withContext "Banner too large: ${size / 1024}KB (max ${MAX_BANNER_BYTES / 1024}KB)"
+                        if (size > MAX_BANNER_BYTES) {
+                            return@withContext "Banner too large: ${size / 1024}KB (max ${MAX_BANNER_BYTES / 1024}KB)"
+                        }
                         return@withContext null
                     }
                 }
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            }
         }
         null
     }
@@ -363,16 +410,28 @@ private fun CatalogListScreen(
                 ) {
                     LoadingIndicator(Modifier.size(28.dp))
                     Spacer(modifier = Modifier.width(12.dp))
-                    Text(stringResource(R.string.modules_running), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        stringResource(R.string.modules_running),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
 
         if (!isLoading && error != null) {
             item {
-                Surface(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.errorContainer) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.errorContainer
+                ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text(error ?: "Error", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onErrorContainer)
+                        Text(
+                            error,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
                     }
                 }
             }
@@ -380,9 +439,19 @@ private fun CatalogListScreen(
 
         if (!isLoading && modules.isEmpty() && error == null) {
             item {
-                Surface(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow, tonalElevation = 1.dp) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    tonalElevation = 1.dp
+                ) {
                     Column(modifier = Modifier.padding(20.dp)) {
-                        Text(stringResource(R.string.modules_catalog_empty), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            stringResource(R.string.modules_catalog_empty),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -402,7 +471,11 @@ private fun CatalogListScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@OptIn(
+    ExperimentalMaterial3Api::class,
+    ExperimentalMaterial3ExpressiveApi::class,
+    androidx.compose.foundation.layout.ExperimentalLayoutApi::class
+)
 @Composable
 private fun ModuleDetailScreen(
     module: DiscoveredModule,
@@ -410,14 +483,11 @@ private fun ModuleDetailScreen(
     installing: Boolean,
     onBack: () -> Unit,
     onInstall: () -> Unit,
-    onViewOnGitHub: () -> Unit,
-    onRefreshInstalled: () -> Unit
+    onViewOnGitHub: () -> Unit
 ) {
-    val scope = rememberCoroutineScope()
     var readmeContent by remember { mutableStateOf<String?>(null) }
     var isLoadingReadme by remember { mutableStateOf(true) }
     var bannerUrl by remember { mutableStateOf<String?>(null) }
-    val client = remember { OkHttpClient() }
 
     LaunchedEffect(module) {
         isLoadingReadme = true
@@ -437,10 +507,11 @@ private fun ModuleDetailScreen(
                     for (url in candidates) {
                         try {
                             val req = Request.Builder().url(url).head().build()
-                            client.newCall(req).execute().use { resp ->
+                            sharedCatalogHttpClient.newCall(req).execute().use { resp ->
                                 if (resp.isSuccessful) return@async url
                             }
-                        } catch (_: Exception) {}
+                        } catch (_: Exception) {
+                        }
                     }
                     null
                 }
@@ -455,13 +526,14 @@ private fun ModuleDetailScreen(
                     for (url in candidates) {
                         try {
                             val req = Request.Builder().url(url).build()
-                            val resp = client.newCall(req).execute()
-                            if (resp.isSuccessful) {
-                                val body = resp.body?.string()?.take(MAX_README_CHARS)
-                                resp.close()
-                                if (!body.isNullOrBlank()) return@async body
+                            sharedCatalogHttpClient.newCall(req).execute().use { resp ->
+                                if (resp.isSuccessful) {
+                                    val body = resp.body?.string()?.take(MAX_README_CHARS)
+                                    if (!body.isNullOrBlank()) return@async body
+                                }
                             }
-                        } catch (_: Exception) {}
+                        } catch (_: Exception) {
+                        }
                     }
                     null
                 }
@@ -501,7 +573,7 @@ private fun ModuleDetailScreen(
                             onClick = { onInstall() }
                         ) {
                             Icon(Icons.Rounded.Update, null, modifier = Modifier.size(18.dp).padding(end = 6.dp))
-                            Text("Update", style = MaterialTheme.typography.labelLarge)
+                            Text(stringResource(R.string.modules_update_action), style = MaterialTheme.typography.labelLarge)
                         }
                     } else {
                         FilledTonalButton(
@@ -533,15 +605,25 @@ private fun ModuleDetailScreen(
                     AsyncImage(
                         model = ImageRequest.Builder(LocalContext.current).data(bannerUrl).crossfade(true).build(),
                         contentDescription = module.moduleName,
-                        modifier = Modifier.fillMaxWidth().height(200.dp).background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
                         contentScale = ContentScale.Crop
                     )
                 } else {
                     Box(
-                        modifier = Modifier.fillMaxWidth().height(120.dp).background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(120.dp)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(module.moduleName, style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                        Text(
+                            module.moduleName,
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        )
                     }
                 }
             }
@@ -560,28 +642,58 @@ private fun ModuleDetailScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         module.version?.let {
-                            DetailChip(text = "v$it", color = MaterialTheme.colorScheme.secondaryContainer, onColor = MaterialTheme.colorScheme.onSecondaryContainer)
+                            DetailChip(
+                                text = "v$it",
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                onColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
                         }
                         DetailChip(
                             text = "${module.stars}",
-                            icon = { Icon(Icons.Rounded.Star, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer) },
+                            icon = {
+                                Icon(
+                                    Icons.Rounded.Star,
+                                    null,
+                                    Modifier.size(14.dp),
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            },
                             color = MaterialTheme.colorScheme.secondaryContainer,
                             onColor = MaterialTheme.colorScheme.onSecondaryContainer
                         )
                         DetailChip(
                             text = formatCount(module.downloads),
-                            icon = { Icon(Icons.Rounded.CloudDownload, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer) },
+                            icon = {
+                                Icon(
+                                    Icons.Rounded.CloudDownload,
+                                    null,
+                                    Modifier.size(14.dp),
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            },
                             color = MaterialTheme.colorScheme.secondaryContainer,
                             onColor = MaterialTheme.colorScheme.onSecondaryContainer
                         )
                         if (module.isOfficial) {
-                            DetailChip(text = "Official", color = MaterialTheme.colorScheme.tertiaryContainer, onColor = MaterialTheme.colorScheme.onTertiaryContainer)
+                            DetailChip(
+                                text = stringResource(R.string.modules_catalog_sort_official),
+                                color = MaterialTheme.colorScheme.tertiaryContainer,
+                                onColor = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
                         }
                         if (isModuleOutdated(module)) {
-                            DetailChip(text = stringResource(R.string.modules_outdated), color = MaterialTheme.colorScheme.errorContainer, onColor = MaterialTheme.colorScheme.onErrorContainer)
+                            DetailChip(
+                                text = stringResource(R.string.modules_outdated),
+                                color = MaterialTheme.colorScheme.errorContainer,
+                                onColor = MaterialTheme.colorScheme.onErrorContainer
+                            )
                         }
                         if (installed) {
-                            DetailChip(text = "Installed", color = MaterialTheme.colorScheme.primaryContainer, onColor = MaterialTheme.colorScheme.onPrimaryContainer)
+                            DetailChip(
+                                text = stringResource(R.string.modules_enabled),
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                onColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
                         }
                     }
 
@@ -597,16 +709,32 @@ private fun ModuleDetailScreen(
                         Text("README", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
 
                         if (isLoadingReadme) {
-                            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalArrangement = Arrangement.Center) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                                horizontalArrangement = Arrangement.Center
+                            ) {
                                 LoadingIndicator(Modifier.size(28.dp))
                             }
                         } else if (!readmeContent.isNullOrBlank()) {
-                            Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHighest, modifier = Modifier.fillMaxWidth()) {
+                            Surface(
+                                shape = MaterialTheme.shapes.medium,
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
                                 ReadmeText(content = readmeContent!!, modifier = Modifier.padding(16.dp))
                             }
                         } else {
-                            Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
-                                Text("README not available", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Surface(
+                                shape = MaterialTheme.shapes.medium,
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    "README not available",
+                                    modifier = Modifier.padding(16.dp),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
                     }
@@ -641,7 +769,7 @@ private const val OUTDATED_THRESHOLD_MS = 90L * 24 * 60 * 60 * 1000
 
 private fun isModuleOutdated(module: DiscoveredModule): Boolean {
     return module.lastCommitAt > 0L &&
-            System.currentTimeMillis() - module.lastCommitAt > OUTDATED_THRESHOLD_MS
+        System.currentTimeMillis() - module.lastCommitAt > OUTDATED_THRESHOLD_MS
 }
 
 private fun formatCount(value: Long): String = when {
@@ -695,23 +823,93 @@ private fun CatalogModuleCard(
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 CatalogAvatar(ownerAvatar = module.ownerAvatar, moduleName = module.moduleName, modifier = Modifier.size(48.dp))
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(module.moduleName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(module.author ?: module.repoFullName.substringBefore('/'), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        module.moduleName,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        module.author ?: module.repoFullName.substringBefore('/'),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
             androidx.compose.foundation.layout.FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                module.version?.let { DetailChip(text = it, color = MaterialTheme.colorScheme.secondaryContainer, onColor = MaterialTheme.colorScheme.onSecondaryContainer) }
-                DetailChip(text = "${module.stars}", icon = { Icon(Icons.Rounded.Star, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer) }, color = MaterialTheme.colorScheme.secondaryContainer, onColor = MaterialTheme.colorScheme.onSecondaryContainer)
-                DetailChip(text = formatCount(module.downloads), icon = { Icon(Icons.Rounded.CloudDownload, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer) }, color = MaterialTheme.colorScheme.secondaryContainer, onColor = MaterialTheme.colorScheme.onSecondaryContainer)
-                if (module.isOfficial) DetailChip(text = stringResource(R.string.modules_catalog_sort_official), color = MaterialTheme.colorScheme.tertiaryContainer, onColor = MaterialTheme.colorScheme.onTertiaryContainer)
-                if (isModuleOutdated(module)) DetailChip(text = stringResource(R.string.modules_outdated), color = MaterialTheme.colorScheme.errorContainer, onColor = MaterialTheme.colorScheme.onErrorContainer)
-                if (installed) DetailChip(text = "Installed", color = MaterialTheme.colorScheme.primaryContainer, onColor = MaterialTheme.colorScheme.onPrimaryContainer)
+                module.version?.let {
+                    DetailChip(
+                        text = it,
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        onColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
+                DetailChip(
+                    text = "${module.stars}",
+                    icon = {
+                        Icon(
+                            Icons.Rounded.Star,
+                            null,
+                            Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    },
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    onColor = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+                DetailChip(
+                    text = formatCount(module.downloads),
+                    icon = {
+                        Icon(
+                            Icons.Rounded.CloudDownload,
+                            null,
+                            Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    },
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    onColor = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+                if (module.isOfficial) {
+                    DetailChip(
+                        text = stringResource(R.string.modules_catalog_sort_official),
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        onColor = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                }
+                if (isModuleOutdated(module)) {
+                    DetailChip(
+                        text = stringResource(R.string.modules_outdated),
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        onColor = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+                if (installed) {
+                    DetailChip(
+                        text = stringResource(R.string.modules_enabled),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        onColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
             }
-            module.repoDescription?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-            AnimatedVisibility(visible = installing, enter = fadeIn(), exit = fadeOut()) { LinearProgressIndicator(modifier = Modifier.fillMaxWidth()) }
+            module.repoDescription?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            AnimatedVisibility(visible = installing, enter = fadeIn(), exit = fadeOut()) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilledTonalButton(modifier = Modifier.height(40.dp), enabled = !installing, onClick = onInstall) {
                     ShizukuIcon(R.drawable.ic_outline_arrow_upward_24, modifier = Modifier.padding(end = 6.dp).size(16.dp))
@@ -737,8 +935,16 @@ private fun CatalogAvatar(ownerAvatar: String, moduleName: String, modifier: Mod
             contentScale = ContentScale.Crop
         )
     } else {
-        Box(modifier = modifier.clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
-            Text(initials, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+        Box(
+            modifier = modifier.clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                initials,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
         }
     }
 }
@@ -753,19 +959,47 @@ private fun TokenInputDialog(onDismiss: () -> Unit, onTokenSet: (String) -> Unit
         title = { Text(stringResource(R.string.modules_catalog_token_required)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(stringResource(R.string.modules_catalog_token_description), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedTextField(value = tokenInput, onValueChange = { tokenInput = it }, label = { Text(stringResource(R.string.modules_catalog_token_hint)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                if (showWarning) Text(stringResource(R.string.modules_catalog_token_format_warning), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                Text(
+                    stringResource(R.string.modules_catalog_token_description),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = tokenInput,
+                    onValueChange = { tokenInput = it },
+                    label = { Text(stringResource(R.string.modules_catalog_token_hint)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (showWarning) {
+                    Text(
+                        stringResource(R.string.modules_catalog_token_format_warning),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
             }
         },
-        confirmButton = { TextButton(onClick = { onTokenSet(tokenInput) }, enabled = tokenInput.isNotBlank()) { Text(stringResource(android.R.string.ok)) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) } }
+        confirmButton = {
+            TextButton(onClick = { onTokenSet(tokenInput) }, enabled = tokenInput.isNotBlank()) {
+                Text(stringResource(android.R.string.ok))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(android.R.string.cancel))
+            }
+        }
     )
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun InstallModeDialog(module: DiscoveredModule, onDismiss: () -> Unit, onInstall: (ModuleSettings.InstallMode) -> Unit) {
+private fun InstallModeDialog(
+    module: DiscoveredModule,
+    onDismiss: () -> Unit,
+    onInstall: (ModuleSettings.InstallMode) -> Unit
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(module.moduleName) },
@@ -834,7 +1068,10 @@ private fun ReadmeText(content: String, modifier: Modifier = Modifier) {
                 }
                 continue
             }
-            if (inCodeBlock) { codeBlockLines.add(line); continue }
+            if (inCodeBlock) {
+                codeBlockLines.add(line)
+                continue
+            }
 
             val t = trimmed.trim()
             if (t.isBlank()) continue
@@ -852,7 +1089,12 @@ private fun ReadmeText(content: String, modifier: Modifier = Modifier) {
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         modifier = Modifier.border(BorderStroke(3.dp, linkColor), blockQuoteShape)
                     ) {
-                        StyledText(parseInline(t.removePrefix("> "), linkColor), MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 8.dp))
+                        StyledText(
+                            parseInline(t.removePrefix("> "), linkColor),
+                            MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 8.dp)
+                        )
                     }
                 }
                 t.startsWith("![") -> {
@@ -971,10 +1213,14 @@ private fun parseInline(text: String, linkColor: androidx.compose.ui.graphics.Co
                         pop()
                         i = match.range.last + 1
                     } else {
-                        append(text[i]); i++
+                        append(text[i])
+                        i++
                     }
                 }
-                else -> { append(text[i]); i++ }
+                else -> {
+                    append(text[i])
+                    i++
+                }
             }
         }
     }

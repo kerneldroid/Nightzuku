@@ -18,7 +18,12 @@ object LegacyParcelCodec {
     private const val LEGACY_APPLICATION_DESCRIPTOR = "moe.shizuku.server.IShizukuApplication"
 
     private const val BUNDLE_MAGIC_NATIVE = 0x4C444E42 // 'B' 'N' 'D' 'L'
+    private const val VAL_NULL = -1
+    private const val VAL_STRING = 0
+    private const val VAL_INTEGER = 1
     private const val VAL_PARCELABLE = 4
+    private const val VAL_LONG = 6
+    private const val VAL_BOOLEAN = 9
 
     private const val TRANSACTION_BIND_APPLICATION = 2
     private const val TRANSACTION_DISPATCH_PERMISSION_RESULT = 3
@@ -45,7 +50,7 @@ object LegacyParcelCodec {
             // Entry 2 (optional): shizuku:user-service-arg-token -> String
             if (token != null) {
                 body.writeString("shizuku:user-service-arg-token")
-                body.writeInt(0 /* VAL_STRING */)
+                body.writeInt(VAL_STRING)
                 body.writeString(token)
             }
 
@@ -95,9 +100,15 @@ object LegacyParcelCodec {
                     if (className == LEGACY_BINDER_CONTAINER_CLASS) {
                         return parcel.readStrongBinder()
                     }
+                    break
                 }
-                // If not the first entry, fallback fails gracefully
-                break
+                when (type) {
+                    VAL_NULL -> Unit
+                    VAL_STRING -> parcel.readString()
+                    VAL_INTEGER, VAL_BOOLEAN -> parcel.readInt()
+                    VAL_LONG -> parcel.readLong()
+                    else -> break
+                }
             }
             null
         } catch (_: Throwable) {
