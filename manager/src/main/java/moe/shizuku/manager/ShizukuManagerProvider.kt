@@ -59,7 +59,9 @@ class ShizukuManagerProvider : ShizukuProvider() {
             val binder = LegacyParcelCodec.extractBinderFromBundle(extras) ?: return null
 
             val countDownLatch = CountDownLatch(1)
-            @Volatile var reply: Bundle? = null
+            // Visibility is guaranteed by CountDownLatch.await()'s happens-before edge,
+            // so no @Volatile is needed here (and it is invalid on a local variable anyway).
+            var reply: Bundle? = null
 
             val listener = object : Shizuku.OnBinderReceivedListener {
 
