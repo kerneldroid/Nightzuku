@@ -32,6 +32,23 @@ object NightClient {
 
         val errorText: String
             get() = String(stderr, StandardCharsets.UTF_8)
+
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other !is ExecResult) return false
+            return exitCode == other.exitCode &&
+                timedOut == other.timedOut &&
+                stdout.contentEquals(other.stdout) &&
+                stderr.contentEquals(other.stderr)
+        }
+
+        override fun hashCode(): Int {
+            var result = exitCode
+            result = 31 * result + timedOut.hashCode()
+            result = 31 * result + stdout.contentHashCode()
+            result = 31 * result + stderr.contentHashCode()
+            return result
+        }
     }
 
     fun interface OnBinderReceivedListener {
@@ -114,23 +131,24 @@ object NightClient {
     fun onBinderReceived(newBinder: IBinder?, packageName: String?) {
         if (binder === newBinder) return
 
+        binder?.let { old ->
+            try {
+                old.unlinkToDeath(deathRecipient, 0)
+            } catch (_: Throwable) {
+            }
+        }
+
         if (newBinder == null) {
             binder = null
             serverUid = -1
             serverVersion = -1
             serverContext = null
             permissionGranted = false
+            shouldShowRationale = false
             capabilitiesMask = 0
             binderReady = false
             dispatchBinderDead()
             return
-        }
-
-        binder?.let { old ->
-            try {
-                old.unlinkToDeath(deathRecipient, 0)
-            } catch (_: Throwable) {
-            }
         }
 
         binder = newBinder
@@ -147,6 +165,12 @@ object NightClient {
                 dispatchBinderReceived()
             } catch (t: Throwable) {
                 Log.w(TAG, "Flat attach handshake failed", t)
+                try {
+                    newBinder.unlinkToDeath(deathRecipient, 0)
+                } catch (_: Throwable) {
+                }
+                binder = null
+                binderReady = false
             }
         }
     }

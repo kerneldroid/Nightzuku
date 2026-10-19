@@ -4,7 +4,6 @@ import android.os.Bundle
 import androidx.core.os.bundleOf
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.TimeoutException
 import kerneldroid.nightzuku.api.LegacyParcelCodec
 import kerneldroid.nightzuku.api.NightClient
 import kerneldroid.nightzuku.api.NightProtocol
@@ -60,7 +59,7 @@ class ShizukuManagerProvider : ShizukuProvider() {
             val binder = LegacyParcelCodec.extractBinderFromBundle(extras) ?: return null
 
             val countDownLatch = CountDownLatch(1)
-            var reply: Bundle? = Bundle()
+            @Volatile var reply: Bundle? = null
 
             val listener = object : Shizuku.OnBinderReceivedListener {
 
@@ -76,27 +75,32 @@ class ShizukuManagerProvider : ShizukuProvider() {
                                 putParcelable(LegacyParcelCodec.LEGACY_BINDER_EXTRA_KEY, BinderContainer(serverBinder))
                                 putBinder(NightProtocol.EXTRA_BINDER, serverBinder)
                             }
-                        } else {
-                            reply = null
                         }
                     } catch (e: Throwable) {
                         LOGGER.e(e, "attachUserService $token")
                         reply = null
+                    } finally {
+                        Shizuku.removeBinderReceivedListener(this)
+                        countDownLatch.countDown()
                     }
-
-                    Shizuku.removeBinderReceivedListener(this)
-                    countDownLatch.countDown()
                 }
             }
 
             Shizuku.addBinderReceivedListenerSticky(listener, workerHandler)
 
             try {
-                countDownLatch.await(5, TimeUnit.SECONDS)
+                val received = countDownLatch.await(5, TimeUnit.SECONDS)
+                if (!received) {
+                    LOGGER.e("Binder not received in 5s for user service $token")
+                    return null
+                }
                 reply
-            } catch (e: TimeoutException) {
-                LOGGER.e(e, "Binder not received in 5s")
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                LOGGER.e(e, "Interrupted waiting for binder")
                 null
+            } finally {
+                Shizuku.removeBinderReceivedListener(listener)
             }
         } catch (e: Throwable) {
             LOGGER.e(e, "sendUserService")

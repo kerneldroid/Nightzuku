@@ -4,21 +4,26 @@ import android.content.pm.ApplicationInfo
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material3.AlertDialog as WearAlertDialog
 import androidx.wear.compose.material3.Button as WearButton
 import androidx.wear.compose.material3.FilledTonalButton as WearFilledTonalButton
 import androidx.wear.compose.material3.Icon as WearIcon
 import androidx.wear.compose.material3.Text as WearText
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
 import moe.shizuku.manager.R
 import moe.shizuku.manager.app.AppActivity
 import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
@@ -30,7 +35,6 @@ import rikka.shizuku.ShizukuApiConstants.REQUEST_PERMISSION_REPLY_IS_ONETIME
 import rikka.shizuku.server.ktx.workerHandler
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.TimeoutException
 
 class RequestPermissionActivity : AppActivity() {
 
@@ -41,7 +45,7 @@ class RequestPermissionActivity : AppActivity() {
         try {
             Shizuku.dispatchPermissionConfirmationResult(requestUid, requestPid, requestCode, data)
         } catch (e: Throwable) {
-            LOGGER.e("dispatchPermissionConfirmationResult")
+            LOGGER.e(e, "dispatchPermissionConfirmationResult")
         }
     }
 
@@ -50,19 +54,25 @@ class RequestPermissionActivity : AppActivity() {
 
         val listener = object : Shizuku.OnBinderReceivedListener {
             override fun onBinderReceived() {
-                countDownLatch.countDown()
                 Shizuku.removeBinderReceivedListener(this)
+                countDownLatch.countDown()
             }
         }
 
         Shizuku.addBinderReceivedListenerSticky(listener, workerHandler)
 
         return try {
-            countDownLatch.await(5, TimeUnit.SECONDS)
-            true
-        } catch (e: TimeoutException) {
-            LOGGER.e(e, "Binder not received in 5s")
+            val received = countDownLatch.await(5, TimeUnit.SECONDS)
+            if (!received) {
+                LOGGER.e("Binder not received in 5s")
+            }
+            received
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            LOGGER.e(e, "Interrupted waiting for binder")
             false
+        } finally {
+            Shizuku.removeBinderReceivedListener(listener)
         }
     }
 
@@ -138,7 +148,7 @@ class RequestPermissionActivity : AppActivity() {
                         dismissButton = {
                             WearFilledTonalButton(
                                 onClick = {
-                                    setResult(uid, pid, requestCode, allowed = false, onetime = true)
+                                    setResult(uid, pid, requestCode, allowed = false, onetime = false)
                                     finish()
                                 },
                                 modifier = Modifier.fillMaxWidth()
@@ -151,7 +161,10 @@ class RequestPermissionActivity : AppActivity() {
             } else {
                 ShizukuExpressiveTheme {
                     AlertDialog(
-                        onDismissRequest = {},
+                        onDismissRequest = {
+                            setResult(uid, pid, requestCode, allowed = false, onetime = true)
+                            finish()
+                        },
                         icon = {
                             Icon(
                                 painter = painterResource(R.drawable.ic_system_icon),
@@ -162,30 +175,42 @@ class RequestPermissionActivity : AppActivity() {
                             Text(stringResource(R.string.app_name))
                         },
                         text = {
-                            Text(
-                                text = htmlToPlainText(
-                                    getString(
-                                        R.string.permission_warning_template,
-                                        label,
-                                        getString(R.string.permission_group_description)
+                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Text(
+                                    text = htmlToPlainText(
+                                        getString(
+                                            R.string.permission_warning_template,
+                                            label,
+                                            getString(R.string.permission_group_description)
+                                        )
                                     )
                                 )
-                            )
+                            }
                         },
                         confirmButton = {
-                            Button(
-                                onClick = {
-                                    setResult(uid, pid, requestCode, allowed = true, onetime = false)
-                                    finish()
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilledTonalButton(
+                                    onClick = {
+                                        setResult(uid, pid, requestCode, allowed = true, onetime = true)
+                                        finish()
+                                    }
+                                ) {
+                                    Text(stringResource(R.string.grant_dialog_button_allow_onetime))
                                 }
-                            ) {
-                                Text(stringResource(R.string.grant_dialog_button_allow_always))
+                                Button(
+                                    onClick = {
+                                        setResult(uid, pid, requestCode, allowed = true, onetime = false)
+                                        finish()
+                                    }
+                                ) {
+                                    Text(stringResource(R.string.grant_dialog_button_allow_always))
+                                }
                             }
                         },
                         dismissButton = {
                             TextButton(
                                 onClick = {
-                                    setResult(uid, pid, requestCode, allowed = false, onetime = true)
+                                    setResult(uid, pid, requestCode, allowed = false, onetime = false)
                                     finish()
                                 }
                             ) {

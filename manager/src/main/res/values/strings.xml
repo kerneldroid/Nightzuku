@@ -258,6 +258,7 @@ With %1$s, in any terminal app, you can connect to and interact with the shell r
     <string name="permission_label">access Nightzuku</string>
     <string name="permission_description">Allow the app to use Nightzuku.</string>
     <string name="permission_warning_template"><![CDATA[Allow <b>%1$s</b> to %2$s?]]></string>
+    <string name="grant_dialog_button_allow_onetime">Only this time</string>
     <string name="grant_dialog_button_allow_always">Allow all the time</string>
     <string name="grant_dialog_button_deny">"Deny"</string>
 

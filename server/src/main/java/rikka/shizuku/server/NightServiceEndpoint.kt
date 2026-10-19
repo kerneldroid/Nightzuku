@@ -6,7 +6,6 @@ import android.os.IBinder
 import android.os.Parcel
 import android.os.RemoteException
 import android.os.SystemProperties
-import android.system.Os
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
@@ -19,21 +18,14 @@ import moe.shizuku.server.IShizukuApplication
 import rikka.hidden.compat.PackageManagerApis
 import rikka.shizuku.ShizukuApiConstants
 import rikka.shizuku.server.util.Logger
-import rikka.shizuku.server.util.UserHandleCompat
 
-/**
- * Native Nightzuku server Binder endpoint (`kerneldroid.nightzuku.INightService`).
- *
- * Uses flat Parcel transactions, per-UID capability masks, guarded `transactRemote`,
- * and a fast one-shot command executor (`execFast`) while sharing the unified
- * client/config/user-service core with the legacy Shizuku wire.
- */
 class NightServiceEndpoint(
     private val service: ShizukuService
 ) : Binder() {
 
     private val logger = Logger("NightEndpoint")
     private val nightCallbacks = ConcurrentHashMap<Int, IBinder>()
+    private val nightCallbackDeaths = ConcurrentHashMap<Int, IBinder.DeathRecipient>()
     private val execPool = Executors.newCachedThreadPool { r ->
         Thread(r, "night-exec").apply { isDaemon = true }
     }
@@ -197,6 +189,17 @@ class NightServiceEndpoint(
         return super.onTransact(code, data, reply, flags)
     }
 
+    private fun unlinkCallback(pid: Int) {
+        val oldBinder = nightCallbacks.remove(pid)
+        val oldDeath = nightCallbackDeaths.remove(pid)
+        if (oldBinder != null && oldDeath != null) {
+            try {
+                oldBinder.unlinkToDeath(oldDeath, 0)
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
     private fun handleAttach(data: Parcel, reply: Parcel) {
         val callbackBinder = data.readStrongBinder()
         val clientProtocolVersion = data.readInt()
@@ -210,16 +213,23 @@ class NightServiceEndpoint(
             throw SecurityException("Package $packageName does not belong to calling uid $callingUid")
         }
 
+        unlinkCallback(callingPid)
         if (callbackBinder != null) {
-            nightCallbacks[callingPid] = callbackBinder
+            val recipient = IBinder.DeathRecipient {
+                if (nightCallbacks.remove(callingPid, callbackBinder)) {
+                    nightCallbackDeaths.remove(callingPid)
+                }
+            }
             try {
-                callbackBinder.linkToDeath({ nightCallbacks.remove(callingPid) }, 0)
+                callbackBinder.linkToDeath(recipient, 0)
+                nightCallbacks[callingPid] = callbackBinder
+                nightCallbackDeaths[callingPid] = recipient
             } catch (_: RemoteException) {
-                nightCallbacks.remove(callingPid)
+                nightCallbacks.remove(callingPid, callbackBinder)
+                nightCallbackDeaths.remove(callingPid, recipient)
             }
         }
 
-        // Bridge into ClientManager so both wires share a single unified client record
         val bridgeApp = object : IShizukuApplication.Stub() {
             override fun bindApplication(bundle: Bundle?) {
                 if (bundle == null) return
@@ -281,12 +291,11 @@ class NightServiceEndpoint(
 
         val newData = Parcel.obtain()
         try {
-            newData.appendFrom(data, data.dataPosition(), data.dataAvail())
-        } catch (t: Throwable) {
-            newData.recycle()
-            throw IllegalArgumentException("Failed to copy transaction payload", t)
-        }
-        try {
+            try {
+                newData.appendFrom(data, data.dataPosition(), data.dataAvail())
+            } catch (t: Throwable) {
+                throw IllegalArgumentException("Failed to copy transaction payload", t)
+            }
             val identity = Binder.clearCallingIdentity()
             try {
                 targetBinder.transact(targetCode, newData, reply, targetFlags)
@@ -358,22 +367,28 @@ class NightServiceEndpoint(
             } else {
                 timedOut = true
                 process.destroyForcibly()
+                runCatching { process.inputStream.close() }
+                runCatching { process.errorStream.close() }
                 124
             }
         } catch (e: InterruptedException) {
             process.destroyForcibly()
+            stdoutFuture.cancel(true)
+            stderrFuture.cancel(true)
             Thread.currentThread().interrupt()
             throw IllegalStateException("Interrupted while waiting for process", e)
         }
 
         val stdoutBytes = try {
-            stdoutFuture.get(2, TimeUnit.SECONDS)
+            stdoutFuture.get(1, TimeUnit.SECONDS)
         } catch (_: Throwable) {
+            stdoutFuture.cancel(true)
             ByteArray(0)
         }
         val stderrBytes = try {
-            stderrFuture.get(2, TimeUnit.SECONDS)
+            stderrFuture.get(1, TimeUnit.SECONDS)
         } catch (_: Throwable) {
+            stderrFuture.cancel(true)
             ByteArray(0)
         }
 

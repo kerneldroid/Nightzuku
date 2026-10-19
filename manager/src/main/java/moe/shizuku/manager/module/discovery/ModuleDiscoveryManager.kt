@@ -8,10 +8,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import moe.shizuku.manager.module.catalog.TokenStore
 import moe.shizuku.manager.module.update.GitHubRelease
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
 class ModuleDiscoveryManager private constructor(context: Context) {
@@ -31,7 +31,7 @@ class ModuleDiscoveryManager private constructor(context: Context) {
     )
 
     private fun authHeader(): String? {
-        val token = TokenStore.getToken(appContext)
+        val token = TokenStore.getToken(appContext)?.trim()
         return if (!token.isNullOrBlank()) "Bearer $token" else null
     }
 
@@ -90,7 +90,7 @@ class ModuleDiscoveryManager private constructor(context: Context) {
 
     private fun searchRepos(): List<GitHubRepo> {
         val url = "https://api.github.com/search/repositories" +
-                "?q=topic:adb-modules&sort=stars&per_page=30"
+            "?q=topic:adb-modules&sort=stars&per_page=30"
 
         val builder = Request.Builder()
             .url(url)
@@ -101,16 +101,15 @@ class ModuleDiscoveryManager private constructor(context: Context) {
 
         val request = builder.build()
 
-        val response = client.newCall(request).execute()
-        rateLimit.update(response.headers)
-
-        if (!response.isSuccessful) {
-            throw IllegalStateException("GitHub search failed: ${response.code}")
+        return client.newCall(request).execute().use { response ->
+            rateLimit.update(response.headers)
+            if (!response.isSuccessful) {
+                throw IllegalStateException("GitHub search failed: ${response.code}")
+            }
+            val body = response.body?.string() ?: throw IllegalStateException("Empty response")
+            val searchResponse = json.decodeFromString<SearchResponse>(body)
+            searchResponse.items.filter { !it.archived && !it.fork }
         }
-
-        val body = response.body?.string() ?: throw IllegalStateException("Empty response")
-        val searchResponse = json.decodeFromString<SearchResponse>(body)
-        return searchResponse.items.filter { !it.archived && !it.fork }
     }
 
     private fun validateRepos(repos: List<GitHubRepo>): List<DiscoveredModule> {
@@ -168,11 +167,6 @@ class ModuleDiscoveryManager private constructor(context: Context) {
         return enrich(modules.sortedByDescending { it.stars }, auth)
     }
 
-    /**
-     * Adds the real download count (summed from GitHub release assets) and the last commit date of
-     * each module's own folder. Using the folder-scoped commit date means a module whose directory
-     * stopped updating is flagged while sibling modules in the same repo keep updating.
-     */
     private fun enrich(modules: List<DiscoveredModule>, authHeader: String?): List<DiscoveredModule> {
         if (modules.isEmpty()) return modules
         val downloadsByRepo = mutableMapOf<String, Long>()
@@ -254,8 +248,7 @@ class ModuleDiscoveryManager private constructor(context: Context) {
         return withContext(Dispatchers.IO) {
             try {
                 val repos = searchReposByOwner(OFFICIAL_OWNER)
-                val modules = validateRepos(repos)
-                modules
+                validateRepos(repos)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to fetch official modules", e)
                 emptyList()
@@ -265,7 +258,7 @@ class ModuleDiscoveryManager private constructor(context: Context) {
 
     private fun searchReposByOwner(owner: String): List<GitHubRepo> {
         val url = "https://api.github.com/search/repositories" +
-                "?q=topic:adb-modules+user:$owner&sort=stars&per_page=30"
+            "?q=topic:adb-modules+user:$owner&sort=stars&per_page=30"
 
         val builder = Request.Builder()
             .url(url)
@@ -275,16 +268,15 @@ class ModuleDiscoveryManager private constructor(context: Context) {
         authHeader()?.let { builder.header("Authorization", it) }
 
         val request = builder.build()
-        val response = client.newCall(request).execute()
-        rateLimit.update(response.headers)
-
-        if (!response.isSuccessful) {
-            throw IllegalStateException("GitHub search failed: ${response.code}")
+        return client.newCall(request).execute().use { response ->
+            rateLimit.update(response.headers)
+            if (!response.isSuccessful) {
+                throw IllegalStateException("GitHub search failed: ${response.code}")
+            }
+            val body = response.body?.string() ?: throw IllegalStateException("Empty response")
+            val searchResponse = json.decodeFromString<SearchResponse>(body)
+            searchResponse.items.filter { !it.archived && !it.fork }
         }
-
-        val body = response.body?.string() ?: throw IllegalStateException("Empty response")
-        val searchResponse = json.decodeFromString<SearchResponse>(body)
-        return searchResponse.items.filter { !it.archived && !it.fork }
     }
 
     companion object {

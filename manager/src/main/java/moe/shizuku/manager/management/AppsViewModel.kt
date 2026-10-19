@@ -32,13 +32,14 @@ class AppsViewModel(context: Context) : ViewModel() {
                 val list: MutableList<PackageInfo> = ArrayList()
                 var count = 0
                 for (pi in AuthorizationManager.getPackages()) {
+                    val appInfo = pi.applicationInfo ?: continue
                     list.add(pi)
-                    if (AuthorizationManager.granted(pi.packageName, pi.applicationInfo!!.uid)) count++
+                    if (AuthorizationManager.granted(pi.packageName, appInfo.uid)) count++
                 }
                 if (!onlyCount) _packages.postValue(Resource.success(list))
                 _grantedCount.postValue(Resource.success(count))
             } catch (e: CancellationException) {
-
+                throw e
             } catch (e: Throwable) {
                 _packages.postValue(Resource.error(e, null))
                 _grantedCount.postValue(Resource.error(e, 0))

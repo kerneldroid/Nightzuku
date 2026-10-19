@@ -14,17 +14,20 @@ import moe.shizuku.manager.adb.AdbProtocol.A_STLS
 import moe.shizuku.manager.adb.AdbProtocol.A_STLS_VERSION
 import moe.shizuku.manager.adb.AdbProtocol.A_VERSION
 import moe.shizuku.manager.adb.AdbProtocol.A_WRTE
-import moe.shizuku.manager.ktx.logd
 import rikka.core.util.BuildUtils
 import java.io.Closeable
 import java.io.DataInputStream
 import java.io.DataOutputStream
+import java.net.InetSocketAddress
 import java.net.Socket
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import javax.net.ssl.SSLSocket
 
 private const val TAG = "AdbClient"
+private const val CONNECT_TIMEOUT_MS = 10_000
+private const val SO_TIMEOUT_MS = 30_000
+private const val MAX_FRAME_DATA_BYTES = 4 * 1024 * 1024
 
 class AdbClient(private val host: String, private val port: Int, private val key: AdbKey) : Closeable {
 
@@ -42,8 +45,10 @@ class AdbClient(private val host: String, private val port: Int, private val key
     private val outputStream get() = if (useTls) tlsOutputStream else plainOutputStream
 
     fun connect() {
-        socket = Socket(host, port)
+        socket = Socket()
         socket.tcpNoDelay = true
+        socket.soTimeout = SO_TIMEOUT_MS
+        socket.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
         plainInputStream = DataInputStream(socket.getInputStream())
         plainOutputStream = DataOutputStream(socket.getOutputStream())
 
@@ -58,6 +63,7 @@ class AdbClient(private val host: String, private val port: Int, private val key
 
             val sslContext = key.sslContext
             tlsSocket = sslContext.socketFactory.createSocket(socket, host, port, true) as SSLSocket
+            tlsSocket.soTimeout = SO_TIMEOUT_MS
             tlsSocket.startHandshake()
             Log.d(TAG, "Handshake succeeded.")
 
@@ -67,7 +73,7 @@ class AdbClient(private val host: String, private val port: Int, private val key
 
             message = read()
         } else if (message.command == A_AUTH) {
-            if (message.command != A_AUTH && message.arg0 != ADB_AUTH_TOKEN) error("not A_AUTH ADB_AUTH_TOKEN")
+            if (message.arg0 != ADB_AUTH_TOKEN) error("not A_AUTH ADB_AUTH_TOKEN")
             write(A_AUTH, ADB_AUTH_SIGNATURE, 0, key.sign(message.data))
 
             message = read()
@@ -134,10 +140,13 @@ class AdbClient(private val host: String, private val port: Int, private val key
         val dataLength = buffer.int
         val checksum = buffer.int
         val magic = buffer.int
+        require(dataLength <= MAX_FRAME_DATA_BYTES) { "ADB frame payload too large: $dataLength" }
         val data: ByteArray?
-        if (dataLength >= 0) {
+        if (dataLength > 0) {
             data = ByteArray(dataLength)
             inputStream.readFully(data, 0, dataLength)
+        } else if (dataLength == 0) {
+            data = ByteArray(0)
         } else {
             data = null
         }
@@ -148,31 +157,36 @@ class AdbClient(private val host: String, private val port: Int, private val key
     }
 
     override fun close() {
-        try {
-            plainInputStream.close()
-        } catch (e: Throwable) {
-        }
-        try {
-            plainOutputStream.close()
-        } catch (e: Throwable) {
-        }
-        try {
-            socket.close()
-        } catch (e: Exception) {
-        }
-
         if (useTls) {
             try {
                 tlsInputStream.close()
-            } catch (e: Throwable) {
+            } catch (_: Throwable) {
             }
             try {
                 tlsOutputStream.close()
-            } catch (e: Throwable) {
+            } catch (_: Throwable) {
             }
             try {
                 tlsSocket.close()
-            } catch (e: Exception) {
+            } catch (_: Throwable) {
+            }
+        }
+        if (::plainInputStream.isInitialized) {
+            try {
+                plainInputStream.close()
+            } catch (_: Throwable) {
+            }
+        }
+        if (::plainOutputStream.isInitialized) {
+            try {
+                plainOutputStream.close()
+            } catch (_: Throwable) {
+            }
+        }
+        if (::socket.isInitialized) {
+            try {
+                socket.close()
+            } catch (_: Throwable) {
             }
         }
     }

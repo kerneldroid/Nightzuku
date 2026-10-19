@@ -25,6 +25,8 @@ class ModuleValidator(private val client: OkHttpClient, private val rateLimit: R
             parseModuleProp(rawPropContent, owner, repo, null)?.let { return listOf(it) }
         }
 
+        if (rateLimit.isExhausted()) return emptyList()
+
         val rootModule = checkModuleProp(owner, repo, null, authHeader)
         if (rootModule != null) {
             return listOf(rootModule)
@@ -34,6 +36,7 @@ class ModuleValidator(private val client: OkHttpClient, private val rateLimit: R
     }
 
     private fun checkModuleProp(owner: String, repo: String, subPath: String?, authHeader: String? = null): DiscoveredModule? {
+        if (rateLimit.isExhausted()) return null
         val path = if (subPath != null) "$subPath/module.prop" else "module.prop"
         val url = "https://api.github.com/repos/$owner/$repo/contents/$path"
 
@@ -70,7 +73,13 @@ class ModuleValidator(private val client: OkHttpClient, private val rateLimit: R
         }
     }
 
+    private fun isCandidateModuleDir(dirName: String): Boolean {
+        if (dirName.isBlank() || dirName.startsWith(".")) return false
+        return dirName.lowercase() !in IGNORED_DIRS
+    }
+
     private fun scanSubdirs(owner: String, repo: String, now: Long, authHeader: String? = null): List<DiscoveredModule> {
+        if (rateLimit.isExhausted()) return emptyList()
         val url = "https://api.github.com/repos/$owner/$repo/contents/"
 
         val builder = Request.Builder()
@@ -98,10 +107,11 @@ class ModuleValidator(private val client: OkHttpClient, private val rateLimit: R
                 return emptyList()
             }
 
-            val dirs = items.filter { it.type == "dir" }
+            val dirs = items.filter { it.type == "dir" && isCandidateModuleDir(it.name) }
             val modules = mutableListOf<DiscoveredModule>()
 
             for (dir in dirs) {
+                if (rateLimit.isExhausted()) break
                 val module = checkModuleProp(owner, repo, dir.name, authHeader)
                 if (module != null) {
                     modules.add(module)
@@ -116,6 +126,7 @@ class ModuleValidator(private val client: OkHttpClient, private val rateLimit: R
     }
 
     private fun scanSecondLevel(owner: String, repo: String, parentDir: String, authHeader: String? = null): List<DiscoveredModule> {
+        if (rateLimit.isExhausted()) return emptyList()
         val url = "https://api.github.com/repos/$owner/$repo/contents/$parentDir"
 
         val builder = Request.Builder()
@@ -143,10 +154,11 @@ class ModuleValidator(private val client: OkHttpClient, private val rateLimit: R
                 return emptyList()
             }
 
-            val dirs = items.filter { it.type == "dir" }
+            val dirs = items.filter { it.type == "dir" && isCandidateModuleDir(it.name) }
             val modules = mutableListOf<DiscoveredModule>()
 
             for (dir in dirs) {
+                if (rateLimit.isExhausted()) break
                 val subPath = "$parentDir/${dir.name}"
                 val module = checkModuleProp(owner, repo, subPath, authHeader)
                 if (module != null) {
@@ -159,11 +171,15 @@ class ModuleValidator(private val client: OkHttpClient, private val rateLimit: R
     }
 
     private fun fetchRawContent(url: String, authHeader: String? = null): String? {
-        val builder = Request.Builder()
-            .url(url)
-            .header("Accept", "application/vnd.github+json")
-            .header("X-GitHub-Api-Version", "2022-11-28")
-        authHeader?.let { builder.header("Authorization", it) }
+        val builder = Request.Builder().url(url)
+        val host = runCatching { java.net.URL(url).host.lowercase() }.getOrDefault("")
+        if (host == "api.github.com" || host.endsWith(".api.github.com")) {
+            builder.header("Accept", "application/vnd.github+json")
+            builder.header("X-GitHub-Api-Version", "2022-11-28")
+            authHeader?.let { builder.header("Authorization", it) }
+        } else if (host == "raw.githubusercontent.com") {
+            authHeader?.let { builder.header("Authorization", it) }
+        }
         val request = builder.build()
 
         val response = try {
@@ -219,6 +235,10 @@ class ModuleValidator(private val client: OkHttpClient, private val rateLimit: R
     companion object {
         private const val TAG = "ModuleValidator"
         private val ID_REGEX = Regex("[A-Za-z][A-Za-z0-9._-]{1,63}")
+        private val IGNORED_DIRS = setOf(
+            "gradle", "build", "src", "docs", "doc", "screenshots",
+            "assets", "res", "lib", "libs", "test", "tests", "scripts"
+        )
 
         fun create(): ModuleValidator {
             val client = OkHttpClient.Builder()

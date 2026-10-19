@@ -30,7 +30,6 @@ import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableIntStateOf
@@ -99,22 +98,14 @@ class ApplicationManagementActivity : AppActivity() {
             val tick = permissionTick.intValue
             var showAdbLimitedDialog by remember { mutableStateOf(false) }
 
-            // Keep the granted/not-granted state fresh without requiring a manual refresh.
-            LaunchedEffect(Unit) {
-                while (true) {
-                    kotlinx.coroutines.delay(2500)
-                    permissionTick.intValue++
-                }
-            }
-
             val isWatch = moe.shizuku.manager.utils.EnvironmentUtils.isWatch(this@ApplicationManagementActivity)
             val isTv = moe.shizuku.manager.utils.EnvironmentUtils.isTV(this@ApplicationManagementActivity)
             if (isWatch) {
                 moe.shizuku.manager.ui.compose.WearShizukuTheme {
                     val pm = LocalContext.current.packageManager
                     val apps = remember(packages, tick) {
-                        packages.map { pkg ->
-                            val appInfo = pkg.applicationInfo!!
+                        packages.mapNotNull { pkg ->
+                            val appInfo = pkg.applicationInfo ?: return@mapNotNull null
                             WearAppItem(
                                 label = appInfo.loadLabel(pm).toString(),
                                 packageName = pkg.packageName,

@@ -253,6 +253,7 @@
     <string name="permission_label">Доступ к Nightzuku</string>
     <string name="permission_description">Разрешить приложению использовать Nightzuku.</string>
     <string name="permission_warning_template"><![CDATA[Разрешить <b>%1$s</b> %2$s?]]></string>
+    <string name="grant_dialog_button_allow_onetime">Только в этот раз</string>
     <string name="grant_dialog_button_allow_always">Разрешить всегда</string>
     <string name="grant_dialog_button_deny">«Отклонить»</string>
 
