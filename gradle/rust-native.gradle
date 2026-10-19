@@ -38,7 +38,13 @@ android {
     def rustTask = tasks.register("buildRust${capitalized}") {
         def outDir = file("$buildDir/generated/rustJniLibs/${variantName}")
         def profileDir = variantName == 'release' ? 'release' : 'debug'
-        inputs.dir(rustWorkspace)
+        // cargo writes its object files into rust/target, which lives inside the
+        // workspace tree. Snapshotting that tree makes Gradle fail with
+        // "unreadable inputs or outputs" while cargo creates and deletes files,
+        // and scanning the multi-GB target directory can stall the build for
+        // tens of minutes. Cargo already tracks its own incremental state, so
+        // opt out of Gradle state tracking here.
+        doNotTrackState("cargo owns the incremental state under rust/target")
         outputs.dir(outDir)
         doLast {
             outDir.mkdirs()
