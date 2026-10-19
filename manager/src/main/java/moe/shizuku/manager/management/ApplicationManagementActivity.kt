@@ -4,7 +4,6 @@
 
 package moe.shizuku.manager.management
 
-import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.os.Bundle
 import android.widget.Toast
@@ -30,6 +29,7 @@ import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableIntStateOf
@@ -38,13 +38,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.drawable.toBitmap
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import moe.shizuku.manager.R
 import moe.shizuku.manager.app.AppActivity
 import moe.shizuku.manager.authorization.AuthorizationManager
@@ -53,11 +55,14 @@ import moe.shizuku.manager.ui.compose.ExpressiveSwitch
 import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
 import moe.shizuku.manager.ui.compose.ShizukuIcon
 import moe.shizuku.manager.ui.compose.ShizukuLazyScaffold
-import moe.shizuku.manager.utils.ShizukuSystemApis
-import moe.shizuku.manager.utils.UserHandleCompat
+import moe.shizuku.manager.utils.EnvironmentUtils
 import rikka.lifecycle.Status
 import rikka.shizuku.Shizuku
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.Objects
+
+private const val PERMISSION_POLL_MS = 2500L
 
 class ApplicationManagementActivity : AppActivity() {
 
@@ -86,8 +91,20 @@ class ApplicationManagementActivity : AppActivity() {
                 tr.printStackTrace()
             }
         }
+        val isPhone = !EnvironmentUtils.isWatch(this) && !EnvironmentUtils.isTV(this)
         if (viewModel.packages.value == null) {
-            viewModel.load()
+            viewModel.load(buildRows = isPhone)
+        }
+        if (isPhone) {
+            // Keeps the switches in sync with the server without touching the main thread.
+            lifecycleScope.launch {
+                repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                    while (true) {
+                        viewModel.refreshGranted()
+                        delay(PERMISSION_POLL_MS)
+                    }
+                }
+            }
         }
 
         Shizuku.addBinderDeadListener(binderDeadListener)
@@ -98,8 +115,22 @@ class ApplicationManagementActivity : AppActivity() {
             val tick = permissionTick.intValue
             var showAdbLimitedDialog by remember { mutableStateOf(false) }
 
-            val isWatch = moe.shizuku.manager.utils.EnvironmentUtils.isWatch(this@ApplicationManagementActivity)
-            val isTv = moe.shizuku.manager.utils.EnvironmentUtils.isTV(this@ApplicationManagementActivity)
+            val isWatch = EnvironmentUtils.isWatch(this@ApplicationManagementActivity)
+            val isTv = EnvironmentUtils.isTV(this@ApplicationManagementActivity)
+
+            LaunchedEffect(Unit) {
+                viewModel.adbLimited.collect { showAdbLimitedDialog = true }
+            }
+
+            // TV and Wear still derive the switches from `tick`; phones read AppsViewModel.rows.
+            if (isWatch || isTv) {
+                LaunchedEffect(Unit) {
+                    while (true) {
+                        delay(PERMISSION_POLL_MS)
+                        permissionTick.intValue++
+                    }
+                }
+            }
             if (isWatch) {
                 moe.shizuku.manager.ui.compose.WearShizukuTheme {
                     val pm = LocalContext.current.packageManager
@@ -171,6 +202,10 @@ class ApplicationManagementActivity : AppActivity() {
                     }
                 }
             } else {
+                val rows by viewModel.rows.collectAsStateWithLifecycle()
+                val onToggle = remember(viewModel) {
+                    { row: AppRow -> viewModel.toggle(row.uid, row.packageName) }
+                }
                 ShizukuExpressiveTheme {
                     Box(modifier = Modifier.fillMaxSize()) {
                         ShizukuLazyScaffold(
@@ -178,7 +213,7 @@ class ApplicationManagementActivity : AppActivity() {
                             onNavigateUp = { finish() },
                             verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
                             actions = {
-                                if (packages.isNotEmpty()) {
+                                if (!rows.isNullOrEmpty()) {
                                     var menuExpanded by remember { mutableStateOf(false) }
 
                                     Box {
@@ -193,14 +228,14 @@ class ApplicationManagementActivity : AppActivity() {
                                                 text = { Text(stringResource(R.string.app_management_select_all)) },
                                                 onClick = {
                                                     menuExpanded = false
-                                                    selectAll(packages, true)
+                                                    viewModel.setAll(true)
                                                 }
                                             )
                                             DropdownMenuItem(
                                                 text = { Text(stringResource(R.string.app_management_deselect_all)) },
                                                 onClick = {
                                                     menuExpanded = false
-                                                    selectAll(packages, false)
+                                                    viewModel.setAll(false)
                                                 }
                                             )
                                         }
@@ -208,8 +243,9 @@ class ApplicationManagementActivity : AppActivity() {
                                 }
                             }
                         ) {
+                            val current = rows
                             when {
-                                packagesResource == null -> {
+                                current == null -> {
                                     item {
                                         Box(
                                             modifier = Modifier.fillMaxWidth(),
@@ -219,7 +255,7 @@ class ApplicationManagementActivity : AppActivity() {
                                         }
                                     }
                                 }
-                                packages.isEmpty() -> {
+                                current.isEmpty() -> {
                                     item {
                                         ExpressiveCard(
                                             icon = R.drawable.ic_system_icon,
@@ -229,17 +265,12 @@ class ApplicationManagementActivity : AppActivity() {
                                     }
                                 }
                                 else -> {
-                                    itemsIndexed(packages) { index, packageInfo ->
+                                    itemsIndexed(current, key = { _, row -> row.key }) { index, row ->
                                         AppPermissionRow(
                                             index = index,
-                                            count = packages.size,
-                                            packageInfo = packageInfo,
-                                            tick = tick,
-                                            onLimitedAdb = { showAdbLimitedDialog = true },
-                                            onPermissionChanged = {
-                                                permissionTick.intValue++
-                                                viewModel.load(onlyCount = true)
-                                            }
+                                            count = current.size,
+                                            row = row,
+                                            onToggle = onToggle
                                         )
                                     }
                                 }
@@ -291,57 +322,11 @@ class ApplicationManagementActivity : AppActivity() {
 private fun AppPermissionRow(
     index: Int,
     count: Int,
-    packageInfo: PackageInfo,
-    tick: Int,
-    onLimitedAdb: () -> Unit,
-    onPermissionChanged: () -> Unit
+    row: AppRow,
+    onToggle: (AppRow) -> Unit
 ) {
-    val context = LocalContext.current
-    val pm = context.packageManager
-    val applicationInfo = packageInfo.applicationInfo ?: return
-    val uid = applicationInfo.uid
-    val packageName = packageInfo.packageName
-    var granted by remember(packageName, uid, tick) {
-        mutableStateOf(AuthorizationManager.granted(packageName, uid))
-    }
-    val userId = UserHandleCompat.getUserId(uid)
-    val title = remember(packageName, userId) {
-        val label = applicationInfo.loadLabel(pm).toString()
-        if (userId != UserHandleCompat.myUserId()) {
-            val userInfo = ShizukuSystemApis.getUserInfo(userId)
-            "$label - ${userInfo.name} ($userId)"
-        } else {
-            label
-        }
-    }
-    val icon = remember(packageName) {
-        applicationInfo.loadIcon(pm).toBitmap(width = 96, height = 96).asImageBitmap()
-    }
-    val requiresRoot = applicationInfo.requiresRoot()
-
-    fun toggle() {
-        try {
-            if (granted) {
-                AuthorizationManager.revoke(packageName, uid)
-            } else {
-                AuthorizationManager.grant(packageName, uid)
-            }
-            granted = !granted
-            onPermissionChanged()
-        } catch (_: SecurityException) {
-            val serverUid = try {
-                Shizuku.getUid()
-            } catch (_: Throwable) {
-                return
-            }
-            if (serverUid != 0) {
-                onLimitedAdb()
-            }
-        }
-    }
-
     SegmentedListItem(
-        onClick = { toggle() },
+        onClick = { onToggle(row) },
         shapes = ListItemDefaults.segmentedShapes(index = index, count = count),
         colors = ListItemDefaults.segmentedColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
@@ -353,23 +338,25 @@ private fun AppPermissionRow(
                 shape = CircleShape,
                 color = MaterialTheme.colorScheme.surfaceContainerHighest
             ) {
-                Image(
-                    bitmap = icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(44.dp)
-                )
+                row.icon?.let { icon ->
+                    Image(
+                        bitmap = icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(44.dp)
+                    )
+                }
             }
         },
         supportingContent = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    text = packageInfo.packageName,
+                    text = row.packageName,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (requiresRoot) {
+                if (row.requiresRoot) {
                     AssistChip(
                         onClick = {},
                         label = {
@@ -381,21 +368,17 @@ private fun AppPermissionRow(
         },
         trailingContent = {
             ExpressiveSwitch(
-                checked = granted,
-                onCheckedChange = { toggle() }
+                checked = row.granted,
+                onCheckedChange = { onToggle(row) }
             )
         }
     ) {
         Text(
-            text = title,
+            text = row.title,
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
     }
-}
-
-private fun ApplicationInfo.requiresRoot(): Boolean {
-    return metaData?.getBoolean("moe.shizuku.client.V3_REQUIRES_ROOT") == true
 }
