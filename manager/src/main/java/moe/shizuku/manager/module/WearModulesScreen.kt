@@ -66,6 +66,7 @@ fun WearModulesScreen(
     isCheckingModules: Boolean = false,
     checkReport: NightDogClient.ModuleCheckReport? = null,
     onCheckModules: () -> Unit = {},
+    onUpdateAllModules: () -> Unit = {},
     onUpdateModule: (AdbModule, UpdateResult?) -> Unit = { _, _ -> },
     onToggle: (AdbModule) -> Unit,
     onRunAction: (AdbModule) -> Unit,
@@ -77,6 +78,7 @@ fun WearModulesScreen(
     onOpenCatalog: () -> Unit
 ) {
     val transformationSpec = rememberTransformationSpec()
+    val updatesCount = checkReport?.updatesAvailableCount ?: 0
 
     WearScreenScaffold { state ->
         TransformingLazyColumn(
@@ -155,6 +157,30 @@ fun WearModulesScreen(
                                 stringResource(R.string.modules_background_check_short)
                             }
                         )
+                    }
+                }
+            }
+
+            if (updatesCount > 0) {
+                item {
+                    WearButton(
+                        onClick = onUpdateAllModules,
+                        enabled = !isCheckingModules,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec),
+                        transformation = SurfaceTransformation(transformationSpec),
+                        colors = WearButtonDefaults.buttonColors()
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            WearIcon(Icons.Rounded.SystemUpdateAlt, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            WearText(text = stringResource(R.string.modules_update_all_button, updatesCount))
+                        }
                     }
                 }
             }

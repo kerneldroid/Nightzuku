@@ -58,6 +58,9 @@ fun UpdateSettingsScreen(
     var allowBackgroundActions by remember { mutableStateOf(ModuleSettings.allowBackgroundActions()) }
     var catalogEnabled by remember { mutableStateOf(ModuleSettings.isCatalogEnabled()) }
     var updateFrequency by remember { mutableStateOf(ModuleSettings.getUpdateFrequency()) }
+    var autoUpdateEnabled by remember { mutableStateOf(ModuleSettings.isAutoUpdateEnabled()) }
+    var wifiOnly by remember { mutableStateOf(ModuleSettings.isUpdateWifiOnly()) }
+    var notificationsEnabled by remember { mutableStateOf(ModuleSettings.isUpdateNotificationsEnabled()) }
     var installMode by remember { mutableStateOf(ModuleSettings.getInstallMode()) }
     var githubPat by remember { mutableStateOf(TokenStore.getToken(context) ?: "") }
     var showPatDialog by remember { mutableStateOf(false) }
@@ -151,33 +154,50 @@ fun UpdateSettingsScreen(
             }
 
             item {
-                SettingsSection(title = stringResource(R.string.update_settings_catalog)) {
-                    SettingsSwitchItem(
-                        index = 0,
-                        count = 1,
-                        icon = R.drawable.ic_outline_notifications_active_24,
-                        title = stringResource(R.string.update_settings_catalog_enabled),
-                        summary = stringResource(R.string.update_settings_catalog_enabled_summary),
-                        checked = catalogEnabled,
-                        onCheckedChange = {
-                            catalogEnabled = it
-                            ModuleSettings.setCatalogEnabled(it)
-                        }
-                    )
-                }
-            }
-
-            item {
-                Spacer(Modifier.height(8.dp))
-            }
-
-            item {
                 SettingsSection(title = stringResource(R.string.update_settings_frequency)) {
                     UpdateFrequencyDropdown(
+                        index = 0,
+                        count = 4,
                         selected = updateFrequency,
                         onSelect = {
                             updateFrequency = it
                             ModuleSettings.setUpdateFrequency(it)
+                        }
+                    )
+                    SettingsSwitchItem(
+                        index = 1,
+                        count = 4,
+                        icon = R.drawable.ic_outline_arrow_upward_24,
+                        title = stringResource(R.string.update_settings_auto_update),
+                        summary = stringResource(R.string.update_settings_auto_update_summary),
+                        checked = autoUpdateEnabled,
+                        onCheckedChange = {
+                            autoUpdateEnabled = it
+                            ModuleSettings.setAutoUpdateEnabled(it)
+                        }
+                    )
+                    SettingsSwitchItem(
+                        index = 2,
+                        count = 4,
+                        icon = R.drawable.ic_settings_outline_24dp,
+                        title = stringResource(R.string.update_settings_wifi_only),
+                        summary = stringResource(R.string.update_settings_wifi_only_summary),
+                        checked = wifiOnly,
+                        onCheckedChange = {
+                            wifiOnly = it
+                            ModuleSettings.setUpdateWifiOnly(it)
+                        }
+                    )
+                    SettingsSwitchItem(
+                        index = 3,
+                        count = 4,
+                        icon = R.drawable.ic_outline_notifications_active_24,
+                        title = stringResource(R.string.update_settings_notifications),
+                        summary = stringResource(R.string.update_settings_notifications_summary),
+                        checked = notificationsEnabled,
+                        onCheckedChange = {
+                            notificationsEnabled = it
+                            ModuleSettings.setUpdateNotificationsEnabled(it)
                         }
                     )
                 }
@@ -194,6 +214,27 @@ fun UpdateSettingsScreen(
                         onSelect = {
                             installMode = it
                             ModuleSettings.setInstallMode(it)
+                        }
+                    )
+                }
+            }
+
+            item {
+                Spacer(Modifier.height(8.dp))
+            }
+
+            item {
+                SettingsSection(title = stringResource(R.string.update_settings_catalog)) {
+                    SettingsSwitchItem(
+                        index = 0,
+                        count = 1,
+                        icon = R.drawable.ic_outline_store_24,
+                        title = stringResource(R.string.update_settings_catalog_enabled),
+                        summary = stringResource(R.string.update_settings_catalog_enabled_summary),
+                        checked = catalogEnabled,
+                        onCheckedChange = {
+                            catalogEnabled = it
+                            ModuleSettings.setCatalogEnabled(it)
                         }
                     )
                 }
@@ -256,6 +297,8 @@ fun UpdateSettingsScreen(
 
 @Composable
 private fun UpdateFrequencyDropdown(
+    index: Int,
+    count: Int,
     selected: ModuleSettings.UpdateFrequency,
     onSelect: (ModuleSettings.UpdateFrequency) -> Unit
 ) {
@@ -266,15 +309,19 @@ private fun UpdateFrequencyDropdown(
         onExpandedChange = { expanded = !expanded }
     ) {
         SettingsItem(
-            index = 0,
-            count = 1,
+            index = index,
+            count = count,
             icon = R.drawable.ic_outline_notifications_active_24,
             title = stringResource(R.string.update_settings_frequency_label),
-            summary = stringResource(when (selected) {
-                ModuleSettings.UpdateFrequency.MANUAL -> R.string.update_settings_frequency_manual
-                ModuleSettings.UpdateFrequency.DAILY -> R.string.update_settings_frequency_daily
-                ModuleSettings.UpdateFrequency.WEEKLY -> R.string.update_settings_frequency_weekly
-            }),
+            summary = stringResource(
+                when (selected) {
+                    ModuleSettings.UpdateFrequency.MANUAL -> R.string.update_settings_frequency_manual
+                    ModuleSettings.UpdateFrequency.ON_START -> R.string.update_settings_frequency_on_start
+                    ModuleSettings.UpdateFrequency.SIX_HOURS -> R.string.update_settings_frequency_6h
+                    ModuleSettings.UpdateFrequency.DAILY -> R.string.update_settings_frequency_daily
+                    ModuleSettings.UpdateFrequency.WEEKLY -> R.string.update_settings_frequency_weekly
+                }
+            ),
             showChevron = false,
             onClick = { expanded = true },
             trailing = {
@@ -290,6 +337,20 @@ private fun UpdateFrequencyDropdown(
                 text = { Text(stringResource(R.string.update_settings_frequency_manual)) },
                 onClick = {
                     onSelect(ModuleSettings.UpdateFrequency.MANUAL)
+                    expanded = false
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.update_settings_frequency_on_start)) },
+                onClick = {
+                    onSelect(ModuleSettings.UpdateFrequency.ON_START)
+                    expanded = false
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.update_settings_frequency_6h)) },
+                onClick = {
+                    onSelect(ModuleSettings.UpdateFrequency.SIX_HOURS)
                     expanded = false
                 }
             )
@@ -327,10 +388,12 @@ private fun InstallModeDropdown(
             count = 1,
             icon = R.drawable.ic_outline_arrow_upward_24,
             title = stringResource(R.string.update_settings_install_mode_label),
-            summary = stringResource(when (selected) {
-                ModuleSettings.InstallMode.SOURCES -> R.string.update_settings_install_mode_sources
-                ModuleSettings.InstallMode.RELEASE -> R.string.update_settings_install_mode_release
-            }),
+            summary = stringResource(
+                when (selected) {
+                    ModuleSettings.InstallMode.SOURCES -> R.string.update_settings_install_mode_sources
+                    ModuleSettings.InstallMode.RELEASE -> R.string.update_settings_install_mode_release
+                }
+            ),
             showChevron = false,
             onClick = { expanded = true },
             trailing = {

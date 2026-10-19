@@ -49,6 +49,7 @@ fun TvModulesScreen(
     onNavigateUp: () -> Unit,
     onInstallZip: () -> Unit,
     onCheckModules: () -> Unit = {},
+    onUpdateAllModules: () -> Unit = {},
     onUpdateModule: (AdbModule, UpdateResult?) -> Unit = { _, _ -> },
     onToggle: (AdbModule) -> Unit,
     onRunAction: (AdbModule) -> Unit,
@@ -59,13 +60,15 @@ fun TvModulesScreen(
     onOpenCatalog: () -> Unit = {},
     onLabFeatures: () -> Unit = {}
 ) {
+    val updatesCount = checkReport?.updatesAvailableCount ?: 0
+
     Row(modifier = Modifier.fillMaxSize()) {
 
         Column(
             modifier = Modifier
                 .padding(32.dp)
-                .size(width = 300.dp, height = 560.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .size(width = 300.dp, height = 620.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             TvText(
                 text = stringResource(R.string.modules_title),
@@ -89,7 +92,7 @@ fun TvModulesScreen(
                     },
                     style = TvMaterialTheme.typography.bodySmall,
                     color = TvMaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    modifier = Modifier.padding(bottom = 6.dp)
                 )
             }
 
@@ -110,6 +113,14 @@ fun TvModulesScreen(
                 label = R.string.modules_background_check_short,
                 onClick = onCheckModules
             )
+
+            if (updatesCount > 0) {
+                TvMenuButton(
+                    icon = R.drawable.ic_outline_arrow_upward_24,
+                    label = R.string.modules_update_all_short,
+                    onClick = onUpdateAllModules
+                )
+            }
 
             TvMenuButton(
                 icon = R.drawable.ic_outline_open_in_new_24,

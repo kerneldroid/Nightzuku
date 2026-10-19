@@ -3,23 +3,32 @@ package moe.shizuku.manager.module.update
 import android.content.Context
 import android.net.Uri
 import android.util.Log
-import moe.shizuku.manager.module.AdbModule
-import moe.shizuku.manager.module.AdbModuleManager
-import moe.shizuku.manager.module.ModuleSettings
-import moe.shizuku.manager.module.discovery.ContentItem
-import moe.shizuku.manager.module.discovery.GitHubRepo
-import moe.shizuku.manager.module.discovery.RateLimitTracker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import moe.shizuku.manager.module.AdbModule
+import moe.shizuku.manager.module.AdbModuleManager
+import moe.shizuku.manager.module.ModuleSettings
+import moe.shizuku.manager.module.catalog.TokenStore
+import moe.shizuku.manager.module.discovery.ContentItem
+import moe.shizuku.manager.module.discovery.GitHubRepo
+import moe.shizuku.manager.module.discovery.RateLimitTracker
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import moe.shizuku.manager.module.catalog.TokenStore
 import java.io.File
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
+
+data class BatchUpdateSummary(
+    val total: Int,
+    val updatedModules: List<AdbModule>,
+    val failedModules: Map<String, String>
+) {
+    val successCount: Int get() = updatedModules.size
+    val failureCount: Int get() = failedModules.size
+}
 
 class ModuleInstaller private constructor() {
 
@@ -35,16 +44,21 @@ class ModuleInstaller private constructor() {
     suspend fun updateModule(
         context: Context,
         module: AdbModule,
-        updateResult: UpdateResult? = null
+        updateResult: UpdateResult? = null,
+        preferredMode: ModuleSettings.InstallMode? = null
     ): Result<AdbModule> = withContext(Dispatchers.IO) {
         try {
             cleanupOldZips(context)
-            val directUrl = updateResult?.downloadUrl?.takeIf { it.isNotBlank() }
-            if (directUrl != null) {
-                val zipUri = downloadDirectZip(context, module.id, directUrl)
-                if (zipUri != null) {
-                    val updated = AdbModuleManager.install(context, zipUri)
-                    return@withContext Result.success(updated)
+            val effectiveMode = preferredMode ?: ModuleSettings.getInstallMode()
+
+            if (effectiveMode == ModuleSettings.InstallMode.RELEASE || preferredMode == null) {
+                val directUrl = updateResult?.downloadUrl?.takeIf { it.isNotBlank() }
+                if (directUrl != null) {
+                    val zipUri = downloadDirectZip(context, module.id, directUrl)
+                    if (zipUri != null) {
+                        val updated = AdbModuleManager.install(context, zipUri)
+                        return@withContext Result.success(updated)
+                    }
                 }
             }
 
@@ -53,11 +67,43 @@ class ModuleInstaller private constructor() {
                     IllegalStateException("Не удалось определить репозиторий GitHub для модуля ${module.id}")
                 )
             val (owner, repo, subPath) = resolved
-            installModule(context, module.id, owner, repo, subPath)
+            installModule(
+                context = context,
+                moduleId = module.id,
+                owner = owner,
+                repo = repo,
+                subPath = subPath,
+                modeOverride = preferredMode
+            )
         } catch (e: Exception) {
             Log.e(TAG, "Update failed for ${module.id}", e)
             Result.failure(e)
         }
+    }
+
+    suspend fun updateAllModules(
+        context: Context,
+        targets: List<Pair<AdbModule, UpdateResult>>,
+        onProgress: ((current: Int, total: Int, moduleName: String) -> Unit)? = null
+    ): BatchUpdateSummary = withContext(Dispatchers.IO) {
+        val updated = mutableListOf<AdbModule>()
+        val failed = LinkedHashMap<String, String>()
+        val total = targets.size
+
+        targets.forEachIndexed { index, (module, updateRes) ->
+            onProgress?.invoke(index + 1, total, module.name)
+            updateModule(context, module, updateRes)
+                .onSuccess { updated += it }
+                .onFailure { err ->
+                    failed[module.id] = err.message ?: err.javaClass.simpleName
+                }
+        }
+
+        BatchUpdateSummary(
+            total = total,
+            updatedModules = updated,
+            failedModules = failed
+        )
     }
 
     private fun downloadDirectZip(context: Context, moduleId: String, downloadUrl: String): Uri? {
@@ -89,12 +135,13 @@ class ModuleInstaller private constructor() {
         moduleId: String,
         owner: String,
         repo: String,
-        subPath: String? = null
+        subPath: String? = null,
+        modeOverride: ModuleSettings.InstallMode? = null
     ): Result<AdbModule> = withContext(Dispatchers.IO) {
         try {
             cleanupOldZips(context)
 
-            val installMode = ModuleSettings.getInstallMode()
+            val installMode = modeOverride ?: ModuleSettings.getInstallMode()
             val githubPat = TokenStore.getToken(context)?.trim()?.takeIf { it.isNotEmpty() }
             Log.d(TAG, "Installing $moduleId mode=$installMode token=${if (githubPat == null) "null" else "set"}")
 
@@ -319,7 +366,6 @@ class ModuleInstaller private constructor() {
                         val slashIndex = fullEntryPath.indexOf('/')
                         if (slashIndex <= 0) continue
 
-                        // Strip GitHub's top-level "<repo>-<branch-or-sha>/" directory
                         val repoRelativePath = fullEntryPath.substring(slashIndex + 1).trimStart('/')
                         if (repoRelativePath.isBlank()) continue
 
@@ -390,8 +436,8 @@ class ModuleInstaller private constructor() {
 
         val zipAsset = release.assets.firstOrNull { asset ->
             asset.name.endsWith(".zip", ignoreCase = true) &&
-                    (asset.name.contains(moduleId, ignoreCase = true) ||
-                            asset.name.contains(repo, ignoreCase = true))
+                (asset.name.contains(moduleId, ignoreCase = true) ||
+                    asset.name.contains(repo, ignoreCase = true))
         } ?: release.assets.firstOrNull { it.name.endsWith(".zip", ignoreCase = true) }
 
         if (zipAsset == null) {

@@ -12,6 +12,7 @@ import android.content.Intent
 import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -45,11 +46,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CornerSize
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -57,6 +61,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -67,6 +74,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.neverEqualPolicy
 import androidx.compose.runtime.remember
@@ -96,6 +104,7 @@ import moe.shizuku.manager.R
 import moe.shizuku.manager.app.AppActivity
 import moe.shizuku.manager.module.update.ModuleInstaller
 import moe.shizuku.manager.module.update.UpdateResult
+import moe.shizuku.manager.module.update.UpdateSettingsScreen
 import moe.shizuku.manager.nightdog.NightDogClient
 import moe.shizuku.manager.ui.compose.ExpressiveSwitch
 import moe.shizuku.manager.ui.compose.MonospaceLog
@@ -105,7 +114,7 @@ import moe.shizuku.manager.ui.compose.ShizukuLazyScaffold
 
 class ModulesActivity : AppActivity() {
 
-    private var reloadTrigger by androidx.compose.runtime.mutableIntStateOf(0)
+    private var reloadTrigger by mutableIntStateOf(0)
 
     override fun onResume() {
         super.onResume()
@@ -121,9 +130,13 @@ class ModulesActivity : AppActivity() {
             var modules by remember { mutableStateOf<List<AdbModule>>(emptyList(), neverEqualPolicy()) }
             var output by remember { mutableStateOf<Pair<String, String>?>(null) }
             var deleteTarget by remember { mutableStateOf<AdbModule?>(null) }
+            var updateDialogTarget by remember { mutableStateOf<Pair<AdbModule, UpdateResult>?>(null) }
             var pendingCommand by remember { mutableStateOf<ModuleCommandRequest?>(null) }
             var runningModuleId by remember { mutableStateOf<String?>(null) }
+            var batchProgressText by remember { mutableStateOf<String?>(null) }
             var allowBackgroundActions by remember { mutableStateOf(ModuleSettings.allowBackgroundActions()) }
+            var pinRefreshTick by remember { mutableIntStateOf(0) }
+            var showUpdateSettings by remember { mutableStateOf(false) }
 
             val isCheckingModules by NightDogClient.isCheckingModules.collectAsState()
             val checkReport by NightDogClient.lastCheckReport.collectAsState()
@@ -132,6 +145,7 @@ class ModulesActivity : AppActivity() {
                 scope.launch {
                     allowBackgroundActions = ModuleSettings.allowBackgroundActions()
                     modules = AdbModuleManager.listModules(context)
+                    pinRefreshTick++
                     if (refreshHealth) {
                         NightDogClient.runBackgroundCheck(
                             context = context,
@@ -143,7 +157,7 @@ class ModulesActivity : AppActivity() {
             }
 
             fun runManualCheckNow() {
-                if (isCheckingModules) return
+                if (isCheckingModules || batchProgressText != null) return
                 scope.launch {
                     val report = NightDogClient.runManualCheck(
                         context = context,
@@ -164,10 +178,14 @@ class ModulesActivity : AppActivity() {
                 }
             }
 
-            fun updateModuleNow(module: AdbModule, updateResult: UpdateResult?) {
+            fun updateModuleNow(
+                module: AdbModule,
+                updateResult: UpdateResult?,
+                preferredMode: ModuleSettings.InstallMode? = null
+            ) {
                 scope.launch {
                     runningModuleId = module.id
-                    ModuleInstaller.getInstance().updateModule(context, module, updateResult)
+                    ModuleInstaller.getInstance().updateModule(context, module, updateResult, preferredMode)
                         .onSuccess { updated ->
                             Toast.makeText(
                                 context,
@@ -185,6 +203,39 @@ class ModulesActivity : AppActivity() {
                             ).show()
                         }
                     runningModuleId = null
+                }
+            }
+
+            fun updateAllModulesNow() {
+                val report = checkReport ?: return
+                val targets = modules.mapNotNull { mod ->
+                    if (ModuleSettings.isModuleUpdateIgnored(mod.id)) return@mapNotNull null
+                    val upd = report.updatesByModule[mod.id] ?: return@mapNotNull null
+                    if (upd.hasUpdate) mod to upd else null
+                }
+                if (targets.isEmpty() || batchProgressText != null) return
+
+                scope.launch {
+                    batchProgressText = context.getString(R.string.modules_update_all_progress, 1, targets.size)
+                    val summary = ModuleInstaller.getInstance().updateAllModules(
+                        context = context,
+                        targets = targets,
+                        onProgress = { cur, total, name ->
+                            batchProgressText = "${context.getString(R.string.modules_update_all_progress, cur, total)}: $name"
+                        }
+                    )
+                    batchProgressText = null
+                    modules = AdbModuleManager.listModules(context)
+                    NightDogClient.runManualCheck(context, checkUpdates = true, forceRunServices = false)
+                    Toast.makeText(
+                        context,
+                        context.getString(
+                            R.string.modules_update_all_result,
+                            summary.successCount,
+                            summary.total
+                        ),
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
 
@@ -239,6 +290,21 @@ class ModulesActivity : AppActivity() {
             val isWatch = moe.shizuku.manager.utils.EnvironmentUtils.isWatch(this@ModulesActivity)
             val isTv = moe.shizuku.manager.utils.EnvironmentUtils.isTV(this@ModulesActivity)
             var showCatalog by remember { mutableStateOf(false) }
+
+            if (showUpdateSettings && !isWatch && !isTv) {
+                BackHandler {
+                    showUpdateSettings = false
+                    reload(refreshHealth = false)
+                }
+                UpdateSettingsScreen(
+                    onNavigateUp = {
+                        showUpdateSettings = false
+                        reload(refreshHealth = false)
+                    }
+                )
+                return@setContent
+            }
+
             if (isWatch) {
                 moe.shizuku.manager.ui.compose.WearShizukuTheme {
 
@@ -251,9 +317,10 @@ class ModulesActivity : AppActivity() {
                         WearModulesScreen(
                             modules = modules,
                             busyId = runningModuleId,
-                            isCheckingModules = isCheckingModules,
+                            isCheckingModules = isCheckingModules || batchProgressText != null,
                             checkReport = checkReport,
                             onCheckModules = { runManualCheckNow() },
+                            onUpdateAllModules = { updateAllModulesNow() },
                             onUpdateModule = { module, updateRes -> updateModuleNow(module, updateRes) },
                             onToggle = { module ->
                                 scope.launch {
@@ -360,11 +427,12 @@ class ModulesActivity : AppActivity() {
                         } else {
                             TvModulesScreen(
                                 modules = modules,
-                                isCheckingModules = isCheckingModules,
+                                isCheckingModules = isCheckingModules || batchProgressText != null,
                                 checkReport = checkReport,
                                 onNavigateUp = { finish() },
                                 onInstallZip = { zipLauncher.launch(MODULE_MIME_TYPES) },
                                 onCheckModules = { runManualCheckNow() },
+                                onUpdateAllModules = { updateAllModulesNow() },
                                 onUpdateModule = { module, updateRes -> updateModuleNow(module, updateRes) },
                                 onToggle = { module ->
                                     scope.launch {
@@ -518,7 +586,7 @@ class ModulesActivity : AppActivity() {
                                                 modifier = Modifier
                                                     .height(36.dp)
                                                     .background(MaterialTheme.colorScheme.secondaryContainer)
-                                                    .clickable(enabled = !isCheckingModules) { runManualCheckNow() }
+                                                    .clickable(enabled = !isCheckingModules && batchProgressText == null) { runManualCheckNow() }
                                                     .padding(horizontal = 12.dp),
                                                 contentAlignment = Alignment.Center
                                             ) {
@@ -543,13 +611,16 @@ class ModulesActivity : AppActivity() {
                                     item {
                                         NightDogModuleCheckBanner(
                                             isChecking = isCheckingModules,
+                                            batchProgressText = batchProgressText,
                                             report = checkReport,
                                             allowBackgroundActions = allowBackgroundActions,
                                             onToggleBackgroundActions = { enabled ->
                                                 allowBackgroundActions = enabled
                                                 ModuleSettings.setAllowBackgroundActions(enabled)
                                             },
-                                            onRunCheck = { runManualCheckNow() }
+                                            onRunCheck = { runManualCheckNow() },
+                                            onUpdateAll = { updateAllModulesNow() },
+                                            onOpenUpdateSettings = { showUpdateSettings = true }
                                         )
                                     }
                                 }
@@ -563,10 +634,14 @@ class ModulesActivity : AppActivity() {
                                 items(modules, key = { it.id }) { module ->
                                     val health = checkReport?.healthByModule?.get(module.id)
                                     val updateRes = checkReport?.updatesByModule?.get(module.id)
+                                    val isPinned = remember(module.id, pinRefreshTick) {
+                                        ModuleSettings.isModuleUpdateIgnored(module.id)
+                                    }
                                     ModuleCard(
                                         module = module,
                                         busy = runningModuleId == module.id,
                                         trusted = ModuleSettings.isModuleTrusted(module.id),
+                                        pinned = isPinned,
                                         health = health,
                                         updateResult = updateRes,
                                         modifier = Modifier.animateItem(),
@@ -606,8 +681,16 @@ class ModulesActivity : AppActivity() {
                                                     .putExtra(ModuleWebViewActivity.EXTRA_MODULE_ID, module.id)
                                             )
                                         },
-                                        onUpdate = {
-                                            updateModuleNow(module, updateRes)
+                                        onUpdateClick = {
+                                            if (updateRes != null && updateRes.hasUpdate) {
+                                                updateDialogTarget = module to updateRes
+                                            } else {
+                                                updateModuleNow(module, updateRes)
+                                            }
+                                        },
+                                        onPinChange = { pinned ->
+                                            ModuleSettings.setModuleUpdateIgnored(module.id, pinned)
+                                            pinRefreshTick++
                                         },
                                         onDelete = { deleteTarget = module },
                                         onTrustChange = { trusted ->
@@ -621,6 +704,23 @@ class ModulesActivity : AppActivity() {
                                         }
                                     )
                                 }
+                            }
+
+                            updateDialogTarget?.let { (module, updateRes) ->
+                                ModuleUpdateDialog(
+                                    module = module,
+                                    updateResult = updateRes,
+                                    onDismiss = { updateDialogTarget = null },
+                                    onConfirmUpdate = { preferredMode ->
+                                        updateDialogTarget = null
+                                        updateModuleNow(module, updateRes, preferredMode)
+                                    },
+                                    onPinVersion = {
+                                        updateDialogTarget = null
+                                        ModuleSettings.setModuleUpdateIgnored(module.id, true)
+                                        pinRefreshTick++
+                                    }
+                                )
                             }
 
                             output?.let { (title, text) ->
@@ -709,11 +809,15 @@ private const val MAX_RECOMMAND_COMMAND_CHARS = 64 * 1024
 @Composable
 private fun NightDogModuleCheckBanner(
     isChecking: Boolean,
+    batchProgressText: String?,
     report: NightDogClient.ModuleCheckReport?,
     allowBackgroundActions: Boolean,
     onToggleBackgroundActions: (Boolean) -> Unit,
-    onRunCheck: () -> Unit
+    onRunCheck: () -> Unit,
+    onUpdateAll: () -> Unit,
+    onOpenUpdateSettings: () -> Unit
 ) {
+    val updatesCount = report?.updatesAvailableCount ?: 0
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,
@@ -725,7 +829,7 @@ private fun NightDogModuleCheckBanner(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 ShizukuIcon(
@@ -741,6 +845,7 @@ private fun NightDogModuleCheckBanner(
                     )
                     Text(
                         text = when {
+                            batchProgressText != null -> batchProgressText
                             isChecking -> stringResource(R.string.modules_background_check_running)
                             report != null -> stringResource(
                                 R.string.modules_background_check_report_summary,
@@ -755,9 +860,22 @@ private fun NightDogModuleCheckBanner(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                IconButton(onClick = onOpenUpdateSettings) {
+                    ShizukuIcon(R.drawable.ic_settings_outline_24dp, modifier = Modifier.size(20.dp))
+                }
+            }
+
+            if (batchProgressText != null) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 FilledTonalButton(
                     onClick = onRunCheck,
-                    enabled = !isChecking
+                    enabled = !isChecking && batchProgressText == null
                 ) {
                     if (isChecking) {
                         LoadingIndicator(Modifier.size(16.dp))
@@ -769,6 +887,21 @@ private fun NightDogModuleCheckBanner(
                                 .size(16.dp)
                         )
                         Text(stringResource(R.string.modules_background_check_short))
+                    }
+                }
+
+                if (updatesCount > 0) {
+                    Button(
+                        onClick = onUpdateAll,
+                        enabled = !isChecking && batchProgressText == null
+                    ) {
+                        ShizukuIcon(
+                            R.drawable.ic_outline_arrow_upward_24,
+                            modifier = Modifier
+                                .padding(end = 6.dp)
+                                .size(16.dp)
+                        )
+                        Text(stringResource(R.string.modules_update_all_button, updatesCount))
                     }
                 }
             }
@@ -797,6 +930,96 @@ private fun NightDogModuleCheckBanner(
             }
         }
     }
+}
+
+@Composable
+private fun ModuleUpdateDialog(
+    module: AdbModule,
+    updateResult: UpdateResult,
+    onDismiss: () -> Unit,
+    onConfirmUpdate: (ModuleSettings.InstallMode?) -> Unit,
+    onPinVersion: () -> Unit
+) {
+    var selectedMode by remember { mutableStateOf<ModuleSettings.InstallMode?>(null) }
+    val changelogText = updateResult.changelog?.trim()?.takeIf { it.isNotBlank() }
+        ?: stringResource(R.string.modules_update_changelog_empty)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(module.name) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = stringResource(
+                        R.string.modules_update_version_transition,
+                        module.version ?: "-",
+                        updateResult.latestVersion ?: "new"
+                    ),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = stringResource(R.string.modules_update_changelog_title),
+                    style = MaterialTheme.typography.labelLarge
+                )
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 56.dp, max = 200.dp)
+                ) {
+                    Text(
+                        text = changelogText,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier
+                            .verticalScroll(rememberScrollState())
+                            .padding(12.dp)
+                    )
+                }
+                Text(
+                    text = stringResource(R.string.update_settings_install_mode_label),
+                    style = MaterialTheme.typography.labelLarge
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    FilterChip(
+                        selected = selectedMode == null,
+                        onClick = { selectedMode = null },
+                        label = { Text(stringResource(R.string.modules_update_mode_default)) }
+                    )
+                    FilterChip(
+                        selected = selectedMode == ModuleSettings.InstallMode.RELEASE,
+                        onClick = { selectedMode = ModuleSettings.InstallMode.RELEASE },
+                        label = { Text(stringResource(R.string.update_settings_install_mode_release)) }
+                    )
+                    FilterChip(
+                        selected = selectedMode == ModuleSettings.InstallMode.SOURCES,
+                        onClick = { selectedMode = ModuleSettings.InstallMode.SOURCES },
+                        label = { Text(stringResource(R.string.update_settings_install_mode_sources)) }
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onConfirmUpdate(selectedMode) }) {
+                Text(stringResource(R.string.modules_update_now))
+            }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = onPinVersion) {
+                    Text(stringResource(R.string.modules_update_pin))
+                }
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            }
+        }
+    )
 }
 
 @Composable
@@ -839,6 +1062,7 @@ private fun ModuleCard(
     module: AdbModule,
     busy: Boolean,
     trusted: Boolean,
+    pinned: Boolean,
     health: ModuleHealthStatus?,
     updateResult: UpdateResult?,
     modifier: Modifier = Modifier,
@@ -846,12 +1070,13 @@ private fun ModuleCard(
     onRunAction: () -> Unit,
     onRunService: () -> Unit,
     onOpenWebUi: () -> Unit,
-    onUpdate: () -> Unit,
+    onUpdateClick: () -> Unit,
+    onPinChange: (Boolean) -> Unit,
     onDelete: () -> Unit,
     onTrustChange: (Boolean) -> Unit
 ) {
     var expanded by remember(module.id) { mutableStateOf(true) }
-    var showTrustAction by remember(module.id, trusted) { mutableStateOf(false) }
+    var showExtraActions by remember(module.id, trusted, pinned) { mutableStateOf(false) }
     val containerColor by animateColorAsState(
         targetValue = if (trusted) {
             MaterialTheme.colorScheme.tertiaryContainer
@@ -871,7 +1096,7 @@ private fun ModuleCard(
                 onClick = { expanded = !expanded },
                 onLongClick = {
                     expanded = true
-                    showTrustAction = !showTrustAction
+                    showExtraActions = !showExtraActions
                 }
             )
             .animateContentSize(animationSpec = tween(280)),
@@ -920,8 +1145,11 @@ private fun ModuleCard(
                 ModuleChips(
                     module = module,
                     trusted = trusted,
+                    pinned = pinned,
                     health = health,
-                    updateResult = updateResult
+                    updateResult = updateResult,
+                    onUpdateChipClick = onUpdateClick,
+                    onUnpinClick = { onPinChange(false) }
                 )
                 AnimatedVisibility(
                     visible = busy,
@@ -938,17 +1166,22 @@ private fun ModuleCard(
                     ModuleActions(
                         module = module,
                         busy = busy,
-                        hasUpdate = updateResult?.hasUpdate == true,
+                        hasUpdate = updateResult?.hasUpdate == true && !pinned,
                         onRunAction = onRunAction,
                         onRunService = onRunService,
                         onOpenWebUi = onOpenWebUi,
-                        onUpdate = onUpdate,
+                        onUpdate = onUpdateClick,
                         onDelete = onDelete,
                         trusted = trusted,
-                        showTrustAction = showTrustAction,
+                        pinned = pinned,
+                        showExtraActions = showExtraActions,
                         onTrustChange = {
-                            showTrustAction = false
+                            showExtraActions = false
                             onTrustChange(it)
+                        },
+                        onPinChange = {
+                            showExtraActions = false
+                            onPinChange(it)
                         }
                     )
                 }
@@ -961,8 +1194,11 @@ private fun ModuleCard(
 private fun ModuleChips(
     module: AdbModule,
     trusted: Boolean,
+    pinned: Boolean,
     health: ModuleHealthStatus?,
-    updateResult: UpdateResult?
+    updateResult: UpdateResult?,
+    onUpdateChipClick: () -> Unit,
+    onUnpinClick: () -> Unit
 ) {
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -975,6 +1211,12 @@ private fun ModuleChips(
         AssistChip(onClick = {}, label = { Text(module.formattedSize) })
         if (trusted) {
             AssistChip(onClick = {}, label = { Text(stringResource(R.string.modules_full_trust)) })
+        }
+        if (pinned) {
+            AssistChip(
+                onClick = onUnpinClick,
+                label = { Text(stringResource(R.string.modules_update_pinned_chip)) }
+            )
         }
         if (module.hasService) {
             val bgAllowed = ModuleSettings.canRunBackground(module) && ModuleSettings.canRunService(module)
@@ -1009,9 +1251,9 @@ private fun ModuleChips(
                 )
             }
         }
-        if (updateResult?.hasUpdate == true) {
+        if (updateResult?.hasUpdate == true && !pinned) {
             AssistChip(
-                onClick = {},
+                onClick = onUpdateChipClick,
                 colors = AssistChipDefaults.assistChipColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     labelColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -1061,13 +1303,15 @@ private fun ModuleActions(
     busy: Boolean,
     hasUpdate: Boolean,
     trusted: Boolean,
-    showTrustAction: Boolean,
+    pinned: Boolean,
+    showExtraActions: Boolean,
     onRunAction: () -> Unit,
     onRunService: () -> Unit,
     onOpenWebUi: () -> Unit,
     onUpdate: () -> Unit,
     onDelete: () -> Unit,
-    onTrustChange: (Boolean) -> Unit
+    onTrustChange: (Boolean) -> Unit,
+    onPinChange: (Boolean) -> Unit
 ) {
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1105,12 +1349,18 @@ private fun ModuleActions(
                 onClick = onUpdate
             )
         }
-        if (showTrustAction) {
+        if (showExtraActions) {
             ModuleButton(
                 label = if (trusted) R.string.modules_untrust else R.string.modules_trust,
                 icon = R.drawable.ic_warning_24,
                 enabled = !busy,
                 onClick = { onTrustChange(!trusted) }
+            )
+            ModuleButton(
+                label = if (pinned) R.string.modules_update_unpin else R.string.modules_update_pin,
+                icon = R.drawable.ic_settings_outline_24dp,
+                enabled = !busy,
+                onClick = { onPinChange(!pinned) }
             )
         }
         ModuleButton(

@@ -3,18 +3,18 @@ package moe.shizuku.manager.module
 import android.content.Context
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import moe.shizuku.server.IShizukuService
 import rikka.shizuku.Shizuku
 import java.io.BufferedInputStream
 import java.io.File
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipFile
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import java.util.concurrent.ConcurrentHashMap
 
 object AdbModuleManager {
 
@@ -31,7 +31,8 @@ object AdbModuleManager {
 
     fun cleanupStagingDirs(context: Context) {
         modulesRoot(context).listFiles { file ->
-            file.isDirectory && file.name.startsWith(".") && file.name.endsWith(".installing")
+            file.isDirectory && file.name.startsWith(".") &&
+                (file.name.endsWith(".installing") || file.name.endsWith(".backup"))
         }?.forEach { it.deleteRecursively() }
     }
 
@@ -153,7 +154,9 @@ object AdbModuleManager {
 
                     val target = File(modulesDir, id)
                     val staging = File(modulesDir, ".$id.installing")
+                    val backup = File(modulesDir, ".$id.backup")
                     staging.deleteRecursively()
+                    backup.deleteRecursively()
                     staging.mkdirs()
 
                     var entryCount = 0
@@ -186,18 +189,43 @@ object AdbModuleManager {
                         }
                     }
 
-                    // Preserve existing .source.prop across updates if not included in new ZIP
+                    // Preserve existing .source.prop and disabled state across updates
                     val existingSourceProp = target.resolve(".source.prop")
                     val stagingSourceProp = staging.resolve(".source.prop")
                     if (existingSourceProp.isFile && !stagingSourceProp.exists()) {
                         runCatching { existingSourceProp.copyTo(stagingSourceProp, overwrite = false) }
                     }
+                    val existingDisable = target.resolve(DISABLE_FILE)
+                    val stagingDisable = staging.resolve(DISABLE_FILE)
+                    if (existingDisable.exists() && !stagingDisable.exists()) {
+                        runCatching { existingDisable.copyTo(stagingDisable, overwrite = false) }
+                    }
 
                     markScriptsExecutable(staging)
-                    target.deleteRecursively()
-                    check(staging.renameTo(target)) { "Unable to move module into storage." }
-                    markScriptsExecutable(target)
-                    readModule(target) ?: error("Installed module is unreadable.")
+                    // Verify staging is a valid readable module before touching existing target
+                    checkNotNull(readModule(staging)) { "Staged module is unreadable." }
+
+                    val hadExistingTarget = target.exists()
+                    if (hadExistingTarget) {
+                        check(target.renameTo(backup)) { "Unable to backup existing module before update." }
+                    }
+
+                    try {
+                        if (!staging.renameTo(target)) {
+                            error("Unable to move module into storage.")
+                        }
+                        markScriptsExecutable(target)
+                        val installed = readModule(target) ?: error("Installed module is unreadable.")
+                        backup.deleteRecursively()
+                        installed
+                    } catch (t: Throwable) {
+                        target.deleteRecursively()
+                        if (hadExistingTarget && backup.exists()) {
+                            backup.renameTo(target)
+                        }
+                        staging.deleteRecursively()
+                        throw t
+                    }
                 }
             }
         } finally {
@@ -216,6 +244,7 @@ object AdbModuleManager {
 
     suspend fun delete(module: AdbModule) = withContext(Dispatchers.IO) {
         ModuleSettings.setModuleTrusted(module.id, false)
+        ModuleSettings.setModuleUpdateIgnored(module.id, false)
         module.directory.deleteRecursively()
     }
 
