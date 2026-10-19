@@ -108,7 +108,7 @@
         <activity
             android:name=".settings.LabFeaturesActivity"
             android:exported="false"
-            android:label="Lab Features" />
+            android:label="@string/lab_features_title" />
         <activity
             android:name=".module.ModulesActivity"
             android:exported="false"
@@ -142,18 +142,6 @@
             <intent-filter>
                 <action android:name="kerneldroid.nightzuku.intent.action.REQUEST_BINDER" />
                 <action android:name="rikka.shizuku.intent.action.REQUEST_BINDER" />
-
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-        </activity>
-        <activity
-            android:name=".legacy.LegacyIsNotSupportedActivity"
-            android:excludeFromRecents="true"
-            android:exported="true"
-            android:permission="kerneldroid.nightzuku.permission.API"
-            android:theme="@style/GrantPermissions">
-            <intent-filter>
-                <action android:name="${applicationId}.intent.action.REQUEST_AUTHORIZATION" />
 
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>

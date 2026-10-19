@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.pm.PackageInfo
 import androidx.activity.ComponentActivity
 import androidx.annotation.MainThread
-import androidx.fragment.app.Fragment
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
@@ -14,14 +13,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import moe.shizuku.manager.authorization.AuthorizationManager
 import rikka.lifecycle.Resource
-import rikka.lifecycle.activityViewModels
 import rikka.lifecycle.viewModels
 
 @MainThread
 fun ComponentActivity.appsViewModel() = viewModels { AppsViewModel(this) }
-
-@MainThread
-fun Fragment.appsViewModel() = activityViewModels { AppsViewModel(requireContext()) }
 
 class AppsViewModel(context: Context) : ViewModel() {
 
