@@ -43,12 +43,19 @@ object PackageSignatureVerifier {
             val pinnedDigest = certDigests.first()
             return pinnedDigest in lineage
         }
+
+        companion object {
+            @JvmStatic
+            fun fromSnapshot(snapshot: Snapshot): Baseline =
+                Baseline(snapshot.packageName, snapshot.appId, snapshot.certDigests)
+        }
     }
 
     /**
      * Observed package state for a specific Android user.
      */
     data class Snapshot(
+        val packageName: String,
         val userId: Int,
         val appId: Int,
         val sourceDir: String?,
@@ -58,9 +65,19 @@ object PackageSignatureVerifier {
     )
 
     sealed class ProbeResult {
-        data class Present(val snapshot: Snapshot) : ProbeResult()
-        data object Absent : ProbeResult()
-        data class LookupError(val cause: Throwable?) : ProbeResult()
+        abstract val reason: String?
+
+        data class Present(val snapshot: Snapshot) : ProbeResult() {
+            override val reason: String? = null
+        }
+
+        data class Absent(
+            override val reason: String = "package is not installed"
+        ) : ProbeResult()
+
+        data class LookupError(val cause: Throwable?) : ProbeResult() {
+            override val reason: String? = cause?.message
+        }
     }
 
     @JvmStatic
@@ -77,10 +94,14 @@ object PackageSignatureVerifier {
     }
 
     @JvmStatic
-    fun sha256Hex(signature: Signature?): String? {
-        if (signature == null) return null
+    fun sha256Hex(signature: Signature?): String? =
+        signature?.let { sha256Hex(it.toByteArray()) }
+
+    @JvmStatic
+    fun sha256Hex(data: ByteArray?): String? {
+        if (data == null) return null
         return try {
-            val digest = MessageDigest.getInstance("SHA-256").digest(signature.toByteArray())
+            val digest = MessageDigest.getInstance("SHA-256").digest(data)
             val chars = CharArray(digest.size * 2)
             for (i in digest.indices) {
                 val v = digest[i].toInt() and 0xFF
@@ -142,19 +163,19 @@ object PackageSignatureVerifier {
                 } else {
                     computeSignerDigests(signingInfo.signingCertificateHistory).takeIf { it.isNotEmpty() }
                 }
-                return Snapshot(userId, appId, ai.sourceDir, digests, multiple, lineage)
+                return Snapshot(packageInfo.packageName, userId, appId, ai.sourceDir, digests, multiple, lineage)
             }
         }
-        return Snapshot(userId, appId, ai.sourceDir, digests, digests.size > 1, null)
+        return Snapshot(packageInfo.packageName, userId, appId, ai.sourceDir, digests, digests.size > 1, null)
     }
 
     @JvmStatic
     fun evaluatePackageInfo(packageInfo: PackageInfo?, userId: Int): ProbeResult {
-        if (packageInfo == null) return ProbeResult.Absent
+        if (packageInfo == null) return ProbeResult.Absent()
         val ai = packageInfo.applicationInfo
             ?: return ProbeResult.LookupError(IllegalStateException("Missing ApplicationInfo for ${packageInfo.packageName}"))
         if ((ai.flags and ApplicationInfo.FLAG_INSTALLED) == 0) {
-            return ProbeResult.Absent
+            return ProbeResult.Absent()
         }
         val snapshot = extractSnapshot(packageInfo, userId)
             ?: return ProbeResult.LookupError(IllegalStateException("Missing signing certificates for ${packageInfo.packageName}"))

@@ -7,7 +7,6 @@ import android.content.pm.Signature
 import android.content.pm.SigningInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -127,8 +126,7 @@ class PackageSignatureVerifierTest {
 
     @Test
     fun `sha256Hex produces deterministic 64-char lowercase hex digest`() {
-        val digest = PackageSignatureVerifier.sha256Hex(byteArrayOf(0x01, 0x02, 0x03))
-        assertNotNull(digest)
+        val digest = requireNotNull(PackageSignatureVerifier.sha256Hex(byteArrayOf(0x01, 0x02, 0x03)))
         assertEquals(64, digest.length)
         assertEquals(digest.lowercase(), digest)
     }

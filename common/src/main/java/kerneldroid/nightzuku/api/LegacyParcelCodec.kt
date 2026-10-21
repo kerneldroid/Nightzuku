@@ -15,7 +15,7 @@ object LegacyParcelCodec {
 
     const val LEGACY_BINDER_EXTRA_KEY = "moe.shizuku.privileged.api.intent.extra.BINDER"
     private const val LEGACY_BINDER_CONTAINER_CLASS = "moe.shizuku.api.BinderContainer"
-    private const val LEGACY_APPLICATION_DESCRIPTOR = "moe.shizuku.server.IShizukuApplication"
+    const val DESCRIPTOR_ISHIZUKU_APPLICATION = "moe.shizuku.server.IShizukuApplication"
 
     private const val BUNDLE_MAGIC_NATIVE = 0x4C444E42 // 'B' 'N' 'D' 'L'
     private const val VAL_NULL = -1
@@ -26,7 +26,7 @@ object LegacyParcelCodec {
     private const val VAL_BOOLEAN = 9
     private const val VAL_IBINDER = 15
 
-    private const val TRANSACTION_BIND_APPLICATION = 2
+    const val TRANSACTION_BIND_APPLICATION = 2
     private const val TRANSACTION_DISPATCH_PERMISSION_RESULT = 3
 
     /**
@@ -143,14 +143,14 @@ object LegacyParcelCodec {
      */
     @JvmStatic
     fun sendLegacyBindApplication(
-        clientBinder: IBinder,
+        applicationBinder: IBinder,
         serverUid: Int,
         serverVersion: Int,
         serverPatchVersion: Int,
         seContext: String?,
-        allowed: Boolean,
+        permissionGranted: Boolean,
         shouldShowRationale: Boolean
-    ) {
+    ): Boolean {
         val data = Parcel.obtain()
         try {
             val reply = Bundle().apply {
@@ -158,13 +158,13 @@ object LegacyParcelCodec {
                 putInt("shizuku:attach-reply-version", serverVersion)
                 putInt("shizuku:attach-reply-patch-version", serverPatchVersion)
                 putString("shizuku:attach-reply-secontext", seContext)
-                putBoolean("shizuku:attach-reply-permission-granted", allowed)
+                putBoolean("shizuku:attach-reply-permission-granted", permissionGranted)
                 putBoolean("shizuku:attach-reply-should-show-request-permission-rationale", shouldShowRationale)
             }
-            data.writeInterfaceToken(LEGACY_APPLICATION_DESCRIPTOR)
+            data.writeInterfaceToken(DESCRIPTOR_ISHIZUKU_APPLICATION)
             data.writeInt(1)
             reply.writeToParcel(data, 0)
-            clientBinder.transact(TRANSACTION_BIND_APPLICATION, data, null, IBinder.FLAG_ONEWAY)
+            return applicationBinder.transact(TRANSACTION_BIND_APPLICATION, data, null, IBinder.FLAG_ONEWAY)
         } finally {
             data.recycle()
         }
@@ -184,7 +184,7 @@ object LegacyParcelCodec {
             val reply = Bundle().apply {
                 putBoolean("shizuku:request-permission-reply-allowed", allowed)
             }
-            data.writeInterfaceToken(LEGACY_APPLICATION_DESCRIPTOR)
+            data.writeInterfaceToken(DESCRIPTOR_ISHIZUKU_APPLICATION)
             data.writeInt(requestCode)
             data.writeInt(1)
             reply.writeToParcel(data, 0)
