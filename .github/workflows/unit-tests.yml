@@ -1,0 +1,90 @@
+name: Unit Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: 'Test suite to run (all, jvm, rust)'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - jvm
+          - rust
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    name: Run Internal Unit Tests (${{ inputs.suite || 'all' }})
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0
+
+      - name: Setup Java
+        if: ${{ (inputs.suite || 'all') == 'all' || inputs.suite == 'jvm' }}
+        uses: actions/setup-java@v6
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Run Rust Native Unit Tests (starter & adb-pairing)
+        if: ${{ (inputs.suite || 'all') == 'all' || inputs.suite == 'rust' }}
+        run: cargo test --manifest-path rust/Cargo.toml -p starter -p adb-pairing
+
+      - name: Install cargo-ndk
+        if: ${{ (inputs.suite || 'all') == 'all' || inputs.suite == 'jvm' }}
+        run: cargo install cargo-ndk --locked
+
+      - name: Setup Android SDK
+        if: ${{ (inputs.suite || 'all') == 'all' || inputs.suite == 'jvm' }}
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --channel=3 \
+            "platforms;android-37.0" \
+            "build-tools;37.0.0" \
+            "ndk;29.0.14206865"
+
+      - name: Setup Gradle
+        if: ${{ (inputs.suite || 'all') == 'all' || inputs.suite == 'jvm' }}
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Configure Gradle
+        if: ${{ (inputs.suite || 'all') == 'all' || inputs.suite == 'jvm' }}
+        run: |
+          echo 'android.sdk.channel=3' >> gradle.properties
+          echo 'org.gradle.caching=true' >> gradle.properties
+          echo 'org.gradle.parallel=true' >> gradle.properties
+
+      - name: Run JVM & Robolectric Unit Tests (:common, :nightdog, :server, :manager)
+        if: ${{ (inputs.suite || 'all') == 'all' || inputs.suite == 'jvm' }}
+        run: ./gradlew :common:testDebugUnitTest :nightdog:testDebugUnitTest :server:testDebugUnitTest :manager:testDebugUnitTest --continue
+
+      - name: Upload Unit Test Reports
+        if: always() && ((inputs.suite || 'all') == 'all' || inputs.suite == 'jvm')
+        uses: actions/upload-artifact@v7
+        with:
+          name: nightzuku-unit-test-reports
+          path: |
+            **/build/test-results/**/*.xml
+            **/build/reports/tests/**
+          compression-level: 9
+          if-no-files-found: warn
+          overwrite: true
