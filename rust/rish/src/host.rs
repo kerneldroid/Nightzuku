@@ -32,6 +32,32 @@ fn fail(env: &mut JNIEnv, message: &str) {
     }
 }
 
+fn close_fd(fd: &mut jint) {
+    if *fd >= 0 {
+        unsafe {
+            libc::close(*fd);
+        }
+        *fd = -1;
+    }
+}
+
+fn close_pipe(pipe: &mut [jint; 2]) {
+    close_fd(&mut pipe[0]);
+    close_fd(&mut pipe[1]);
+}
+
+fn cleanup_fds(
+    ptmx: &mut jint,
+    stdin_pipe: &mut [jint; 2],
+    stdout_pipe: &mut [jint; 2],
+    stderr_pipe: &mut [jint; 2],
+) {
+    close_fd(ptmx);
+    close_pipe(stdin_pipe);
+    close_pipe(stdout_pipe);
+    close_pipe(stderr_pipe);
+}
+
 fn int_array(env: &mut JNIEnv, pid: jint, ptmx: jint) -> jintArray {
     let Ok(array) = env.new_int_array(2) else {
         error!("Unable to allocate the host result array.");
@@ -62,42 +88,6 @@ pub(crate) extern "system" fn native_start<'local>(
     let in_tty = tty & pts::ATTY_IN != 0;
     let out_tty = tty & pts::ATTY_OUT != 0;
     let err_tty = tty & pts::ATTY_ERR != 0;
-
-    let mut ptmx = -1;
-
-    if tty != 0 {
-        ptmx = pts::open_ptmx();
-
-        if ptmx == -1 {
-            fail(&mut env, "Unable to open ptmx");
-            return ptr::null_mut();
-        }
-
-        debug!("ptmx {ptmx}");
-    }
-
-    let mut stdin_pipe = [-1, -1];
-    let mut stdout_pipe = [-1, -1];
-    let mut stderr_pipe = [-1, -1];
-
-    debug!(
-        "istty stdin {} stdout {} stderr {}",
-        jint::from(in_tty),
-        jint::from(out_tty),
-        jint::from(err_tty)
-    );
-
-    if !in_tty {
-        unsafe { libc::pipe2(stdin_pipe.as_mut_ptr(), 0) };
-    }
-
-    if !out_tty {
-        unsafe { libc::pipe2(stdout_pipe.as_mut_ptr(), 0) };
-    }
-
-    if !err_tty {
-        unsafe { libc::pipe2(stderr_pipe.as_mut_ptr(), 0) };
-    }
 
     let Some(arguments) = decode_vector(&env, &arg_block, argc) else {
         error!("Unable to decode the argument block.");
@@ -153,6 +143,48 @@ pub(crate) extern "system" fn native_start<'local>(
         }
     };
 
+    let mut ptmx = -1;
+
+    if tty != 0 {
+        ptmx = pts::open_ptmx();
+
+        if ptmx == -1 {
+            fail(&mut env, "Unable to open ptmx");
+            return ptr::null_mut();
+        }
+
+        debug!("ptmx {ptmx}");
+    }
+
+    let mut stdin_pipe = [-1, -1];
+    let mut stdout_pipe = [-1, -1];
+    let mut stderr_pipe = [-1, -1];
+
+    debug!(
+        "istty stdin {} stdout {} stderr {}",
+        jint::from(in_tty),
+        jint::from(out_tty),
+        jint::from(err_tty)
+    );
+
+    if !in_tty && unsafe { libc::pipe2(stdin_pipe.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
+        cleanup_fds(&mut ptmx, &mut stdin_pipe, &mut stdout_pipe, &mut stderr_pipe);
+        fail(&mut env, "Unable to create stdin pipe");
+        return ptr::null_mut();
+    }
+
+    if !out_tty && unsafe { libc::pipe2(stdout_pipe.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
+        cleanup_fds(&mut ptmx, &mut stdin_pipe, &mut stdout_pipe, &mut stderr_pipe);
+        fail(&mut env, "Unable to create stdout pipe");
+        return ptr::null_mut();
+    }
+
+    if !err_tty && unsafe { libc::pipe2(stderr_pipe.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
+        cleanup_fds(&mut ptmx, &mut stdin_pipe, &mut stdout_pipe, &mut stderr_pipe);
+        fail(&mut env, "Unable to create stderr pipe");
+        return ptr::null_mut();
+    }
+
     for (index, argument) in argv_ptrs.iter().enumerate() {
         if argument.is_null() {
             debug!("arg{index}=null");
@@ -167,6 +199,7 @@ pub(crate) extern "system" fn native_start<'local>(
     let pid: jint = unsafe { libc::fork() };
 
     if pid == -1 {
+        cleanup_fds(&mut ptmx, &mut stdin_pipe, &mut stdout_pipe, &mut stderr_pipe);
         fail(&mut env, "Unable to fork");
         return ptr::null_mut();
     }
@@ -241,7 +274,7 @@ pub(crate) extern "system" fn native_start<'local>(
             unsafe { libc::_exit(1) };
         }
 
-        pts = unsafe { libc::open(slave.as_ptr(), libc::O_RDWR) };
+        pts = unsafe { libc::open(slave.as_ptr(), libc::O_RDWR | libc::O_CLOEXEC) };
 
         if pts == -1 {
             pts::ploge_child(format_args!("open"));
@@ -257,6 +290,7 @@ pub(crate) extern "system" fn native_start<'local>(
         pts::debug_child(format_args!("pts -> in"));
     } else {
         unsafe { libc::dup2(stdin_pipe[0], libc::STDIN_FILENO) };
+        unsafe { libc::close(stdin_pipe[0]) };
         unsafe { libc::close(stdin_pipe[1]) };
         pts::debug_child(format_args!("pipe -> in"));
     }
@@ -267,6 +301,7 @@ pub(crate) extern "system" fn native_start<'local>(
     } else {
         unsafe { libc::dup2(stdout_pipe[1], libc::STDOUT_FILENO) };
         unsafe { libc::close(stdout_pipe[0]) };
+        unsafe { libc::close(stdout_pipe[1]) };
         pts::debug_child(format_args!("pipe -> out"));
     }
 
@@ -276,6 +311,7 @@ pub(crate) extern "system" fn native_start<'local>(
     } else {
         unsafe { libc::dup2(stderr_pipe[1], libc::STDERR_FILENO) };
         unsafe { libc::close(stderr_pipe[0]) };
+        unsafe { libc::close(stderr_pipe[1]) };
         pts::debug_child(format_args!("pipe -> err"));
     }
 
@@ -288,6 +324,9 @@ pub(crate) extern "system" fn native_start<'local>(
 
     if pts != -1 {
         unsafe { libc::close(pts) };
+    }
+    if ptmx != -1 {
+        unsafe { libc::close(ptmx) };
     }
 
     if environment.is_some() {

@@ -9,7 +9,7 @@ use std::io::Write;
 use std::mem;
 use std::os::unix::ffi::OsStringExt;
 use std::ptr;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 const EXIT_FATAL_SET_CLASSPATH: c_int = 3;
 const EXIT_FATAL_FORK: c_int = 4;
@@ -19,6 +19,8 @@ const EXIT_FATAL_PM_PATH: c_int = 7;
 const EXIT_FATAL_BINDER_BLOCKED_BY_SELINUX: c_int = 10;
 const EXIT_MANAGER_APP_NOT_FOUND: c_int = 50;
 const STABLE_UPTIME_RESET_SECS: u64 = 60;
+const REPLACE_WAIT_TIMEOUT_MS: u64 = 5_000;
+const REPLACE_POLL_INTERVAL_US: libc::useconds_t = 25_000;
 
 const PACKAGE_NAME: &str = "kerneldroid.nightzuku";
 const SERVER_NAME: &str = "shizuku_server";
@@ -91,6 +93,41 @@ fn detach_stdio_to_dev_null() {
     }
 }
 
+fn read_self_exe() -> Option<Vec<u8>> {
+    let mut buf = [0u8; libc::PATH_MAX as usize];
+    let len = unsafe {
+        libc::readlink(
+            c"/proc/self/exe".as_ptr(),
+            buf.as_mut_ptr().cast(),
+            buf.len() - 1,
+        )
+    };
+    if len > 0 {
+        Some(buf[..len as usize].to_vec())
+    } else {
+        None
+    }
+}
+
+/// Attempts to derive `<app_dir>/base.apk` from `/proc/self/exe` (`<app_dir>/lib/<abi>/libshizuku.so`)
+/// to avoid spawning a `pm path` shell process in the common extracted-native-libs layout.
+fn derive_apk_from_self_exe() -> Option<String> {
+    let exe_bytes = read_self_exe()?;
+    let exe_str = std::str::from_utf8(&exe_bytes).ok()?;
+    let abi_dir = dirname(exe_str);
+    let lib_dir = dirname(&abi_dir);
+    let app_dir = dirname(&lib_dir);
+    if app_dir.is_empty() || app_dir == "." || app_dir == "/" {
+        return None;
+    }
+    let candidate = format!("{app_dir}/base.apk");
+    if access(&candidate, libc::R_OK) == 0 {
+        Some(candidate)
+    } else {
+        None
+    }
+}
+
 #[cfg(debug_assertions)]
 fn push_debug_vm_params(argv: &mut Vec<CString>) {
     let api_level = android::api_level();
@@ -147,7 +184,111 @@ fn run_server(dex_path: &str, main_class: &str, process_name: &str) {
     }
 }
 
-fn supervise_server(path: &str, main_class: &str, process_name: &str, mut pipe_write_fd: c_int) -> ! {
+fn is_privileged_uid(pid: c_int) -> bool {
+    matches!(misc::get_proc_uid(pid), Some(0 | 2000))
+}
+
+fn wait_for_process_exit(pid: c_int, timeout: Duration) {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        let alive = unsafe { libc::kill(pid, 0) } == 0 || misc::errno() != libc::ESRCH;
+        if !alive {
+            break;
+        }
+        unsafe {
+            libc::usleep(REPLACE_POLL_INTERVAL_US);
+        }
+    }
+}
+
+fn kill_old_processes(replace_pid: Option<c_int>) {
+    let self_pid = unsafe { libc::getpid() };
+    let self_exe = read_self_exe();
+
+    if let Some(target_pid) = replace_pid {
+        if target_pid > 1 && target_pid != self_pid && is_privileged_uid(target_pid) {
+            let mut buf = [0u8; 1024];
+            if misc::get_proc_name(target_pid, &mut buf) == 0 {
+                let name = unsafe { CStr::from_ptr(buf.as_ptr().cast()) };
+                if name.to_bytes() == SERVER_NAME.as_bytes() {
+                    if unsafe { libc::kill(target_pid, libc::SIGKILL) } == 0 {
+                        logging::logi(&format!("replaced old shizuku_server pid {target_pid}"));
+                        wait_for_process_exit(target_pid, Duration::from_millis(REPLACE_WAIT_TIMEOUT_MS));
+                    }
+                }
+            }
+        }
+    }
+
+    misc::foreach_proc(|pid| {
+        if pid == self_pid || Some(pid) == replace_pid {
+            return;
+        }
+
+        // Only signal processes owned by root (0) or shell (2000) to avoid killing spoofed app processes
+        if !is_privileged_uid(pid) {
+            return;
+        }
+
+        let mut buf = [0u8; 1024];
+        if misc::get_proc_name(pid, &mut buf) != 0 {
+            return;
+        }
+
+        let name = unsafe { CStr::from_ptr(buf.as_ptr().cast()) };
+        let name_bytes = name.to_bytes();
+
+        let is_server = name_bytes == SERVER_NAME.as_bytes();
+        let is_old_supervisor = if !is_server {
+            if let Some(ref my_exe) = self_exe {
+                if let Ok(exe_path) = CString::new(format!("/proc/{pid}/exe")) {
+                    let mut exe_buf = [0u8; libc::PATH_MAX as usize];
+                    let len = unsafe {
+                        libc::readlink(
+                            exe_path.as_ptr(),
+                            exe_buf.as_mut_ptr().cast(),
+                            exe_buf.len() - 1,
+                        )
+                    };
+                    len > 0 && &exe_buf[..len as usize] == my_exe.as_slice()
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        if !is_server && !is_old_supervisor {
+            return;
+        }
+
+        if unsafe { libc::kill(pid, libc::SIGKILL) } == 0 {
+            println!("info: killed {pid} ({})", name.to_string_lossy());
+            if is_server {
+                wait_for_process_exit(pid, Duration::from_millis(1_000));
+            }
+        } else if std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM) {
+            println!("warn: can't kill {pid} (EPERM), ignoring potential fake process.");
+        } else {
+            println!("warn: failed to kill {pid} ({})", name.to_string_lossy());
+        }
+    });
+}
+
+fn supervise_server(
+    path: &str,
+    main_class: &str,
+    process_name: &str,
+    replace_pid: Option<c_int>,
+    mut pipe_write_fd: c_int,
+) -> ! {
+    if replace_pid.is_some() {
+        kill_old_processes(replace_pid);
+    }
+
     let mut restart_count: c_int = 0;
     let max_restarts: c_int = 5;
     let restart_delay_secs: libc::c_uint = 5;
@@ -248,9 +389,14 @@ fn supervise_server(path: &str, main_class: &str, process_name: &str, mut pipe_w
     }
 }
 
-fn start_server(path: &str, main_class: &str, process_name: &str) -> ! {
+fn start_server(
+    path: &str,
+    main_class: &str,
+    process_name: &str,
+    replace_pid: Option<c_int>,
+) -> ! {
     let mut pipe_fds = [-1 as c_int; 2];
-    if unsafe { libc::pipe(pipe_fds.as_mut_ptr()) } != 0 {
+    if unsafe { libc::pipe2(pipe_fds.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
         pipe_fds = [-1, -1];
     }
 
@@ -274,7 +420,7 @@ fn start_server(path: &str, main_class: &str, process_name: &str) -> ! {
             libc::setsid();
             libc::chdir(c"/".as_ptr());
         }
-        supervise_server(path, main_class, process_name, pipe_fds[1]);
+        supervise_server(path, main_class, process_name, replace_pid, pipe_fds[1]);
     }
 
     if pipe_fds[1] != -1 {
@@ -349,72 +495,6 @@ fn switch_cgroup() -> c_int {
     -1
 }
 
-fn kill_old_processes() {
-    let self_pid = unsafe { libc::getpid() };
-    let self_exe = unsafe {
-        let mut buf = [0u8; libc::PATH_MAX as usize];
-        let len = libc::readlink(
-            c"/proc/self/exe".as_ptr(),
-            buf.as_mut_ptr().cast(),
-            buf.len() - 1,
-        );
-        if len > 0 {
-            Some(buf[..len as usize].to_vec())
-        } else {
-            None
-        }
-    };
-
-    misc::foreach_proc(|pid| {
-        if pid == self_pid {
-            return;
-        }
-
-        let mut buf = [0u8; 1024];
-        if misc::get_proc_name(pid, &mut buf) != 0 {
-            return;
-        }
-
-        let name = unsafe { CStr::from_ptr(buf.as_ptr().cast()) };
-        let name_bytes = name.to_bytes();
-
-        let is_server = name_bytes == SERVER_NAME.as_bytes();
-        let is_old_supervisor = if !is_server {
-            if let Some(ref my_exe) = self_exe {
-                if let Ok(exe_path) = CString::new(format!("/proc/{pid}/exe")) {
-                    let mut exe_buf = [0u8; libc::PATH_MAX as usize];
-                    let len = unsafe {
-                        libc::readlink(
-                            exe_path.as_ptr(),
-                            exe_buf.as_mut_ptr().cast(),
-                            exe_buf.len() - 1,
-                        )
-                    };
-                    len > 0 && &exe_buf[..len as usize] == my_exe.as_slice()
-                } else {
-                    false
-                }
-            } else {
-                false
-            }
-        } else {
-            false
-        };
-
-        if !is_server && !is_old_supervisor {
-            return;
-        }
-
-        if unsafe { libc::kill(pid, libc::SIGKILL) } == 0 {
-            println!("info: killed {pid} ({})", name.to_string_lossy());
-        } else if std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM) {
-            println!("warn: can't kill {pid} (EPERM), ignoring potential fake process.");
-        } else {
-            println!("warn: failed to kill {pid} ({})", name.to_string_lossy());
-        }
-    });
-}
-
 fn main() {
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_IGN);
@@ -422,10 +502,18 @@ fn main() {
     }
 
     let mut apk_path = String::new();
+    let mut replace_pid: Option<c_int> = None;
     for arg in std::env::args_os() {
         let bytes = arg.into_vec();
         if bytes.starts_with(b"--apk=") {
             apk_path = String::from_utf8_lossy(&bytes[6..]).into_owned();
+        } else if let Some(pid_bytes) = bytes.strip_prefix(b"--replace=") {
+            if misc::is_num(pid_bytes) {
+                let parsed = misc::atoi(pid_bytes);
+                if parsed > 1 {
+                    replace_pid = Some(parsed);
+                }
+            }
         }
     }
 
@@ -448,7 +536,7 @@ fn main() {
 
     if uid == 0 {
         let mut context: *mut c_char = ptr::null_mut();
-        if selinux::getcon(&mut context) == 0 {
+        if selinux::getcon(&mut context) == 0 && !context.is_null() {
             let mut res = 0;
             res |= check_selinux(c"u:r:untrusted_app:s0", context, c"binder", c"call");
             res |= check_selinux(c"u:r:untrusted_app:s0", context, c"binder", c"transfer");
@@ -458,6 +546,7 @@ fn main() {
                     "fatal: the su you are using does not allow app (u:r:untrusted_app:s0) to connect to su ({}) with binder.",
                     display(context)
                 );
+                selinux::freecon(context);
                 exit(EXIT_FATAL_BINDER_BLOCKED_BY_SELINUX);
             }
             selinux::freecon(context);
@@ -467,14 +556,25 @@ fn main() {
     println!("info: starter begin");
     flush();
 
-    println!("info: killing old process...");
-    flush();
+    if replace_pid.is_none() {
+        println!("info: killing old process...");
+        flush();
+        kill_old_processes(None);
+    }
 
-    kill_old_processes();
-
-    if access(&apk_path, libc::R_OK) == 0 {
+    if !apk_path.is_empty() && access(&apk_path, libc::R_OK) == 0 {
         println!("info: use apk path from argv");
         flush();
+    } else {
+        apk_path.clear();
+    }
+
+    if apk_path.is_empty() {
+        if let Some(derived) = derive_apk_from_self_exe() {
+            println!("info: resolved base.apk from /proc/self/exe");
+            flush();
+            apk_path = derived;
+        }
     }
 
     if apk_path.is_empty() {
@@ -510,5 +610,5 @@ fn main() {
     println!("info: starting server...");
     flush();
     logging::logd("start_server");
-    start_server(&apk_path, SERVER_CLASS_PATH, SERVER_NAME);
+    start_server(&apk_path, SERVER_CLASS_PATH, SERVER_NAME, replace_pid);
 }

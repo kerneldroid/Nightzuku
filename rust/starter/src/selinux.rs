@@ -17,13 +17,24 @@ pub type CheckAccessFn = unsafe extern "C" fn(
 pub type FreeconFn = unsafe extern "C" fn(*mut c_char);
 
 unsafe extern "C" fn default_getcon(context: *mut *mut c_char) -> c_int {
-    let fd = unsafe { libc::open(c"/proc/self/attr/current".as_ptr(), libc::O_RDONLY | libc::O_CLOEXEC) };
-    if fd < 0 {
-        return fd;
+    if context.is_null() {
+        errno_set(libc::EINVAL);
+        return -1;
+    }
+    unsafe {
+        *context = ptr::null_mut();
     }
 
-    let size = unsafe { libc::sysconf(libc::_SC_PAGE_SIZE) } as usize;
+    let fd = unsafe { libc::open(c"/proc/self/attr/current".as_ptr(), libc::O_RDONLY | libc::O_CLOEXEC) };
+    if fd < 0 {
+        return -1;
+    }
+
+    let page_size = unsafe { libc::sysconf(libc::_SC_PAGE_SIZE) };
+    let size = if page_size > 0 { page_size as usize } else { 4096 };
     let buf = unsafe { libc::malloc(size) };
+    let mut rc = -1;
+
     if !buf.is_null() {
         unsafe {
             libc::memset(buf, 0, size);
@@ -35,12 +46,12 @@ unsafe extern "C" fn default_getcon(context: *mut *mut c_char) -> c_int {
         }
 
         if ret > 0 {
-            unsafe {
-                *context = libc::strdup(buf.cast());
-            }
-        } else if ret == 0 {
-            unsafe {
-                *context = ptr::null_mut();
+            let dup = unsafe { libc::strdup(buf.cast()) };
+            if !dup.is_null() {
+                unsafe {
+                    *context = dup;
+                }
+                rc = 0;
             }
         }
 
@@ -54,7 +65,7 @@ unsafe extern "C" fn default_getcon(context: *mut *mut c_char) -> c_int {
         libc::close(fd);
     }
     errno_set(held);
-    0
+    rc
 }
 
 unsafe extern "C" fn default_setcon(context: *const c_char) -> c_int {
