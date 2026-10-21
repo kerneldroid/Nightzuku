@@ -11,6 +11,8 @@ import moe.shizuku.server.IShizukuService
 import rikka.shizuku.Shizuku
 import java.io.BufferedInputStream
 import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
@@ -22,6 +24,7 @@ object AdbModuleManager {
     private const val DISABLE_FILE = "disable"
     private const val MAX_ENTRY_COUNT = 2048
     private const val MAX_EXTRACTED_BYTES = 200L * 1024L * 1024L
+    private const val MAX_PROP_BYTES = 64L * 1024L
     private const val MAX_SCRIPT_SECONDS = 120L
     private const val MAX_OUTPUT_CHARS = 64 * 1024
     private const val MAX_SCRIPT_BYTES = 256 * 1024
@@ -120,13 +123,29 @@ object AdbModuleManager {
         )
     }
 
+    private fun copyStreamBounded(input: InputStream, output: OutputStream, maxBytes: Long): Long {
+        val buf = ByteArray(DEFAULT_BUFFER_SIZE)
+        var copied = 0L
+        while (true) {
+            val read = input.read(buf)
+            if (read < 0) break
+            if (read == 0) continue
+            copied += read.toLong()
+            require(copied <= maxBytes) { "Module ZIP exceeds maximum allowed size ($maxBytes bytes)." }
+            output.write(buf, 0, read)
+        }
+        return copied
+    }
+
     suspend fun install(context: Context, uri: Uri): AdbModule = withContext(Dispatchers.IO) {
         cleanupStagingDirs(context)
         val temp = File.createTempFile("module-", ".zip", context.cacheDir)
         try {
             context.contentResolver.openInputStream(uri).use { input ->
                 requireNotNull(input) { "Unable to open module ZIP." }
-                temp.outputStream().use { output -> input.copyTo(output) }
+                temp.outputStream().use { output ->
+                    copyStreamBounded(input, output, MAX_EXTRACTED_BYTES)
+                }
             }
 
             ZipFile(temp).use { zip ->
@@ -145,7 +164,11 @@ object AdbModuleManager {
                     propPath.removeSuffix("module.prop")
                 }
 
-                val props = zip.getInputStream(propEntry).use { parseModuleProp(it.bufferedReader().readText()) }
+                val propBytes = java.io.ByteArrayOutputStream()
+                zip.getInputStream(propEntry).use { propStream ->
+                    copyStreamBounded(propStream, propBytes, MAX_PROP_BYTES)
+                }
+                val props = parseModuleProp(propBytes.toString(Charsets.UTF_8.name()))
                 val id = props["id"]?.trim().orEmpty()
                 require(idRegex.matches(id)) { "Invalid module id: $id" }
 
@@ -181,11 +204,12 @@ object AdbModuleManager {
                             outFile.mkdirs()
                         } else {
                             outFile.parentFile?.mkdirs()
+                            val remainingBudget = (MAX_EXTRACTED_BYTES - extractedBytes).coerceAtLeast(0L)
                             BufferedInputStream(zip.getInputStream(entry)).use { input ->
-                                outFile.outputStream().use { output -> input.copyTo(output) }
+                                outFile.outputStream().use { output ->
+                                    extractedBytes += copyStreamBounded(input, output, remainingBudget)
+                                }
                             }
-                            extractedBytes += outFile.length()
-                            require(extractedBytes <= MAX_EXTRACTED_BYTES) { "Module ZIP is too large." }
                         }
                     }
 
@@ -312,17 +336,19 @@ object AdbModuleManager {
         )
 
         runCatching { ParcelFileDescriptor.AutoCloseOutputStream(remote.getOutputStream()).close() }
+        val stdoutPfd = remote.getInputStream()
+        val stderrPfd = remote.getErrorStream()
         var stdout = ""
         var stderr = ""
         val stdoutThread = Thread {
             try {
-                stdout = readStreamTail(remote.getInputStream())
+                stdout = readStreamTail(stdoutPfd)
             } catch (_: Exception) {
             }
         }
         val stderrThread = Thread {
             try {
-                stderr = readStreamTail(remote.getErrorStream())
+                stderr = readStreamTail(stderrPfd)
             } catch (_: Exception) {
             }
         }
@@ -333,10 +359,20 @@ object AdbModuleManager {
             remote.exitValue()
         } else {
             remote.destroy()
+            runCatching { stdoutPfd.close() }
+            runCatching { stderrPfd.close() }
             124
         }
-        stdoutThread.join(1000)
-        stderrThread.join(1000)
+        stdoutThread.join(500)
+        if (stdoutThread.isAlive) {
+            runCatching { stdoutPfd.close() }
+            stdoutThread.join(250)
+        }
+        stderrThread.join(500)
+        if (stderrThread.isAlive) {
+            runCatching { stderrPfd.close() }
+            stderrThread.join(250)
+        }
         val result = ModuleActionResult(
             exitCode = exitCode,
             stdout = stdout,

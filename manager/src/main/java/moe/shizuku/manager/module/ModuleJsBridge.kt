@@ -120,26 +120,30 @@ class ModuleJsBridge(
         return try {
             val targetDir = resolveModuleDirectory(options.cwd)
             val service = IShizukuService.Stub.asInterface(binder)
-            val env = buildEnvironment(mode, options.extraEnv)
-            val wrappedCommand = "cd \"${targetDir.absolutePath}\" 2>/dev/null || true\n$command"
+            val env = buildEnvironment(mode, targetDir, options.extraEnv)
+            // Pass the target working directory via environment variable ($SHIZUKU_MODULE_CWD)
+            // rather than interpolating it into double-quoted shell syntax.
+            val wrappedCommand = "cd \"\$SHIZUKU_MODULE_CWD\" 2>/dev/null || true\n$command"
             val remote = service.newProcess(
                 arrayOf("sh", "-c", wrappedCommand),
                 env,
                 "/data/local/tmp"
             )
 
+            val stdoutPfd = remote.getInputStream()
+            val stderrPfd = remote.getErrorStream()
             var stdout = ""
             var stderr = ""
             val stdoutThread = Thread {
                 try {
-                    stdout = readStreamTail(remote.getInputStream())
-                } catch (ignore: Exception) {
+                    stdout = readStreamTail(stdoutPfd)
+                } catch (_: Exception) {
                 }
             }
             val stderrThread = Thread {
                 try {
-                    stderr = readStreamTail(remote.getErrorStream())
-                } catch (ignore: Exception) {
+                    stderr = readStreamTail(stderrPfd)
+                } catch (_: Exception) {
                 }
             }
             stdoutThread.start()
@@ -157,10 +161,20 @@ class ModuleJsBridge(
                 remote.exitValue()
             } else {
                 remote.destroy()
+                runCatching { stdoutPfd.close() }
+                runCatching { stderrPfd.close() }
                 EXIT_TIMEOUT
             }
-            stdoutThread.join(1000)
-            stderrThread.join(1000)
+            stdoutThread.join(500)
+            if (stdoutThread.isAlive) {
+                runCatching { stdoutPfd.close() }
+                stdoutThread.join(250)
+            }
+            stderrThread.join(500)
+            if (stderrThread.isAlive) {
+                runCatching { stderrPfd.close() }
+                stderrThread.join(250)
+            }
 
             result.apply {
                 put("ok", finished && exitCode == 0)
@@ -176,17 +190,19 @@ class ModuleJsBridge(
 
     private fun buildEnvironment(
         mode: ModuleSettings.AccessMode,
+        targetDir: File,
         extraEnv: Map<String, String>
     ): Array<String> {
-        val env = linkedMapOf(
-            "MODDIR" to module.directory.absolutePath,
-            "ASH_STANDALONE" to "1",
-            "SHIZUKU_MODULE_ID" to module.id,
-            "SHIZUKU_MODULE_MODE" to mode.value,
-            "SHIZUKU_MODULE_TRUSTED" to if (ModuleSettings.isModuleTrusted(module.id)) "1" else "0",
-            "SHIZUKU_MODULE_BACKGROUND" to if (ModuleSettings.canRunBackground(module)) "1" else "0"
-        )
+        val env = linkedMapOf<String, String>()
         extraEnv.forEach { (key, value) -> env[key] = value }
+        // Reserved module variables are written last so extraEnv cannot override them
+        env["MODDIR"] = module.directory.absolutePath
+        env["SHIZUKU_MODULE_CWD"] = targetDir.absolutePath
+        env["ASH_STANDALONE"] = "1"
+        env["SHIZUKU_MODULE_ID"] = module.id
+        env["SHIZUKU_MODULE_MODE"] = mode.value
+        env["SHIZUKU_MODULE_TRUSTED"] = if (ModuleSettings.isModuleTrusted(module.id)) "1" else "0"
+        env["SHIZUKU_MODULE_BACKGROUND"] = if (ModuleSettings.canRunBackground(module)) "1" else "0"
         return env.map { (key, value) -> "$key=$value" }.toTypedArray()
     }
 

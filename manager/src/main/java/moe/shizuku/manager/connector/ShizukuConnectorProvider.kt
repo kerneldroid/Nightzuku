@@ -5,6 +5,8 @@ import android.content.ContentValues
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
+import android.os.Binder
+import android.os.Process
 import moe.shizuku.manager.module.ModuleSettings
 import moe.shizuku.manager.starter.Starter
 
@@ -26,6 +28,18 @@ class ShizukuConnectorProvider : ContentProvider() {
     ): Cursor? {
         if (!ModuleSettings.isConnectorEnabled()) {
             return null
+        }
+
+        val ctx = context ?: return null
+        val callingUid = Binder.getCallingUid()
+        if (callingUid != Process.myUid() && callingUid != 0 && callingUid != 2000) {
+            val callerPkg = callingPackage
+            val uidPackages = runCatching {
+                ctx.packageManager.getPackagesForUid(callingUid)?.toList().orEmpty()
+            }.getOrDefault(emptyList())
+            if (callerPkg.isNullOrEmpty() || !uidPackages.contains(callerPkg)) {
+                return null
+            }
         }
 
         val cursor = MatrixCursor(arrayOf("command"))

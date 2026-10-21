@@ -189,12 +189,12 @@ class UpdateChecker private constructor() {
             val body = resp.body?.string() ?: return unsuccessful
 
             val release = json.decodeFromString<GitHubRelease>(body)
-            val tagVersion = release.tagName.removePrefix("v")
+            val tagVersion = normalizeVersionString(release.tagName)
 
             val zipAsset = release.assets.firstOrNull { asset ->
                 asset.name.endsWith(".zip", ignoreCase = true) &&
-                        (asset.name.contains(module.id, ignoreCase = true) ||
-                                asset.name.contains(repoName, ignoreCase = true))
+                    (asset.name.contains(module.id, ignoreCase = true) ||
+                        asset.name.contains(repoName, ignoreCase = true))
             } ?: release.assets.firstOrNull { it.name.endsWith(".zip", ignoreCase = true) }
 
             val downloadUrl = zipAsset?.browserDownloadUrl
@@ -202,12 +202,17 @@ class UpdateChecker private constructor() {
             val currentVersionCode = module.versionCode
             val latestVersionCode = extractVersionCodeFromTag(release.tagName)
 
-            val hasUpdate = if (latestVersionCode != null && currentVersionCode != null) {
-                latestVersionCode > currentVersionCode
-            } else if (module.version != null) {
-                compareSemanticVersions(tagVersion, module.version) > 0
-            } else {
-                false
+            val hasUpdate = when {
+                module.version != null && tagVersion.isNotEmpty() && tagVersion.contains('.') -> {
+                    compareSemanticVersions(tagVersion, module.version) > 0
+                }
+                latestVersionCode != null && currentVersionCode != null -> {
+                    latestVersionCode > currentVersionCode
+                }
+                module.version != null && tagVersion.isNotEmpty() -> {
+                    compareSemanticVersions(tagVersion, module.version) > 0
+                }
+                else -> false
             }
 
             return UpdateResult(
@@ -297,21 +302,51 @@ class UpdateChecker private constructor() {
         }
     }
 
-    private fun compareSemanticVersions(v1: String, v2: String): Int {
-        val parts1 = v1.split(".", "-")
-        val parts2 = v2.split(".", "-")
+    private fun normalizeVersionString(raw: String): String {
+        return raw.trim()
+            .removePrefix("v")
+            .removePrefix("V")
+            .substringBefore('+')
+            .trim()
+    }
+
+    internal fun compareSemanticVersions(v1: String, v2: String): Int {
+        val clean1 = normalizeVersionString(v1)
+        val clean2 = normalizeVersionString(v2)
+        val parts1 = clean1.split(".", "-")
+        val parts2 = clean2.split(".", "-")
 
         for (i in 0 until maxOf(parts1.size, parts2.size)) {
-            val p1 = parts1.getOrNull(i)?.toIntOrNull() ?: 0
-            val p2 = parts2.getOrNull(i)?.toIntOrNull() ?: 0
-            if (p1 != p2) return p1.compareTo(p2)
+            val s1 = parts1.getOrNull(i)?.trim().orEmpty()
+            val s2 = parts2.getOrNull(i)?.trim().orEmpty()
+            val p1 = s1.toIntOrNull()
+            val p2 = s2.toIntOrNull()
+            if (p1 != null && p2 != null) {
+                if (p1 != p2) return p1.compareTo(p2)
+            } else if (s1 != s2) {
+                return s1.compareTo(s2)
+            }
         }
         return 0
     }
 
-    private fun extractVersionCodeFromTag(tag: String): Long? {
-        val numericPart = tag.removePrefix("v").replace(Regex("[^0-9]"), "")
-        return numericPart.toLongOrNull()
+    /**
+     * Extracts an integer `versionCode` only when [tag] is an integer release tag (e.g., `v12`, `r12`, `12`),
+     * avoiding concatenating dotted semantic versions like `v1.2.0` into `120L`.
+     */
+    internal fun extractVersionCodeFromTag(tag: String): Long? {
+        val trimmed = tag.trim()
+        if (trimmed.contains('.')) {
+            return null
+        }
+        val normalized = trimmed
+            .removePrefix("v")
+            .removePrefix("V")
+            .removePrefix("r")
+            .removePrefix("R")
+            .removePrefix("build-")
+            .trim()
+        return normalized.toLongOrNull()
     }
 
     fun getRateLimit(): RateLimitTracker = rateLimit
