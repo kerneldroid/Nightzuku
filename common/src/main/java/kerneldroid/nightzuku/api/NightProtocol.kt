@@ -12,7 +12,7 @@ object NightProtocol {
 
     const val DESCRIPTOR = "kerneldroid.nightzuku.INightService"
     const val CALLBACK_DESCRIPTOR = "kerneldroid.nightzuku.INightCallback"
-    const val PROTOCOL_VERSION = 1
+    const val PROTOCOL_VERSION = 2
 
     const val PROVIDER_SUFFIX = ".nightzuku"
     const val LEGACY_PROVIDER_SUFFIX = ".shizuku"
@@ -49,6 +49,9 @@ object NightProtocol {
     const val TRANSACTION_CLAIM_USER_SERVICE = IBinder.FIRST_CALL_TRANSACTION + 8
     const val TRANSACTION_GET_UID_CAPABILITIES = IBinder.FIRST_CALL_TRANSACTION + 9
     const val TRANSACTION_SET_UID_CAPABILITIES = IBinder.FIRST_CALL_TRANSACTION + 10
+    const val TRANSACTION_GET_ACCESS_PAUSED = IBinder.FIRST_CALL_TRANSACTION + 11
+    const val TRANSACTION_SET_ACCESS_PAUSED = IBinder.FIRST_CALL_TRANSACTION + 12
+    const val TRANSACTION_GET_SERVER_DIAGNOSTICS = IBinder.FIRST_CALL_TRANSACTION + 13
 
     // INightCallback transaction codes
     const val CALLBACK_ON_PERMISSION_CHANGED = IBinder.FIRST_CALL_TRANSACTION + 1

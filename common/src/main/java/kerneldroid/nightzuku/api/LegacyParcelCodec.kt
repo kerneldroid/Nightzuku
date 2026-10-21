@@ -24,6 +24,7 @@ object LegacyParcelCodec {
     private const val VAL_PARCELABLE = 4
     private const val VAL_LONG = 6
     private const val VAL_BOOLEAN = 9
+    private const val VAL_IBINDER = 15
 
     private const val TRANSACTION_BIND_APPLICATION = 2
     private const val TRANSACTION_DISPATCH_PERMISSION_RESULT = 3
@@ -70,51 +71,70 @@ object LegacyParcelCodec {
     /**
      * Extracts an IBinder from a Bundle that may carry either a direct Nightzuku binder
      * (`NightProtocol.EXTRA_BINDER`) or a raw legacy `BinderContainer` parcelable.
+     *
+     * Inspects the raw Parcel representation BEFORE calling `Bundle.getBinder()` so that
+     * `BaseBundle.unparcel()` is never triggered on a Bundle containing `BinderContainer`
+     * in a process that lacks `moe.shizuku.api.BinderContainer` on its classpath.
      */
     @JvmStatic
     fun extractBinderFromBundle(bundle: Bundle?): IBinder? {
         if (bundle == null) return null
 
-        // Fast path: direct binder extra from NightProtocol
-        try {
-            val direct = bundle.getBinder(NightProtocol.EXTRA_BINDER)
-            if (direct != null) return direct
-        } catch (_: Throwable) {
-        }
-
-        // Raw parcel extraction of BinderContainer without needing BinderContainer class
         val parcel = Parcel.obtain()
-        return try {
+        try {
             bundle.writeToParcel(parcel, 0)
             parcel.setDataPosition(0)
             val length = parcel.readInt()
-            if (length <= 0) return null
-            val magic = parcel.readInt()
-            if (magic != BUNDLE_MAGIC_NATIVE) return null
-            val count = parcel.readInt()
-            for (i in 0 until count) {
-                val key = parcel.readString()
-                val type = parcel.readInt()
-                if (key == LEGACY_BINDER_EXTRA_KEY && type == VAL_PARCELABLE) {
-                    val className = parcel.readString()
-                    if (className == LEGACY_BINDER_CONTAINER_CLASS) {
-                        return parcel.readStrongBinder()
+            if (length > 0) {
+                val magic = parcel.readInt()
+                if (magic == BUNDLE_MAGIC_NATIVE) {
+                    val bodyStart = parcel.dataPosition()
+                    val bodyEnd = (bodyStart + length).coerceAtMost(parcel.dataSize())
+                    val count = parcel.readInt()
+                    for (i in 0 until count) {
+                        if (parcel.dataPosition() >= bodyEnd) break
+                        val key = parcel.readString()
+                        val type = parcel.readInt()
+                        if (key == NightProtocol.EXTRA_BINDER && type == VAL_IBINDER) {
+                            return parcel.readStrongBinder()
+                        }
+                        if (key == LEGACY_BINDER_EXTRA_KEY && type == VAL_PARCELABLE) {
+                            val posBeforeClass = parcel.dataPosition()
+                            val directClassName = parcel.readString()
+                            if (directClassName == LEGACY_BINDER_CONTAINER_CLASS) {
+                                return parcel.readStrongBinder()
+                            }
+                            // Android 13+ (API 33+) prefixes lazy VAL_PARCELABLE values with an int byte size
+                            parcel.setDataPosition(posBeforeClass)
+                            val lazySize = parcel.readInt()
+                            if (lazySize > 0 && parcel.dataPosition() + lazySize <= bodyEnd) {
+                                val lazyClassName = parcel.readString()
+                                if (lazyClassName == LEGACY_BINDER_CONTAINER_CLASS) {
+                                    return parcel.readStrongBinder()
+                                }
+                            }
+                            break
+                        }
+                        when (type) {
+                            VAL_NULL -> Unit
+                            VAL_STRING -> parcel.readString()
+                            VAL_INTEGER, VAL_BOOLEAN -> parcel.readInt()
+                            VAL_LONG -> parcel.readLong()
+                            VAL_IBINDER -> parcel.readStrongBinder()
+                            else -> break
+                        }
                     }
-                    break
-                }
-                when (type) {
-                    VAL_NULL -> Unit
-                    VAL_STRING -> parcel.readString()
-                    VAL_INTEGER, VAL_BOOLEAN -> parcel.readInt()
-                    VAL_LONG -> parcel.readLong()
-                    else -> break
                 }
             }
-            null
         } catch (_: Throwable) {
-            null
         } finally {
             parcel.recycle()
+        }
+
+        return try {
+            bundle.getBinder(NightProtocol.EXTRA_BINDER)
+        } catch (_: Throwable) {
+            null
         }
     }
 
