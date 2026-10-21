@@ -11,8 +11,10 @@ import android.util.Log
 import java.util.Locale
 import kerneldroid.nightzuku.api.LegacyParcelCodec
 import kerneldroid.nightzuku.api.NightProtocol
+import kerneldroid.nightzuku.util.PackageSignatureVerifier
 import moe.shizuku.starter.util.IContentProviderCompat
 import rikka.hidden.compat.ActivityManagerApis
+import rikka.hidden.compat.PackageManagerApis
 import rikka.shizuku.ShizukuApiConstants
 import rikka.shizuku.server.UserService
 
@@ -43,6 +45,7 @@ object ServiceStarter {
     }
 
     @JvmStatic
+    @JvmOverloads
     fun commandForUserService(
         appProcess: String,
         managerApkPath: String,
@@ -51,14 +54,20 @@ object ServiceStarter {
         classname: String,
         processNameSuffix: String,
         callingUid: Int,
-        debug: Boolean
+        debug: Boolean,
+        expectedSigners: Set<String> = emptySet()
     ): String {
         val processName = String.format("%s:%s", packageName, processNameSuffix)
+        val signersArg = if (expectedSigners.isNotEmpty()) {
+            " --signers=" + escapeShellArg(expectedSigners.joinToString(","))
+        } else {
+            ""
+        }
         return String.format(
             Locale.ENGLISH,
             "(CLASSPATH=%s %s%s /system/bin " +
                 "--nice-name=%s moe.shizuku.starter.ServiceStarter " +
-                "--token=%s --package=%s --class=%s --uid=%d%s)&",
+                "--token=%s --package=%s --class=%s --uid=%d%s%s)&",
             escapeShellArg(managerApkPath),
             appProcess,
             if (debug) " $DEBUG_ARGS" else "",
@@ -67,6 +76,7 @@ object ServiceStarter {
             escapeShellArg(packageName),
             escapeShellArg(classname),
             callingUid,
+            signersArg,
             if (debug) " --debug-name=" + escapeShellArg(processName) else ""
         )
     }
@@ -78,15 +88,35 @@ object ServiceStarter {
         }
 
         var launchToken: String? = null
+        var targetPackage: String? = null
+        var targetUid: Int = -1
+        var expectedSigners: Set<String> = emptySet()
+
         for (arg in args) {
-            if (arg.startsWith("--token=")) {
-                launchToken = arg.substring("--token=".length)
+            when {
+                arg.startsWith("--token=") -> launchToken = arg.substring("--token=".length)
+                arg.startsWith("--package=") -> targetPackage = arg.substring("--package=".length)
+                arg.startsWith("--uid=") -> targetUid = arg.substring("--uid=".length).toIntOrNull() ?: -1
+                arg.startsWith("--signers=") -> {
+                    expectedSigners = arg.substring("--signers=".length)
+                        .split(',')
+                        .map { it.trim().lowercase(Locale.ROOT) }
+                        .filter { it.isNotEmpty() }
+                        .toSet()
+                }
             }
         }
 
         // Verify that the launch token is still live on the server before loading client APK code
         if (!isLaunchTokenLive(launchToken)) {
             Log.w(TAG, "UserService launch token is not active, aborting")
+            System.exit(1)
+            return
+        }
+
+        // Verify the client APK's UID and cryptographic signing identity right before loading its code
+        if (!verifyTargetPackageIdentity(targetPackage, targetUid, expectedSigners)) {
+            Log.e(TAG, "UserService target package failed identity verification, aborting")
             System.exit(1)
             return
         }
@@ -110,6 +140,39 @@ object ServiceStarter {
         System.exit(0)
 
         Log.i(TAG, "service exited")
+    }
+
+    private fun verifyTargetPackageIdentity(
+        packageName: String?,
+        callingUid: Int,
+        expectedSigners: Set<String>
+    ): Boolean {
+        if (packageName.isNullOrEmpty() || callingUid <= 0) return false
+        val userId = callingUid / 100000
+        val expectedAppId = callingUid % 100000
+        return try {
+            val pi = PackageManagerApis.getPackageInfoNoThrow(
+                packageName,
+                PackageSignatureVerifier.signatureLookupFlags(),
+                userId
+            ) ?: return false
+            val snapshot = PackageSignatureVerifier.extractSnapshot(pi, userId) ?: return false
+            if (snapshot.appId != expectedAppId) {
+                Log.e(TAG, "Target package $packageName appId=${snapshot.appId} does not match expected $expectedAppId")
+                return false
+            }
+            if (expectedSigners.isNotEmpty()) {
+                val baseline = PackageSignatureVerifier.Baseline(packageName, expectedAppId, expectedSigners)
+                if (!baseline.matches(snapshot)) {
+                    Log.e(TAG, "Target package $packageName signing certificate mismatch")
+                    return false
+                }
+            }
+            true
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to verify target package identity for $packageName", t)
+            false
+        }
     }
 
     private fun isLaunchTokenLive(token: String?): Boolean {

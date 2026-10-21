@@ -44,7 +44,7 @@ object NightDog {
     private val beatCount = AtomicLong(0L)
     private val totalRebinds = AtomicInteger(0)
     @Volatile
-    private var startTimeMs = 0L
+    private var startElapsedRealtimeMs = 0L
     private var timeoutMs = DEFAULT_TIMEOUT_MS
     private var pollIntervalMs = DEFAULT_POLL_INTERVAL_MS
     @Volatile
@@ -68,9 +68,8 @@ object NightDog {
             this.pollIntervalMs = pollIntervalMs.coerceAtLeast(5_000L)
             this.listener = listener
 
-            val now = SystemClock.uptimeMillis()
-            this.startTimeMs = now
-            this.lastBeatTime.set(now)
+            this.startElapsedRealtimeMs = SystemClock.elapsedRealtime()
+            this.lastBeatTime.set(SystemClock.uptimeMillis())
             this.beatCount.set(0L)
 
             val thread = HandlerThread("nightdog").apply {
@@ -107,7 +106,7 @@ object NightDog {
             rebindAttempts.clear()
             pendingRebinds.clear()
             lastBeatTime.set(0L)
-            startTimeMs = 0L
+            startElapsedRealtimeMs = 0L
             listener = null
 
             watchdogThread?.quitSafely()
@@ -132,9 +131,9 @@ object NightDog {
     fun getBeatCount(): Long = beatCount.get()
 
     fun getUptimeMs(): Long {
-        val start = startTimeMs
+        val start = startElapsedRealtimeMs
         if (!started.get() || start <= 0L) return 0L
-        return (SystemClock.uptimeMillis() - start).coerceAtLeast(0L)
+        return (SystemClock.elapsedRealtime() - start).coerceAtLeast(0L)
     }
 
     private fun unlinkAllServices() {
@@ -272,29 +271,42 @@ object NightDog {
 
         for (name in CRITICAL_SERVICES) {
             if (!started.get()) return
-            val binder = bindings[name]
-            if (binder == null) {
-                if (!pendingRebinds.contains(name)) {
-                    scheduleRebind(name, INITIAL_REBIND_DELAY_MS)
-                }
-                continue
-            }
-            try {
-                if (!binder.pingBinder()) {
-                    Log.w(TAG, "System service '$name' unresponsive during fallback check")
-                    unlinkService(name)
-                    scheduleRebind(name, INITIAL_REBIND_DELAY_MS)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Fallback check failed for '$name'", e)
-                unlinkService(name)
-                scheduleRebind(name, INITIAL_REBIND_DELAY_MS)
-            }
+            checkServiceBinding(name, scheduleIfUnbound = true)
+        }
+
+        // Also monitor optional services (such as permissionmgr on Android 17+) so late starts
+        // or service restarts invalidate stale cached binder proxies.
+        for (name in OPTIONAL_SERVICES) {
+            if (!started.get()) return
+            val currentlyBound = bindings[name] != null
+            val availableInServiceManager = ServiceManager.getService(name) != null
+            checkServiceBinding(name, scheduleIfUnbound = currentlyBound || availableInServiceManager)
         }
 
         val runnable = healthCheckRunnable ?: return
         if (started.get()) {
             handler?.postDelayed(runnable, nextCheckDelay)
+        }
+    }
+
+    private fun checkServiceBinding(name: String, scheduleIfUnbound: Boolean) {
+        val binder = bindings[name]
+        if (binder == null) {
+            if (scheduleIfUnbound && !pendingRebinds.contains(name)) {
+                scheduleRebind(name, INITIAL_REBIND_DELAY_MS)
+            }
+            return
+        }
+        try {
+            if (!binder.pingBinder()) {
+                Log.w(TAG, "System service '$name' unresponsive during fallback check")
+                unlinkService(name)
+                scheduleRebind(name, INITIAL_REBIND_DELAY_MS)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Fallback check failed for '$name'", e)
+            unlinkService(name)
+            scheduleRebind(name, INITIAL_REBIND_DELAY_MS)
         }
     }
 
