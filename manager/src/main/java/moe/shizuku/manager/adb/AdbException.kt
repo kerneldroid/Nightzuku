@@ -14,3 +14,9 @@ open class AdbException : Exception {
 class AdbInvalidPairingCodeException : AdbException()
 
 class AdbKeyException(cause: Throwable) : AdbException(cause)
+
+class AdbPairingRequiredException : AdbException {
+    constructor(message: String, cause: Throwable?) : super(message, cause)
+    constructor(cause: Throwable) : super(cause)
+    constructor(message: String) : super(message)
+}

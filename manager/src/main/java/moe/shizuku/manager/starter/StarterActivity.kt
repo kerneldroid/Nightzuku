@@ -24,6 +24,7 @@ import moe.shizuku.manager.ShizukuSettings
 import moe.shizuku.manager.adb.AdbClient
 import moe.shizuku.manager.adb.AdbKey
 import moe.shizuku.manager.adb.AdbKeyException
+import moe.shizuku.manager.adb.AdbPairingRequiredException
 import moe.shizuku.manager.adb.PreferenceAdbKeyStore
 import moe.shizuku.manager.app.AppActivity
 import moe.shizuku.manager.ui.compose.ExpressiveCard
@@ -106,7 +107,7 @@ class StarterActivity : AppActivity() {
                         is AdbKeyException -> R.string.adb_error_key_store
                         is NotRootedException -> R.string.start_with_root_failed
                         is ConnectException -> R.string.cannot_connect_port
-                        is SSLProtocolException -> R.string.adb_pair_required
+                        is AdbPairingRequiredException, is SSLProtocolException -> R.string.adb_pair_required
                         else -> 0
                     }
                 } else 0)

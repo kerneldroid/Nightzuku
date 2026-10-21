@@ -9,6 +9,8 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.lifecycle.Observer
+import java.net.ConnectException
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -17,7 +19,6 @@ import kotlinx.coroutines.launch
 import moe.shizuku.manager.R
 import moe.shizuku.manager.ShizukuSettings
 import rikka.core.ktx.unsafeLazy
-import java.net.ConnectException
 
 @TargetApi(Build.VERSION_CODES.R)
 class AdbPairingService : Service() {
@@ -28,10 +29,10 @@ class AdbPairingService : Service() {
 
         private const val tag = "AdbPairingService"
 
-        private const val notificationId = 1
+        private const val foregroundNotificationId = 1
+        private const val resultNotificationId = 2
         private const val replyRequestId = 1
         private const val stopRequestId = 2
-        private const val retryRequestId = 3
         private const val startAction = "start"
         private const val stopAction = "stop"
         private const val replyAction = "reply"
@@ -56,16 +57,16 @@ class AdbPairingService : Service() {
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val pairingInFlight = AtomicBoolean(false)
     private var adbMdns: AdbMdns? = null
 
     private val observer = Observer<Pair<String, Int>> { pair ->
         val (host, port) = pair
         Log.i(tag, "Pairing service host: $host, port: $port")
-        if (port <= 0) return@Observer
+        if (port <= 0 || pairingInFlight.get()) return@Observer
 
         val notification = createInputNotification(host, port)
-
-        getSystemService(NotificationManager::class.java).notify(notificationId, notification)
+        getSystemService(NotificationManager::class.java).notify(foregroundNotificationId, notification)
     }
 
     private var started = false
@@ -82,7 +83,8 @@ class AdbPairingService : Service() {
                 setSound(null, null)
                 setShowBadge(false)
                 setAllowBubbles(false)
-            })
+            }
+        )
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -91,16 +93,19 @@ class AdbPairingService : Service() {
                 onStart()
             }
             replyAction -> {
-                val code = RemoteInput.getResultsFromIntent(intent)?.getCharSequence(remoteInputResultKey) ?: ""
+                val code = (RemoteInput.getResultsFromIntent(intent)?.getCharSequence(remoteInputResultKey) ?: "")
+                    .toString()
+                    .trim()
                 val host = intent.getStringExtra(hostKey) ?: ""
                 val port = intent.getIntExtra(portKey, -1)
-                if (port != -1) {
-                    onInput(code.toString(), host, port)
+                if (port != -1 && code.isNotEmpty() && host.isNotEmpty()) {
+                    onInput(code, host, port)
                 } else {
                     onStart()
                 }
             }
             stopAction -> {
+                stopSearch()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 null
@@ -111,18 +116,22 @@ class AdbPairingService : Service() {
         }
         if (notification != null) {
             try {
-                startForeground(notificationId, notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MANIFEST)
+                startForeground(
+                    foregroundNotificationId,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MANIFEST
+                )
             } catch (e: Throwable) {
                 Log.e(tag, "startForeground failed", e)
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-                    && e is ForegroundServiceStartNotAllowedException) {
-                    getSystemService(NotificationManager::class.java).notify(notificationId, notification)
+                    && e is ForegroundServiceStartNotAllowedException
+                ) {
+                    getSystemService(NotificationManager::class.java).notify(foregroundNotificationId, notification)
                 }
             }
         }
-        return START_REDELIVER_INTENT
+        return START_NOT_STICKY
     }
 
     private fun startSearch() {
@@ -135,6 +144,7 @@ class AdbPairingService : Service() {
         if (!started) return
         started = false
         adbMdns?.stop()
+        adbMdns = null
     }
 
     override fun onDestroy() {
@@ -144,28 +154,38 @@ class AdbPairingService : Service() {
     }
 
     private fun onStart(): Notification {
+        getSystemService(NotificationManager::class.java).cancel(resultNotificationId)
         startSearch()
         return searchingNotification
     }
 
     private fun onInput(code: String, host: String, port: Int): Notification {
-        serviceScope.launch {
-            val key = try {
-                AdbKey(PreferenceAdbKeyStore(ShizukuSettings.getPreferences()), "shizuku")
-            } catch (e: Throwable) {
-                e.printStackTrace()
-                handleResult(false, AdbKeyException(e))
-                return@launch
-            }
+        if (!pairingInFlight.compareAndSet(false, true)) {
+            return workingNotification
+        }
+        stopSearch()
 
-            runCatching {
-                AdbPairingClient(host, port, code, key).use { client ->
-                    client.start()
+        serviceScope.launch {
+            try {
+                val key = try {
+                    AdbKey(PreferenceAdbKeyStore(ShizukuSettings.getPreferences()), "shizuku")
+                } catch (e: Throwable) {
+                    e.printStackTrace()
+                    handleResult(false, AdbKeyException(e))
+                    return@launch
                 }
-            }.onFailure {
-                handleResult(false, it)
-            }.onSuccess {
-                handleResult(it, null)
+
+                runCatching {
+                    AdbPairingClient(host, port, code, key).use { client ->
+                        client.start()
+                    }
+                }.onFailure {
+                    handleResult(false, it)
+                }.onSuccess {
+                    handleResult(it, null)
+                }
+            } finally {
+                pairingInFlight.set(false)
             }
         }
 
@@ -210,8 +230,10 @@ class AdbPairingService : Service() {
             }
         }
 
+        // Post the terminal outcome on a separate notification ID so stopForeground(STOP_FOREGROUND_REMOVE)
+        // cannot race with NotificationManager and swallow the result banner.
         getSystemService(NotificationManager::class.java).notify(
-            notificationId,
+            resultNotificationId,
             Notification.Builder(this, notificationChannel)
                 .setColor(getColor(R.color.notification))
                 .setSmallIcon(R.drawable.ic_system_icon)

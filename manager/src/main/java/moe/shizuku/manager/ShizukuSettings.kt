@@ -17,6 +17,7 @@ object ShizukuSettings {
     const val NIGHT_MODE = "night_mode"
     const val LANGUAGE = "language"
     const val KEEP_START_ON_BOOT = "start_on_boot"
+    private const val LAST_BOOT_COUNT = "last_boot_count"
 
     private var sPreferences: SharedPreferences? = null
 
@@ -70,6 +71,26 @@ object ShizukuSettings {
     @JvmStatic
     fun setLastLaunchMode(@LaunchMethod method: Int) {
         getPreferences().edit().putInt("mode", method).apply()
+    }
+
+    @JvmStatic
+    fun isStartOnBootEnabled(): Boolean {
+        return getPreferences().getBoolean(KEEP_START_ON_BOOT, true)
+    }
+
+    @JvmStatic
+    fun setStartOnBootEnabled(enabled: Boolean) {
+        getPreferences().edit().putBoolean(KEEP_START_ON_BOOT, enabled).apply()
+    }
+
+    @JvmStatic
+    fun getLastHandledBootCount(): Int {
+        return getPreferences().getInt(LAST_BOOT_COUNT, -1)
+    }
+
+    @JvmStatic
+    fun setLastHandledBootCount(bootCount: Int) {
+        getPreferences().edit().putInt(LAST_BOOT_COUNT, bootCount).apply()
     }
 
     @JvmStatic

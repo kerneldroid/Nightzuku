@@ -16,30 +16,39 @@ import android.text.TextUtils
 import dalvik.system.BaseDexClassLoader
 import java.io.File
 import java.lang.reflect.Method
+import java.util.concurrent.atomic.AtomicBoolean
 import rikka.hidden.compat.PackageManagerApis
 import stub.dalvik.system.VMRuntimeHidden
 
 object ShizukuShellLoader {
 
     private const val ACTION_REQUEST_BINDER_NIGHT = "kerneldroid.nightzuku.intent.action.REQUEST_BINDER"
+    private const val REQUEST_BINDER_TIMEOUT_MS = 5_000L
 
     private var args: Array<String>? = null
     private var callingPackage: String? = null
     private var handler: Handler? = null
+    private var timeoutRunnable: Runnable? = null
+    private val binderHandled = AtomicBoolean(false)
 
     private val receiverBinder: Binder = object : Binder() {
 
         override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
             if (code == 1) {
+                if (!binderHandled.compareAndSet(false, true)) {
+                    return true
+                }
                 val binder = data.readStrongBinder()
-
                 val sourceDir = data.readString()
-                if (binder != null) {
-                    handler!!.post { onBinderReceived(binder, sourceDir!!) }
+
+                if (binder != null && !sourceDir.isNullOrEmpty()) {
+                    handler?.post {
+                        timeoutRunnable?.let { handler?.removeCallbacks(it) }
+                        timeoutRunnable = null
+                        onBinderReceived(binder, sourceDir)
+                    }
                 } else {
-                    System.err.println("Server is not running")
-                    System.err.flush()
-                    System.exit(1)
+                    abort("Server is not running")
                 }
                 return true
             }
@@ -57,11 +66,10 @@ object ShizukuShellLoader {
             .putExtra("data", data)
 
         val amBinder = ServiceManager.getService("activity")
-        val am: IActivityManager
-        if (Build.VERSION.SDK_INT >= 26) {
-            am = IActivityManager.Stub.asInterface(amBinder)
+        val am: IActivityManager = if (Build.VERSION.SDK_INT >= 26) {
+            IActivityManager.Stub.asInterface(amBinder)
         } else {
-            am = ActivityManagerNative.asInterface(amBinder)
+            ActivityManagerNative.asInterface(amBinder)
         }
 
         try {
@@ -69,37 +77,40 @@ object ShizukuShellLoader {
                 val method = findBroadcastMethod(am)
                     ?: throw RuntimeException("Cannot find broadcastIntentWithFeature on " + am.javaClass)
                 val paramTypes = method.parameterTypes
-                val args = arrayOfNulls<Any>(paramTypes.size)
-                args[0] = null
-                args[1] = null
-                args[2] = intent
+                val callArgs = arrayOfNulls<Any>(paramTypes.size)
+                callArgs[0] = null
+                callArgs[1] = null
+                callArgs[2] = intent
                 var intIndex = 0
                 var booleanIndex = 0
                 for (i in 3 until paramTypes.size) {
                     val t = paramTypes[i]
                     if (t == Boolean::class.java) {
-                        args[i] = booleanIndex++ == 0
+                        callArgs[i] = booleanIndex++ == 0
                     } else if (t == Int::class.java) {
-                        args[i] = if (isAppOpParameter(paramTypes, i, intIndex)) -1 else 0
+                        callArgs[i] = if (isAppOpParameter(paramTypes, i, intIndex)) -1 else 0
                         intIndex++
                     } else if (t == Long::class.java) {
-                        args[i] = 0L
+                        callArgs[i] = 0L
                     } else {
-                        args[i] = null
+                        callArgs[i] = null
                     }
                 }
                 try {
-                    method.invoke(am, *args)
+                    method.invoke(am, *callArgs)
                 } catch (e: ReflectiveOperationException) {
                     throw RuntimeException("broadcastIntentWithFeature invocation failed", e)
                 }
             } else {
-                am.broadcastIntent(null, intent, null, null, 0, null, null,
-                    null, -1, null, true, false, 0)
+                am.broadcastIntent(
+                    null, intent, null, null, 0, null, null,
+                    null, -1, null, true, false, 0
+                )
             }
         } catch (e: Throwable) {
             if ((Build.VERSION.SDK_INT != Build.VERSION_CODES.O && Build.VERSION.SDK_INT != Build.VERSION_CODES.O_MR1)
-                || e.message != "Calling application did not provide package name") {
+                || e.message != "Calling application did not provide package name"
+            ) {
                 throw e
             }
 
@@ -108,6 +119,7 @@ object ShizukuShellLoader {
 
             val activityIntent = Intent.createChooser(
                 Intent(ACTION_REQUEST_BINDER_NIGHT)
+                    .setPackage(BuildConfig.MANAGER_APPLICATION_ID)
                     .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT)
@@ -115,12 +127,32 @@ object ShizukuShellLoader {
                 "Request binder from Nightzuku"
             )
 
-            am.startActivityAsUser(null, callingPackage, activityIntent, null, null, null, 0, 0, null, null, Os.getuid() / 100000)
+            am.startActivityAsUser(
+                null, callingPackage, activityIntent, null, null, null, 0, 0, null, null, Os.getuid() / 100000
+            )
         }
     }
 
-    private fun onBinderReceived(binder: IBinder, sourceDir: String) {
-        val base = sourceDir.substring(0, sourceDir.lastIndexOf('/'))
+    private fun resolveVerifiedManagerSourceDir(reportedSourceDir: String): String {
+        val verified = try {
+            PackageManagerApis.getApplicationInfoNoThrow(BuildConfig.MANAGER_APPLICATION_ID, 0L, 0)?.sourceDir
+        } catch (_: Throwable) {
+            null
+        }
+        if (!verified.isNullOrEmpty()) {
+            return verified
+        }
+        return reportedSourceDir
+    }
+
+    private fun onBinderReceived(binder: IBinder, reportedSourceDir: String) {
+        val sourceDir = resolveVerifiedManagerSourceDir(reportedSourceDir)
+        val slashIndex = sourceDir.lastIndexOf('/')
+        if (slashIndex <= 0) {
+            abort("Invalid manager APK path: $sourceDir")
+            return
+        }
+        val base = sourceDir.substring(0, slashIndex)
         var librarySearchPath = base + "/lib/" + VMRuntimeHidden.getRuntime().vmInstructionSet()
         val systemLibrarySearchPath = System.getProperty("java.library.path")
         if (!TextUtils.isEmpty(systemLibrarySearchPath)) {
@@ -149,14 +181,21 @@ object ShizukuShellLoader {
         ShizukuShellLoader.args = args
 
         val packageName: String?
-        val pkg = PackageManagerApis.getPackagesForUidNoThrow(Os.getuid())
-        if (pkg.size == 1) {
-            packageName = pkg[0]
+        val pkgs = PackageManagerApis.getPackagesForUidNoThrow(Os.getuid())
+        if (pkgs.isEmpty()) {
+            abort("Cannot resolve packages for uid ${Os.getuid()}")
+            return
+        } else if (pkgs.size == 1) {
+            packageName = pkgs[0]
         } else {
             packageName = System.getenv("RISH_APPLICATION_ID")
             if (TextUtils.isEmpty(packageName) || "PKG" == packageName) {
                 abort("RISH_APPLICATION_ID is not set, set this environment variable to the id of current application (package name)")
-                System.exit(1)
+                return
+            }
+            if (!pkgs.contains(packageName)) {
+                abort("RISH_APPLICATION_ID ($packageName) does not belong to current uid ${Os.getuid()}")
+                return
             }
         }
 
@@ -166,7 +205,8 @@ object ShizukuShellLoader {
             Looper.prepareMainLooper()
         }
 
-        handler = Handler(Looper.getMainLooper())
+        val mainHandler = Handler(Looper.getMainLooper())
+        handler = mainHandler
 
         try {
             requestForBinder()
@@ -176,15 +216,19 @@ object ShizukuShellLoader {
             System.exit(1)
         }
 
-        handler!!.postDelayed({
-            abort(
-                String.format(
-                    "Request timeout. The connection between the current app (%1\$s) and Nightzuku app may be blocked by your system. " +
-                        "Please disable all battery optimization features for both current app (%1\$s) and Nightzuku app.",
-                    packageName
+        val timeout = Runnable {
+            if (!binderHandled.get()) {
+                abort(
+                    String.format(
+                        "Request timeout. The connection between the current app (%1\$s) and Nightzuku app may be blocked by your system. " +
+                            "Please disable all battery optimization features for both current app (%1\$s) and Nightzuku app.",
+                        packageName
+                    )
                 )
-            )
-        }, 5000)
+            }
+        }
+        timeoutRunnable = timeout
+        mainHandler.postDelayed(timeout, REQUEST_BINDER_TIMEOUT_MS)
 
         Looper.loop()
         System.exit(0)

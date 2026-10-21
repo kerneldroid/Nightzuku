@@ -7,12 +7,15 @@ import com.android.org.conscrypt.Conscrypt
 import java.io.Closeable
 import java.io.DataInputStream
 import java.io.DataOutputStream
+import java.net.InetSocketAddress
 import java.net.Socket
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import javax.net.ssl.SSLSocket
 
 private const val TAG = "AdbPairClient"
+private const val CONNECT_TIMEOUT_MS = 10_000
+private const val PAIRING_SO_TIMEOUT_MS = 15_000
 
 private const val kCurrentKeyHeaderVersion = 1.toByte()
 private const val kMinSupportedKeyHeaderVersion = 1.toByte()
@@ -26,8 +29,9 @@ private const val kExportedKeySize = 64
 private const val kPairingPacketHeaderSize = 6
 
 private class PeerInfo(
-        val type: Byte,
-        dataBytes: ByteArray) {
+    val type: Byte,
+    dataBytes: ByteArray
+) {
 
     val data = ByteArray(kMaxPeerInfoSize - 1)
 
@@ -69,9 +73,10 @@ private class PeerInfo(
 }
 
 private class PairingPacketHeader(
-        val version: Byte,
-        val type: Byte,
-        val payload: Int) {
+    val version: Byte,
+    val type: Byte,
+    val payload: Int
+) {
 
     enum class Type(val value: Byte) {
         SPAKE2_MSG(0.toByte()),
@@ -162,7 +167,12 @@ private class PairingContext private constructor(private val nativePtr: Long) {
 }
 
 @RequiresApi(Build.VERSION_CODES.R)
-class AdbPairingClient(private val host: String, private val port: Int, private val pairCode: String, private val key: AdbKey) : Closeable {
+class AdbPairingClient(
+    private val host: String,
+    private val port: Int,
+    private val pairCode: String,
+    private val key: AdbKey
+) : Closeable {
 
     private enum class State {
         Ready,
@@ -201,11 +211,14 @@ class AdbPairingClient(private val host: String, private val port: Int, private 
     }
 
     private fun setupTlsConnection() {
-        socket = Socket(host, port)
+        socket = Socket()
         socket.tcpNoDelay = true
+        socket.soTimeout = PAIRING_SO_TIMEOUT_MS
+        socket.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
 
         val sslContext = key.sslContext
         val sslSocket = sslContext.socketFactory.createSocket(socket, host, port, true) as SSLSocket
+        sslSocket.soTimeout = PAIRING_SO_TIMEOUT_MS
         sslSocket.startHandshake()
         Log.d(TAG, "Handshake succeeded.")
 
@@ -240,6 +253,7 @@ class AdbPairingClient(private val host: String, private val port: Int, private 
 
         outputStream.write(buffer.array())
         outputStream.write(payload)
+        outputStream.flush()
         Log.d(TAG, "write payload, size=${payload.size}")
     }
 
@@ -286,20 +300,26 @@ class AdbPairingClient(private val host: String, private val port: Int, private 
     }
 
     override fun close() {
-        try {
-            inputStream.close()
-        } catch (e: Throwable) {
+        if (::inputStream.isInitialized) {
+            try {
+                inputStream.close()
+            } catch (_: Throwable) {
+            }
         }
-        try {
-            outputStream.close()
-        } catch (e: Throwable) {
+        if (::outputStream.isInitialized) {
+            try {
+                outputStream.close()
+            } catch (_: Throwable) {
+            }
         }
-        try {
-            socket.close()
-        } catch (e: Exception) {
+        if (::socket.isInitialized) {
+            try {
+                socket.close()
+            } catch (_: Exception) {
+            }
         }
 
-        if (state != State.Ready) {
+        if (state != State.Ready && ::pairingContext.isInitialized) {
             pairingContext.destroy()
         }
     }
