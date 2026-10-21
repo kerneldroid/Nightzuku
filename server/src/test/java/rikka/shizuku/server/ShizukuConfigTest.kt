@@ -16,6 +16,7 @@ class ShizukuConfigTest {
 
     @Test
     fun `parseReader loads valid v3 config with signers, capabilities, nightDogEnabled, and accessPaused`() {
+        val flags = ConfigManager.FLAG_ALLOWED or NightProtocol.CAP_BINDER_PROXY
         val json = """
             {
               "version": 3,
@@ -24,7 +25,7 @@ class ShizukuConfigTest {
               "packages": [
                 {
                   "uid": 10234,
-                  "flags": 17,
+                  "flags": $flags,
                   "packages": ["com.example.app"],
                   "signers": ["aabbccddeeff0011"],
                   "lastConnectedAt": 1700000000000
@@ -71,16 +72,17 @@ class ShizukuConfigTest {
     @Test
     fun `toJson round-trips ShizukuConfig fields cleanly`() {
         val original = ShizukuConfig(
-            packages = mutableListOf(
+            mutableListOf(
                 ShizukuConfig.PackageEntry(10555, ConfigManager.FLAG_ALLOWED).apply {
                     packages = mutableListOf("com.example.client")
                     signers = mutableListOf("1122334455667788")
                     lastConnectedAt = 999_888_777L
                 }
-            ),
-            nightDogEnabled = false,
+            )
+        ).apply {
+            nightDogEnabled = false
             accessPaused = true
-        )
+        }
 
         val serialized = ShizukuConfigManager.toJson(original)
         val restored = ShizukuConfigManager.parseReader(StringReader(serialized))

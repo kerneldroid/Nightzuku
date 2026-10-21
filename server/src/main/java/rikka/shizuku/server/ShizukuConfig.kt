@@ -10,10 +10,10 @@ class ShizukuConfig {
     @SerializedName("packages")
     var packages: MutableList<PackageEntry>? = ArrayList()
 
-    @SerializedName("nightdog_enabled")
+    @SerializedName("nightDogEnabled")
     var nightDogEnabled: Boolean = false
 
-    @SerializedName("access_paused")
+    @SerializedName("accessPaused")
     var accessPaused: Boolean = false
 
     class PackageEntry(
@@ -34,7 +34,7 @@ class ShizukuConfig {
         /**
          * Epoch timestamp (ms) when this UID last attached to the server.
          */
-        @SerializedName("last_connected")
+        @SerializedName("lastConnectedAt")
         var lastConnectedAt: Long = 0L
 
         override fun isAllowed(): Boolean = (flags and ConfigManager.FLAG_ALLOWED) != 0
@@ -50,6 +50,6 @@ class ShizukuConfig {
     }
 
     companion object {
-        const val LATEST_VERSION = 2
+        const val LATEST_VERSION = 3
     }
 }

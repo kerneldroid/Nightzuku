@@ -322,7 +322,7 @@ class ShizukuConfigManager : ConfigManager() {
     }
 
     @Synchronized
-    override fun update(uid: Int, packages: MutableList<String>, mask: Int, values: Int) {
+    override fun update(uid: Int, packages: MutableList<String>?, mask: Int, values: Int) {
         updateLocked(uid, packages, mask, values)
     }
 

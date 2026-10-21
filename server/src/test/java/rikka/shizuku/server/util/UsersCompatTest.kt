@@ -30,7 +30,13 @@ class UsersCompatTest {
     }
 
     private fun makeUsers(vararg ids: Int): List<UserInfo> =
-        ids.map { id -> UserInfo(id, "user-$id", 0) }
+        ids.map { id ->
+            UserInfo().apply {
+                this.id = id
+                name = "user-$id"
+                flags = 0
+            }
+        }
 
     @Test
     fun `getUsers uses 3-boolean overload when supported by platform`() {
