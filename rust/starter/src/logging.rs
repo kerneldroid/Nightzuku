@@ -1,5 +1,8 @@
-use std::ffi::{CString, c_char, c_int};
+#[cfg(target_os = "android")]
+use std::ffi::{CString, c_char};
+use std::ffi::c_int;
 
+#[cfg(target_os = "android")]
 const TAG: &std::ffi::CStr = c"Shizuku";
 
 const ANDROID_LOG_VERBOSE: c_int = 2;
@@ -8,11 +11,13 @@ const ANDROID_LOG_INFO: c_int = 4;
 const ANDROID_LOG_WARN: c_int = 5;
 const ANDROID_LOG_ERROR: c_int = 6;
 
+#[cfg(target_os = "android")]
 #[link(name = "log")]
 unsafe extern "C" {
     fn __android_log_print(prio: c_int, tag: *const c_char, fmt: *const c_char, ...) -> c_int;
 }
 
+#[cfg(target_os = "android")]
 fn log(prio: c_int, message: &str) {
     if let Ok(message) = CString::new(message) {
         unsafe {
@@ -20,6 +25,9 @@ fn log(prio: c_int, message: &str) {
         }
     }
 }
+
+#[cfg(not(target_os = "android"))]
+fn log(_prio: c_int, _message: &str) {}
 
 #[allow(dead_code)]
 pub fn logv(message: &str) {

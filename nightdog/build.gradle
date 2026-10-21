@@ -7,8 +7,15 @@ android {
     buildFeatures {
         buildConfig false
     }
+    testOptions {
+        unitTests.includeAndroidResources = true
+    }
 }
 
 dependencies {
     compileOnly libs.hidden.stub
+    testCompileOnly libs.hidden.stub
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.16.1'
+    testImplementation 'org.mockito:mockito-core:5.14.2'
 }

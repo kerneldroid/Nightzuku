@@ -63,6 +63,16 @@ fn dirname(path: &str) -> String {
     }
 }
 
+fn derive_apk_candidate_from_exe_path(exe_str: &str) -> Option<String> {
+    let abi_dir = dirname(exe_str);
+    let lib_dir = dirname(&abi_dir);
+    let app_dir = dirname(&lib_dir);
+    if app_dir.is_empty() || app_dir == "." || app_dir == "/" {
+        return None;
+    }
+    Some(format!("{app_dir}/base.apk"))
+}
+
 fn access(path: &str, mode: c_int) -> c_int {
     let Ok(path) = CString::new(path) else {
         return -1;
@@ -114,13 +124,7 @@ fn read_self_exe() -> Option<Vec<u8>> {
 fn derive_apk_from_self_exe() -> Option<String> {
     let exe_bytes = read_self_exe()?;
     let exe_str = std::str::from_utf8(&exe_bytes).ok()?;
-    let abi_dir = dirname(exe_str);
-    let lib_dir = dirname(&abi_dir);
-    let app_dir = dirname(&lib_dir);
-    if app_dir.is_empty() || app_dir == "." || app_dir == "/" {
-        return None;
-    }
-    let candidate = format!("{app_dir}/base.apk");
+    let candidate = derive_apk_candidate_from_exe_path(exe_str)?;
     if access(&candidate, libc::R_OK) == 0 {
         Some(candidate)
     } else {
@@ -611,4 +615,31 @@ fn main() {
     flush();
     logging::logd("start_server");
     start_server(&apk_path, SERVER_CLASS_PATH, SERVER_NAME, replace_pid);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dirname_variants() {
+        assert_eq!(dirname("/"), "/");
+        assert_eq!(dirname("///"), "/");
+        assert_eq!(dirname("relative"), ".");
+        assert_eq!(dirname("/system"), "/");
+        assert_eq!(
+            dirname("/data/app/~~abc==/kerneldroid.nightzuku-xyz==/lib/arm64/libshizuku.so"),
+            "/data/app/~~abc==/kerneldroid.nightzuku-xyz==/lib/arm64"
+        );
+    }
+
+    #[test]
+    fn test_derive_apk_candidate_from_exe_path() {
+        let exe = "/data/app/~~abc==/kerneldroid.nightzuku-xyz==/lib/arm64/libshizuku.so";
+        assert_eq!(
+            derive_apk_candidate_from_exe_path(exe),
+            Some("/data/app/~~abc==/kerneldroid.nightzuku-xyz==/base.apk".to_string())
+        );
+        assert_eq!(derive_apk_candidate_from_exe_path("/bin/sh"), None);
+    }
 }

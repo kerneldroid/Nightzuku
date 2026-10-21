@@ -2,13 +2,27 @@ use std::ffi::{CStr, CString, c_int, c_void};
 use std::mem::MaybeUninit;
 use std::ptr;
 
+#[cfg(target_os = "android")]
 pub fn errno() -> c_int {
     unsafe { *libc::__errno() }
 }
 
+#[cfg(not(target_os = "android"))]
+pub fn errno() -> c_int {
+    unsafe { *libc::__errno_location() }
+}
+
+#[cfg(target_os = "android")]
 pub fn errno_set(value: c_int) {
     unsafe {
         *libc::__errno() = value;
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+pub fn errno_set(value: c_int) {
+    unsafe {
+        *libc::__errno_location() = value;
     }
 }
 
@@ -70,6 +84,24 @@ pub fn get_proc_name(pid: c_int, name: &mut [u8]) -> c_int {
     if read_res <= 0 { 1 } else { 0 }
 }
 
+/// Parses a `/proc/<pid>/status` payload to extract the real UID (`Uid:\t<real>\t...`).
+pub fn parse_proc_status_uid(status_bytes: &[u8]) -> Option<libc::uid_t> {
+    for line in status_bytes.split(|&b| b == b'\n') {
+        if let Some(rest) = line.strip_prefix(b"Uid:") {
+            let trimmed = rest
+                .iter()
+                .copied()
+                .skip_while(|b| is_space(*b))
+                .take_while(|b| b.is_ascii_digit())
+                .collect::<Vec<u8>>();
+            if !trimmed.is_empty() {
+                return Some(atoi(&trimmed) as libc::uid_t);
+            }
+        }
+    }
+    None
+}
+
 /// Reads the real UID of `pid` from `/proc/<pid>/status` (`Uid:\t<real>\t...`).
 pub fn get_proc_uid(pid: c_int) -> Option<libc::uid_t> {
     let path = CString::new(format!("/proc/{pid}/status")).ok()?;
@@ -85,21 +117,7 @@ pub fn get_proc_uid(pid: c_int) -> Option<libc::uid_t> {
     if n <= 0 {
         return None;
     }
-    let content = &buf[..n as usize];
-    for line in content.split(|&b| b == b'\n') {
-        if let Some(rest) = line.strip_prefix(b"Uid:") {
-            let trimmed = rest
-                .iter()
-                .copied()
-                .skip_while(|b| is_space(*b))
-                .take_while(|b| b.is_ascii_digit())
-                .collect::<Vec<u8>>();
-            if !trimmed.is_empty() {
-                return Some(atoi(&trimmed) as libc::uid_t);
-            }
-        }
-    }
-    None
+    parse_proc_status_uid(&buf[..n as usize])
 }
 
 pub fn switch_mnt_ns(pid: c_int) -> c_int {
@@ -229,4 +247,42 @@ pub fn memsearch(start: usize, end: usize, value: &[u8]) -> usize {
 
 pub fn trim(s: &str) -> String {
     s.trim_matches(|c: char| c.is_ascii_whitespace()).to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_atoi_and_is_num() {
+        assert!(is_num(b"12345"));
+        assert!(!is_num(b""));
+        assert!(!is_num(b"123a"));
+        assert_eq!(atoi(b"  +2000\n"), 2000);
+        assert_eq!(atoi(b" -42 "), -42);
+    }
+
+    #[test]
+    fn test_parse_proc_status_uid() {
+        let sample = b"Name:\tshizuku_server\nState:\tS (sleeping)\nPid:\t4321\nUid:\t2000\t2000\t2000\t2000\nGid:\t2000\t2000\n";
+        assert_eq!(parse_proc_status_uid(sample), Some(2000));
+
+        let root_sample = b"Name:\tshizuku_server\nUid:\t0\t0\t0\t0\n";
+        assert_eq!(parse_proc_status_uid(root_sample), Some(0));
+
+        let missing = b"Name:\tshizuku_server\nPid:\t100\n";
+        assert_eq!(parse_proc_status_uid(missing), None);
+    }
+
+    #[test]
+    fn test_get_proc_uid_self() {
+        let pid = unsafe { libc::getpid() };
+        let expected_uid = unsafe { libc::getuid() };
+        assert_eq!(get_proc_uid(pid), Some(expected_uid));
+    }
+
+    #[test]
+    fn test_trim() {
+        assert_eq!(trim("  package:/data/app/base.apk \r\n"), "package:/data/app/base.apk");
+    }
 }

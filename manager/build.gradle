@@ -20,6 +20,14 @@ android {
         compose true
         prefab true
     }
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+            all {
+                maxHeapSize = "1g"
+            }
+        }
+    }
     sourceSets {
         debug.assets.srcDir(file("$buildDir/generated/rish/debug/assets"))
         release.assets.srcDir(file("$buildDir/generated/rish/release/assets"))
@@ -168,9 +176,17 @@ dependencies {
     implementation project(':provider')
     implementation project(':common')
     compileOnly project(':nightdog')
+    testImplementation project(':nightdog')
 
     implementation libs.hidden.compat
     compileOnly libs.hidden.stub
+    testCompileOnly libs.hidden.stub
+
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.16.1'
+    testImplementation 'org.mockito:mockito-core:5.14.2'
+    testImplementation 'androidx.test:core:1.6.1'
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0'
 
     implementation platform('androidx.compose:compose-bom:2026.09.00')
     implementation 'androidx.compose.animation:animation'

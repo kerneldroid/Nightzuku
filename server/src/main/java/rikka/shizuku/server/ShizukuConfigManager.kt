@@ -15,6 +15,7 @@ import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStreamReader
+import java.io.Reader
 import java.nio.charset.StandardCharsets
 import kerneldroid.nightzuku.util.PackageSignatureVerifier
 import rikka.hidden.compat.PackageManagerApis
@@ -371,6 +372,31 @@ class ShizukuConfigManager : ConfigManager() {
         private val ATOMIC_FILE = AtomicFile(FILE)
 
         @JvmStatic
+        internal fun parseReader(reader: Reader): ShizukuConfig {
+            val element = JsonParser.parseReader(reader)
+            val obj = element as? JsonObject ?: return ShizukuConfig()
+            val version = obj.get("version")
+                ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }
+                ?.asInt
+            if (version == null || version != ShizukuConfig.LATEST_VERSION) {
+                ConfigManager.LOGGER.w(
+                    "Unsupported or missing config version %s (expected %d); starting empty",
+                    version?.toString() ?: "null",
+                    ShizukuConfig.LATEST_VERSION
+                )
+                return ShizukuConfig()
+            }
+            return (GSON_IN.fromJson(element, ShizukuConfig::class.java) ?: ShizukuConfig()).apply {
+                if (packages == null) {
+                    packages = ArrayList()
+                }
+            }
+        }
+
+        @JvmStatic
+        internal fun toJson(config: ShizukuConfig): String = GSON_OUT.toJson(config)
+
+        @JvmStatic
         fun load(): ShizukuConfig {
             val stream: FileInputStream = try {
                 ATOMIC_FILE.openRead()
@@ -381,21 +407,7 @@ class ShizukuConfigManager : ConfigManager() {
 
             return try {
                 InputStreamReader(stream, StandardCharsets.UTF_8).use { reader ->
-                    val element = JsonParser.parseReader(reader)
-                    val obj = element as? JsonObject
-                    val version = obj?.get("version")
-                        ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }
-                        ?.asInt
-                    if (version != null && version != ShizukuConfig.LATEST_VERSION) {
-                        ConfigManager.LOGGER.w(
-                            "Unsupported config version %d (expected %d); starting empty",
-                            version,
-                            ShizukuConfig.LATEST_VERSION
-                        )
-                        ShizukuConfig()
-                    } else {
-                        GSON_IN.fromJson(element, ShizukuConfig::class.java) ?: ShizukuConfig()
-                    }
+                    parseReader(reader)
                 }
             } catch (tr: Throwable) {
                 ConfigManager.LOGGER.w(tr, "load config")
@@ -414,7 +426,7 @@ class ShizukuConfigManager : ConfigManager() {
                 }
 
                 return try {
-                    val json = GSON_OUT.toJson(config)
+                    val json = toJson(config)
                     stream.write(json.toByteArray(StandardCharsets.UTF_8))
 
                     // Ensure shell (uid 2000) always owns the replacement inode even when the

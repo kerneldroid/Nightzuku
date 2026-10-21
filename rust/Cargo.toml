@@ -19,7 +19,6 @@ overflow-checks = false
 incremental = false
 
 [profile.dev]
-panic = "abort"
 opt-level = 1
 debug = false
 strip = "debuginfo"

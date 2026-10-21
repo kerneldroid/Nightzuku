@@ -1,14 +1,19 @@
-use std::ffi::{CString, c_char, c_int};
+#[cfg(target_os = "android")]
+use std::ffi::{CString, c_char};
+use std::ffi::c_int;
 use std::sync::atomic::{AtomicI32, Ordering};
 
 use crate::misc::atoi;
 
+#[cfg(target_os = "android")]
 const PROP_VALUE_MAX: usize = 92;
 
+#[cfg(target_os = "android")]
 unsafe extern "C" {
     fn __system_property_get(name: *const c_char, value: *mut c_char) -> c_int;
 }
 
+#[cfg(target_os = "android")]
 pub fn prop(name: &str) -> Option<String> {
     let name = CString::new(name).ok()?;
     let mut buf = [0u8; PROP_VALUE_MAX + 1];
@@ -18,6 +23,11 @@ pub fn prop(name: &str) -> Option<String> {
     }
     let end = buf.iter().position(|byte| *byte == 0).unwrap_or(buf.len());
     Some(String::from_utf8_lossy(&buf[..end]).into_owned())
+}
+
+#[cfg(not(target_os = "android"))]
+pub fn prop(_name: &str) -> Option<String> {
+    None
 }
 
 static API_LEVEL: AtomicI32 = AtomicI32::new(0);

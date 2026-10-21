@@ -123,7 +123,7 @@ object AdbModuleManager {
         )
     }
 
-    private fun copyStreamBounded(input: InputStream, output: OutputStream, maxBytes: Long): Long {
+    internal fun copyStreamBounded(input: InputStream, output: OutputStream, maxBytes: Long): Long {
         val buf = ByteArray(DEFAULT_BUFFER_SIZE)
         var copied = 0L
         while (true) {
@@ -446,7 +446,7 @@ object AdbModuleManager {
         )
     }
 
-    private fun parseModuleProp(raw: String): Map<String, String> {
+    internal fun parseModuleProp(raw: String): Map<String, String> {
         return raw.lineSequence()
             .map { it.trim() }
             .filter { it.isNotBlank() && !it.startsWith("#") && it.contains("=") }
@@ -456,7 +456,7 @@ object AdbModuleManager {
             }
     }
 
-    private fun cleanZipName(name: String): String {
+    internal fun cleanZipName(name: String): String {
         val clean = name.replace('\\', '/').trim('/')
         require(clean.isNotBlank()) { "Invalid ZIP entry." }
         val parts = clean.split('/')
@@ -466,7 +466,7 @@ object AdbModuleManager {
         return clean
     }
 
-    private fun ensureInside(root: File, child: File) {
+    internal fun ensureInside(root: File, child: File) {
         val rootPath = root.canonicalPath
         val childPath = child.canonicalPath
         require(childPath == rootPath || childPath.startsWith("$rootPath/")) {
