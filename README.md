@@ -13,12 +13,15 @@ Upstream project reference: <https://github.com/RikkaApps/Shizuku>
 
 - Jetpack Compose manager UI with Material 3 Expressive components, motion, switches, and rounded icon treatment.
 - Dual-wire server/client protocol: a native zero-stub Nightzuku wire alongside the classic Shizuku wire.
-- Android 16/17 target work with current preview SDK/build tooling in this fork.
-- ADB Modules screen for installing and managing ZIP modules.
+- Cryptographic SHA-256 package and manager certificate pinning (with Android 9+ `signingCertificateHistory` key-rotation lineage support) across server, `UserService` hosts, and ADB package reconciliation.
+- Global client access pause switch (`accessPaused`), per-UID `UserService` teardown, one-time grant process-death cleanup, and system Settings runtime permission revocation sync.
+- Hardened permission confirmation dialog (`RequestPermissionActivity`) with overlay hiding (`setHideOverlayWindows`), tap-grace window, Unicode/Bidi label sanitization, and shared-UID sibling package disclosure.
+- Android 16/17 target work with current preview SDK/build tooling in this fork (including `Android17Compat` and single-argument `IUserManager.getUsers` fallback).
+- ADB Modules screen for installing and managing ZIP modules with streaming size budgets and isolated shell execution.
 - Module features: `module.prop`, banner, enable/disable switch, `action.sh`, policy-gated `service.sh`, local WebUI, delete, path checks, size limits, output limits, and last-run logs.
 - Module policy settings: Safe mode, Full access, and background action control.
 - Online Module Catalog (GitHub Topics discovery) with downloads count and per-module out-of-date detection.
-- NightDog watchdog for server health and recovery.
+- NightDog watchdog for server health and recovery (monitoring critical and optional platform services).
 - Debug test module under `test-modules/adb-test-module.zip`.
 
 ## Dual-wire architecture & migration
@@ -142,4 +145,5 @@ All code is licensed under Apache 2.0.
 
 ## Credits
 
-[**Razgame**](https://github.com/RazGame/Shizuku) for [app list fix](https://github.com/kerneldroid/Nightzuku/commit/6ea7e74984f860398760f5111a15083ea004c842)
+- [**Razgame**](https://github.com/RazGame/Shizuku) — for [app list fix](https://github.com/kerneldroid/Nightzuku/commit/6ea7e74984f860398760f5111a15083ea004c842).
+- [**Porter** (d4rken-org)](https://github.com/d4rken-org/porter) — for architectural and security hardening ideas (package signing identity verification, root/ADB config ownership handoff, permission dialog anti-spoofing, and wireless ADB/mDNS lifecycle edge-case analysis), re-engineered natively for Nightzuku's dual-wire architecture without code copying.
