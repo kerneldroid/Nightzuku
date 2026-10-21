@@ -1,5 +1,6 @@
 package moe.shizuku.manager.adb
 
+import android.app.Application
 import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
@@ -16,7 +17,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34], manifest = Config.NONE)
+@Config(sdk = [34], manifest = Config.NONE, application = Application::class)
 class AdbMdnsTest {
 
     private val context = ApplicationProvider.getApplicationContext<Context>()

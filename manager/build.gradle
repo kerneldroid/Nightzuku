@@ -165,6 +165,61 @@ configurations.configureEach {
     exclude group: 'androidx.profileinstaller', module: 'profileinstaller'
 }
 
+configurations {
+    // Resolved separately so the original signed artifacts can be rewritten
+    // without AGP's AsmClassesTransform invalidating their JAR signatures.
+    unsignedTestJars
+    debugUnitTestRuntimeClasspath {
+        // AsmClassesTransform rewrites dependency jars for unit tests but keeps
+        // their JAR signatures, so JDK 21 rejects the modified jars with a
+        // digest error. Replace these signed artifacts with unsigned copies.
+        exclude group: 'org.conscrypt', module: 'conscrypt-openjdk-uber'
+        exclude group: 'org.bouncycastle', module: 'bcpkix-jdk18on'
+        exclude group: 'org.bouncycastle', module: 'bcprov-jdk18on'
+        exclude group: 'org.bouncycastle', module: 'bcutil-jdk18on'
+    }
+}
+
+def unsignedTestJarsDir = layout.buildDirectory.dir('test-libs/unsigned')
+def unsignedTestJarsPath = unsignedTestJarsDir.get().asFile
+
+def unsignedTestJarsTask = tasks.register('unsignedTestJars') {
+    def jars = configurations.unsignedTestJars
+    def outDir = unsignedTestJarsDir.get().asFile
+    inputs.files(jars)
+    outputs.dir(outDir)
+    doLast {
+        outDir.deleteDir()
+        outDir.mkdirs()
+        jars.files.each { jar ->
+            def target = new File(outDir, jar.name)
+            new java.util.zip.ZipFile(jar).withCloseable { zip ->
+                new java.util.zip.ZipOutputStream(new FileOutputStream(target)).withCloseable { out ->
+                    def entries = zip.entries()
+                    while (entries.hasMoreElements()) {
+                        def entry = entries.nextElement()
+                        if (entry.name ==~ /META-INF\/.*\.(SF|RSA|DSA|EC)/) {
+                            continue
+                        }
+                        out.putNextEntry(new java.util.zip.ZipEntry(entry.name))
+                        if (!entry.isDirectory()) {
+                            zip.getInputStream(entry).withCloseable { input -> out << input }
+                        }
+                        out.closeEntry()
+                    }
+                }
+            }
+        }
+    }
+}
+
+tasks.withType(org.gradle.api.tasks.testing.Test).configureEach {
+    dependsOn unsignedTestJarsTask
+}
+tasks.matching { it.name == 'transformDebugUnitTestClassesWithAsm' }.configureEach {
+    dependsOn unsignedTestJarsTask
+}
+
 dependencies {
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0'
@@ -184,6 +239,14 @@ dependencies {
 
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.robolectric:robolectric:4.16.1'
+    unsignedTestJars 'org.conscrypt:conscrypt-openjdk-uber:2.5.2'
+    unsignedTestJars 'org.bouncycastle:bcpkix-jdk18on:1.86'
+    testRuntimeOnly files(
+        new File(unsignedTestJarsPath, 'conscrypt-openjdk-uber-2.5.2.jar'),
+        new File(unsignedTestJarsPath, 'bcpkix-jdk18on-1.86.jar'),
+        new File(unsignedTestJarsPath, 'bcprov-jdk18on-1.86.jar'),
+        new File(unsignedTestJarsPath, 'bcutil-jdk18on-1.86.jar')
+    )
     testImplementation 'org.mockito:mockito-core:5.14.2'
     testImplementation 'androidx.test:core:1.6.1'
     testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0'

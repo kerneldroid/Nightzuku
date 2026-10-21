@@ -103,7 +103,7 @@ class RequestPermissionActivity : AppActivity() {
             intent.getParcelableExtra("applicationInfo")
         }
         if (uid <= 0 || pid <= 0 || ai == null || ai.uid != uid || ai.packageName.isNullOrEmpty()) {
-            LOGGER.w("Invalid permission request extras: uid=%d pid=%d ai=%s", uid, pid, ai)
+            LOGGER.w("Invalid permission request extras: uid=%d pid=%d ai=%s", uid, pid, ai?.toString() ?: "null")
             return null
         }
 
