@@ -63,6 +63,7 @@ object BinderSender {
                     logger.v("Pid %d dead", pid)
                 }
             }
+            shizukuService?.onClientProcessDied(uid, pid)
         }
 
         @Throws(RemoteException::class)
@@ -182,7 +183,7 @@ object BinderSender {
                     ActivityManagerApis.checkPermission(ServerConstants.MANAGER_PERMISSION, pid, uid) == PackageManager.PERMISSION_GRANTED
                 }
 
-                if (granted && userId == 0 && !sentManager) {
+                if (granted && userId == 0 && !sentManager && service.verifyManagerSignature()) {
                     ShizukuService.sendBinderToManager(service, night, userId)
                     sentManager = true
                 }

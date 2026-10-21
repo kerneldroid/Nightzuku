@@ -16,4 +16,6 @@ object ServerConstants {
     const val BINDER_TRANSACTION_getNightDogEnabled = 10003
     const val BINDER_TRANSACTION_claimUserServiceLaunch = 10004
     const val BINDER_TRANSACTION_getNightDogStatus = 10005
+    const val BINDER_TRANSACTION_setAccessPaused = 10006
+    const val BINDER_TRANSACTION_getAccessPaused = 10007
 }

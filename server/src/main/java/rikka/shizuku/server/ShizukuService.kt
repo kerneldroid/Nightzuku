@@ -21,17 +21,15 @@ import android.os.ServiceManager
 import android.os.SystemClock
 import java.util.concurrent.ConcurrentHashMap
 import kerneldroid.nightzuku.api.LegacyParcelCodec
-import moe.shizuku.api.BinderContainer
 import kerneldroid.nightzuku.api.NightProtocol
+import kerneldroid.nightzuku.util.PackageSignatureVerifier
+import moe.shizuku.api.BinderContainer
 import moe.shizuku.common.util.BuildUtils
 import moe.shizuku.common.util.OsUtils
 import moe.shizuku.server.IShizukuApplication
 import rikka.hidden.compat.ActivityManagerApis
 import rikka.hidden.compat.DeviceIdleControllerApis
 import rikka.hidden.compat.PackageManagerApis
-import rikka.hidden.compat.UserManagerApis
-import rikka.parcelablelist.ParcelableListSlice
-import rikka.rish.RishConfig
 import rikka.shizuku.ShizukuApiConstants
 import rikka.shizuku.common.util.InstalledPackagesCompat
 import rikka.shizuku.nightdog.NightDog
@@ -39,6 +37,9 @@ import rikka.shizuku.server.api.IContentProviderUtils
 import rikka.shizuku.server.util.Android17Compat
 import rikka.shizuku.server.util.HandlerUtil
 import rikka.shizuku.server.util.UserHandleCompat
+import rikka.shizuku.server.util.UsersCompat
+import rikka.parcelablelist.ParcelableListSlice
+import rikka.rish.RishConfig
 
 class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, ShizukuConfigManager>() {
 
@@ -46,8 +47,10 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
     private val clientManager: ShizukuClientManager
     private val configManager: ShizukuConfigManager
     private val managerAppId: Int
+    private val managerBaseline: PackageSignatureVerifier.Baseline
     val nightEndpoint: NightServiceEndpoint
     private var heartbeatRunnable: Runnable? = null
+    private var packageReconcileRunnable: Runnable? = null
 
     /** Tracks active permission prompts by (uid, pid, requestCode) -> elapsedRealtimeMs to block forged/expired replies. */
     private val openPrompts = ConcurrentHashMap<Triple<Int, Int, Int>, Long>()
@@ -62,25 +65,34 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         waitSystemService(Context.USER_SERVICE)
         waitSystemService(Context.APP_OPS_SERVICE)
 
-        val foundAi = getManagerApplicationInfo()
-        if (foundAi == null) {
+        val managerPi = getManagerPackageInfo()
+        val foundAi = managerPi?.applicationInfo
+        if (managerPi == null || foundAi == null) {
             System.exit(ServerConstants.MANAGER_APP_NOT_FOUND)
         }
+        val snapshot = PackageSignatureVerifier.extractSnapshot(managerPi!!, 0)
+        if (snapshot == null) {
+            Service.LOGGER.e("Failed to extract cryptographic signature for manager app, exiting...")
+            System.exit(ServerConstants.MANAGER_APP_NOT_FOUND)
+        }
+        managerBaseline = PackageSignatureVerifier.Baseline.fromSnapshot(snapshot!!)
         val ai = foundAi!!
 
         managerAppId = UserHandleCompat.getAppId(ai.uid)
 
         configManager = getConfigManager()
         clientManager = getClientManager()
+        clientManager.onClientDiedCallback = { uid, _, packageName ->
+            handleClientProcessDied(uid, packageName)
+        }
+        userServiceManager.setManagerBaseline(managerBaseline)
+        userServiceManager.setAccessPaused(configManager.isAccessPaused())
+
         nightEndpoint = NightServiceEndpoint(this)
 
         ApkChangedObservers.start(ai.sourceDir, object : ApkChangedListener {
-
             override fun onApkChanged() {
-                if (getManagerApplicationInfo() == null) {
-                    Service.LOGGER.w("manager app is uninstalled in user 0, exiting...")
-                    System.exit(ServerConstants.MANAGER_APP_NOT_FOUND)
-                }
+                reconcileManagerAndClients()
             }
         })
 
@@ -89,6 +101,8 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         if (configManager.getNightDogEnabled()) {
             applyNightDogState(true)
         }
+
+        startPackageReconciler()
 
         mainHandler.post {
             sendBinderToManager()
@@ -108,9 +122,154 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         return ShizukuConfigManager()
     }
 
+    /**
+     * Verifies that the installed manager package in user 0 still matches the cryptographic
+     * signing baseline captured when `shizuku_server` started.
+     *
+     * Returns `true` if verified or if PackageManager failed transiently; exits the server immediately
+     * if the manager package was positively uninstalled or replaced with a different key.
+     */
+    internal fun verifyManagerSignature(): Boolean {
+        val probe = try {
+            val pi = Android17Compat.getPackageInfoOrThrow(
+                ServerConstants.MANAGER_APPLICATION_ID,
+                PackageSignatureVerifier.signatureLookupFlags(),
+                0
+            )
+            PackageSignatureVerifier.evaluatePackageInfo(pi, 0)
+        } catch (t: Throwable) {
+            PackageSignatureVerifier.ProbeResult.LookupError(t)
+        }
+
+        return when (probe) {
+            is PackageSignatureVerifier.ProbeResult.Present -> {
+                if (managerBaseline.matches(probe.snapshot)) {
+                    true
+                } else {
+                    Service.LOGGER.e("Manager package identity changed (appId/signer mismatch), terminating server")
+                    System.exit(ServerConstants.MANAGER_APP_NOT_FOUND)
+                    false
+                }
+            }
+            is PackageSignatureVerifier.ProbeResult.Absent -> {
+                Service.LOGGER.w("Manager app is uninstalled in user 0 (%s), exiting...", probe.reason)
+                System.exit(ServerConstants.MANAGER_APP_NOT_FOUND)
+                false
+            }
+            is PackageSignatureVerifier.ProbeResult.LookupError -> {
+                Service.LOGGER.w(probe.cause, "Transient error probing manager package")
+                false
+            }
+        }
+    }
+
+    /**
+     * Periodically reconciles manager identity, active UserService host packages, and runtime
+     * permission revocations. Crucial under ADB (`u:r:shell:s0`), where SELinux blocks `inotify`
+     * on `/data/app`.
+     */
+    private fun startPackageReconciler() {
+        val runnable = object : Runnable {
+            override fun run() {
+                try {
+                    reconcileManagerAndClients()
+                } catch (t: Throwable) {
+                    Service.LOGGER.w(t, "Package reconciliation cycle failed")
+                } finally {
+                    mainHandler.postDelayed(this, RECONCILE_INTERVAL_MS)
+                }
+            }
+        }
+        packageReconcileRunnable = runnable
+        mainHandler.postDelayed(runnable, RECONCILE_INTERVAL_MS)
+    }
+
+    internal fun reconcileManagerAndClients() {
+        verifyManagerSignature()
+        userServiceManager.reconcileUserServicePackages()
+        reconcileRuntimePermissionRevocations()
+    }
+
+    /**
+     * Checks all UIDs currently marked allowed in `ShizukuConfigManager`: if the user revoked
+     * `kerneldroid.nightzuku.permission.API` via Android system Settings, revokes the in-memory
+     * grant, pushes the updated state to live clients, and tears down running UserServices for that UID.
+     */
+    private fun reconcileRuntimePermissionRevocations() {
+        for (uid in configManager.allowedUids()) {
+            val entry = configManager.find(uid) ?: continue
+            val packages = entry.packages?.toList().orEmpty()
+            if (packages.isEmpty()) continue
+
+            val userId = UserHandleCompat.getUserId(uid)
+            var declaresRuntimePermission = false
+            var anyGranted = false
+
+            for (pkg in packages) {
+                val pi = Android17Compat.getPackageInfo(
+                    pkg,
+                    PackageManager.GET_PERMISSIONS.toLong(),
+                    userId
+                ) ?: continue
+                if (pi.requestedPermissions?.contains(ServerConstants.PERMISSION) == true) {
+                    declaresRuntimePermission = true
+                    val granted = try {
+                        Android17Compat.checkPermission(ServerConstants.PERMISSION, pkg, userId) ==
+                            PackageManager.PERMISSION_GRANTED
+                    } catch (_: Throwable) {
+                        true
+                    }
+                    if (granted) {
+                        anyGranted = true
+                        break
+                    }
+                }
+            }
+
+            if (declaresRuntimePermission && !anyGranted) {
+                Service.LOGGER.i("Runtime permission revoked in system settings for uid=%d, revoking grant", uid)
+                configManager.update(uid, null, ConfigManager.MASK_PERMISSION, ConfigManager.FLAG_DENIED)
+                val denied = true
+                for (record in clientManager.findClients(uid)) {
+                    record.allowed = false
+                    pushPermissionState(record, denied, 0)
+                }
+                onPermissionRevokedForUid(uid, packages)
+            }
+        }
+    }
+
+    internal fun onClientProcessDied(uid: Int, pid: Int) {
+        clientManager.notifyProcessDied(uid, pid)
+    }
+
+    private fun handleClientProcessDied(uid: Int, packageName: String?) {
+        val remaining = clientManager.findClients(uid).filter { record ->
+            record.client?.asBinder()?.pingBinder() == true || nightEndpoint.hasNightCallback(record.pid)
+        }
+        if (remaining.isNotEmpty()) {
+            return
+        }
+        val wasOneTime = clientManager.clearOneTimeGrant(uid)
+        val hasPermanentGrant = configManager.find(uid)?.isAllowed() == true
+        if (wasOneTime || !hasPermanentGrant) {
+            val packages = if (packageName != null) {
+                listOf(packageName)
+            } else {
+                PackageManagerApis.getPackagesForUidNoThrow(uid)
+            }
+            onPermissionRevokedForUid(uid, packages)
+            syncRuntimePermissionsForUid(uid, false)
+        }
+    }
+
     override fun checkCallerManagerPermission(func: String, callingUid: Int, callingPid: Int): Boolean {
-        return UserHandleCompat.getAppId(callingUid) == managerAppId &&
-            UserHandleCompat.getUserId(callingUid) == 0
+        if (UserHandleCompat.getAppId(callingUid) != managerAppId ||
+            UserHandleCompat.getUserId(callingUid) != 0
+        ) {
+            return false
+        }
+        return verifyManagerSignature()
     }
 
     private fun checkCallingPermission(): Int {
@@ -135,10 +294,36 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         if (checkCallerManagerPermission(func, callingUid, callingPid)) {
             return true
         }
+        if (configManager.isAccessPaused()) {
+            return false
+        }
         if (clientRecord == null && checkCallingPermission() == PackageManager.PERMISSION_GRANTED) {
-            return true
+            val packages = PackageManagerApis.getPackagesForUidNoThrow(callingUid)
+            if (packages.any { configManager.verifyClientIdentity(callingUid, it) }) {
+                configManager.recordConnection(callingUid)
+                return true
+            }
+            return false
+        }
+        if (clientRecord != null && clientRecord.allowed) {
+            configManager.recordConnection(callingUid)
         }
         return false
+    }
+
+    internal fun setAccessPaused(paused: Boolean) {
+        Service.LOGGER.i("setAccessPaused: %s", paused)
+        configManager.setAccessPaused(paused)
+        userServiceManager.setAccessPaused(paused)
+
+        for (record in clientManager.getActiveClients()) {
+            val entry = configManager.find(record.uid)
+            val allowed = !paused && (entry?.isAllowed() == true)
+            val denied = entry?.isDenied() == true
+            val caps = TransactGuard.effectiveCapabilities(entry, paused)
+            record.allowed = allowed
+            pushPermissionState(record, denied, caps)
+        }
     }
 
     override fun exit() {
@@ -146,6 +331,8 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         Service.LOGGER.i("exit")
         heartbeatRunnable?.let { mainHandler.removeCallbacks(it) }
         heartbeatRunnable = null
+        packageReconcileRunnable?.let { mainHandler.removeCallbacks(it) }
+        packageReconcileRunnable = null
         NightDog.stop()
         System.exit(0)
     }
@@ -163,7 +350,8 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         protocolVersion: Int
     ): ClientRecord? {
         val isManager = ServerConstants.MANAGER_APPLICATION_ID == packageName &&
-            UserHandleCompat.getUserId(callingUid) == 0
+            UserHandleCompat.getUserId(callingUid) == 0 &&
+            verifyManagerSignature()
 
         var record = clientManager.findClient(callingUid, callingPid)
         if (record == null) {
@@ -176,17 +364,18 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                     ShizukuApiConstants.SERVER_VERSION
                 )
             }
+        } else {
+            // Re-verify client identity if attaching on Night wire after legacy attach
+            if (!isManager) {
+                if (configManager.isAccessPaused() || !configManager.verifyClientIdentity(callingUid, packageName)) {
+                    record?.allowed = false
+                } else if (record?.allowed == true) {
+                    configManager.recordConnection(callingUid)
+                }
+            }
         }
         if (isManager) {
-            try {
-                Android17Compat.grantRuntimePermission(
-                    ServerConstants.MANAGER_APPLICATION_ID,
-                    Manifest.permission.WRITE_SECURE_SETTINGS,
-                    UserHandleCompat.getUserId(callingUid)
-                )
-            } catch (e: RemoteException) {
-                Service.LOGGER.w(e, "grant WRITE_SECURE_SETTINGS")
-            }
+            grantManagerSecureSettings(callingUid)
         }
         return record
     }
@@ -201,7 +390,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
 
         val callingPid = Binder.getCallingPid()
         val callingUid = Binder.getCallingUid()
-        var clientRecord: ClientRecord? = null
+        var clientRecord: ClientRecord?
 
         val packages = PackageManagerApis.getPackagesForUidNoThrow(callingUid)
         if (!packages.contains(requestPackageName)) {
@@ -210,7 +399,10 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         }
 
         val isManager = ServerConstants.MANAGER_APPLICATION_ID == requestPackageName &&
-            UserHandleCompat.getUserId(callingUid) == 0
+            UserHandleCompat.getUserId(callingUid) == 0 &&
+            verifyManagerSignature()
+
+        clientManager.registerLegacyApplication(callingUid, callingPid, application)
 
         if (clientManager.findClient(callingUid, callingPid) == null) {
             synchronized(this) {
@@ -232,6 +424,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         }
 
         if (!isManager) {
+            val allowed = !configManager.isAccessPaused() && (clientRecord?.allowed == true)
             val denied = configManager.find(callingUid)?.isDenied() == true
             try {
                 LegacyParcelCodec.sendLegacyBindApplication(
@@ -240,21 +433,14 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                     replyServerVersion,
                     ShizukuApiConstants.SERVER_PATCH_VERSION,
                     OsUtils.getSELinuxContext(),
-                    clientRecord!!.allowed,
+                    allowed,
                     denied
                 )
             } catch (e: Throwable) {
                 Service.LOGGER.w(e, "attachApplication")
             }
         } else {
-            try {
-                Android17Compat.grantRuntimePermission(
-                    ServerConstants.MANAGER_APPLICATION_ID,
-                    Manifest.permission.WRITE_SECURE_SETTINGS, UserHandleCompat.getUserId(callingUid)
-                )
-            } catch (e: RemoteException) {
-                Service.LOGGER.w(e, "grant WRITE_SECURE_SETTINGS")
-            }
+            grantManagerSecureSettings(callingUid)
             val reply = Bundle()
             reply.putInt(ShizukuApiConstants.BIND_APPLICATION_SERVER_UID, OsUtils.getUid())
             reply.putInt(ShizukuApiConstants.BIND_APPLICATION_SERVER_VERSION, replyServerVersion)
@@ -268,13 +454,31 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         }
     }
 
+    private fun grantManagerSecureSettings(callingUid: Int) {
+        try {
+            Android17Compat.grantRuntimePermission(
+                ServerConstants.MANAGER_APPLICATION_ID,
+                Manifest.permission.WRITE_SECURE_SETTINGS,
+                UserHandleCompat.getUserId(callingUid)
+            )
+        } catch (e: RemoteException) {
+            Service.LOGGER.w(e, "grant WRITE_SECURE_SETTINGS")
+        }
+    }
+
     internal fun requestPermissionFromNightWire(callingUid: Int, callingPid: Int, requestCode: Int) {
         if (callingUid == OsUtils.getUid() || callingPid == OsUtils.getPid()) {
             return
         }
         val clientRecord = clientManager.requireClient(callingUid, callingPid)
+        if (configManager.isAccessPaused()) {
+            if (!nightEndpoint.notifyRequestPermissionResult(callingUid, callingPid, requestCode, false, 0)) {
+                clientRecord.dispatchRequestPermissionResult(requestCode, false)
+            }
+            return
+        }
         if (clientRecord.allowed) {
-            val caps = TransactGuard.effectiveCapabilities(configManager.find(callingUid))
+            val caps = TransactGuard.effectiveCapabilities(configManager.find(callingUid), false)
             if (!nightEndpoint.notifyRequestPermissionResult(callingUid, callingPid, requestCode, true, caps)) {
                 clientRecord.dispatchRequestPermissionResult(requestCode, true)
             }
@@ -297,18 +501,41 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         callingPid: Int,
         userId: Int
     ) {
+        if (configManager.isAccessPaused()) {
+            if (!nightEndpoint.notifyRequestPermissionResult(callingUid, callingPid, requestCode, false, 0)) {
+                clientRecord.dispatchRequestPermissionResult(requestCode, false)
+            }
+            return
+        }
+
         val ai = Android17Compat.getApplicationInfo(clientRecord.packageName, 0L, userId) ?: return
 
         val pi = Android17Compat.getPackageInfo(ServerConstants.MANAGER_APPLICATION_ID, 0L, userId)
-        val userInfo = UserManagerApis.getUserInfo(userId)
-        val isWorkProfileUser = if (BuildUtils.atLeast30()) {
-            "android.os.usertype.profile.MANAGED" == userInfo.userType
+        val userInfo = UsersCompat.getUserInfo(userId)
+        val isWorkProfileUser = if (userInfo != null) {
+            if (BuildUtils.atLeast30()) {
+                "android.os.usertype.profile.MANAGED" == userInfo.userType
+            } else {
+                (userInfo.flags and UserInfo.FLAG_MANAGED_PROFILE) != 0
+            }
         } else {
-            (userInfo.flags and UserInfo.FLAG_MANAGED_PROFILE) != 0
+            false
         }
+
         if (pi == null && !isWorkProfileUser) {
             Service.LOGGER.w("Manager not found in non work profile user %d. Revoke permission", userId)
-            clientRecord.dispatchRequestPermissionResult(requestCode, false)
+            if (!nightEndpoint.notifyRequestPermissionResult(callingUid, callingPid, requestCode, false, 0)) {
+                clientRecord.dispatchRequestPermissionResult(requestCode, false)
+            }
+            return
+        }
+
+        // Prevent hanging secondary-user clients when user 0 is in the background and cannot display the prompt
+        if (userId != 0 && !isWorkProfileUser && !UsersCompat.isUserForeground(userId)) {
+            Service.LOGGER.w("Cannot display permission confirmation for background secondary user %d", userId)
+            if (!nightEndpoint.notifyRequestPermissionResult(callingUid, callingPid, requestCode, false, 0)) {
+                clientRecord.dispatchRequestPermissionResult(requestCode, false)
+            }
             return
         }
 
@@ -334,9 +561,18 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         }
 
         val openedAt = openPrompts.remove(Triple(requestUid, requestPid, requestCode))
-        if (openedAt != null && SystemClock.elapsedRealtime() - openedAt > PROMPT_ANSWER_WINDOW_MS) {
+        if (openedAt == null) {
+            Service.LOGGER.w(
+                "Rejected unsolicited permission confirmation for uid=%d pid=%d code=%d (no active prompt)",
+                requestUid, requestPid, requestCode
+            )
+            return
+        }
+        if (SystemClock.elapsedRealtime() - openedAt > PROMPT_ANSWER_WINDOW_MS) {
             Service.LOGGER.w("Prompt expired for uid=%d pid=%d code=%d", requestUid, requestPid, requestCode)
-            clientManager.findClient(requestUid, requestPid)?.dispatchRequestPermissionResult(requestCode, false)
+            if (!nightEndpoint.notifyRequestPermissionResult(requestUid, requestPid, requestCode, false, 0)) {
+                clientManager.findClient(requestUid, requestPid)?.dispatchRequestPermissionResult(requestCode, false)
+            }
             return
         }
 
@@ -350,34 +586,52 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
 
         val uidPackages = PackageManagerApis.getPackagesForUidNoThrow(requestUid).toMutableList()
         if (!onetime) {
+            clientManager.clearOneTimeGrant(requestUid)
             configManager.update(
                 requestUid, uidPackages, ConfigManager.MASK_PERMISSION,
                 if (allowed) ConfigManager.FLAG_ALLOWED else ConfigManager.FLAG_DENIED
             )
+            if (allowed) {
+                configManager.recordConnection(requestUid)
+            }
+        } else if (allowed) {
+            clientManager.markOneTimeGrant(requestUid)
+        } else {
+            clientManager.clearOneTimeGrant(requestUid)
         }
+
+        val paused = configManager.isAccessPaused()
+        val effectiveAllowed = allowed && !paused
         val entry = configManager.find(requestUid)
         val denied = entry?.isDenied() == true
-        val caps = if (allowed) TransactGuard.effectiveCapabilities(entry) else 0
+        val caps = if (effectiveAllowed) {
+            if (onetime && entry == null) NightProtocol.DEFAULT_CAPABILITIES
+            else TransactGuard.effectiveCapabilities(entry, paused)
+        } else {
+            0
+        }
 
         val records = clientManager.findClients(requestUid)
         if (records.isEmpty()) {
             Service.LOGGER.w("dispatchPermissionConfirmationResult: no client for uid %d was found", requestUid)
         } else {
             for (record in records) {
-                record.allowed = allowed
+                record.allowed = effectiveAllowed
                 pushPermissionState(record, denied, caps)
                 if (record.pid == requestPid) {
-                    if (!nightEndpoint.notifyRequestPermissionResult(requestUid, requestPid, requestCode, allowed, caps)) {
-                        record.dispatchRequestPermissionResult(requestCode, allowed)
+                    val sentNight = nightEndpoint.notifyRequestPermissionResult(
+                        requestUid, requestPid, requestCode, effectiveAllowed, caps
+                    )
+                    val legacyApp = clientManager.getLegacyApplication(requestUid, requestPid)
+                    if (!sentNight || legacyApp != null) {
+                        record.dispatchRequestPermissionResult(requestCode, effectiveAllowed)
                     }
                 }
             }
         }
 
         if (!allowed) {
-            for (pkg in uidPackages) {
-                onPermissionRevoked(pkg)
-            }
+            onPermissionRevokedForUid(requestUid, uidPackages)
         }
 
         if (!onetime) {
@@ -386,10 +640,11 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
     }
 
     internal fun notifyCapabilitiesUpdated(uid: Int) {
+        val paused = configManager.isAccessPaused()
         val entry = configManager.find(uid)
-        val allowed = entry?.isAllowed() == true
+        val allowed = !paused && (entry?.isAllowed() == true)
         val denied = entry?.isDenied() == true
-        val caps = TransactGuard.effectiveCapabilities(entry)
+        val caps = TransactGuard.effectiveCapabilities(entry, paused)
         for (record in clientManager.findClients(uid)) {
             record.allowed = allowed
             pushPermissionState(record, denied, caps)
@@ -397,22 +652,29 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
     }
 
     private fun pushPermissionState(record: ClientRecord, shouldShowRationale: Boolean, capabilities: Int) {
-        if (nightEndpoint.notifyPermissionChanged(record.uid, record.pid, record.allowed, shouldShowRationale, capabilities)) {
-            return
-        }
-        val client = record.client ?: return
-        try {
-            LegacyParcelCodec.sendLegacyBindApplication(
-                client.asBinder(),
-                OsUtils.getUid(),
-                if (record.apiVersion == -1) 12 else ShizukuApiConstants.SERVER_VERSION,
-                ShizukuApiConstants.SERVER_PATCH_VERSION,
-                OsUtils.getSELinuxContext(),
-                record.allowed,
-                shouldShowRationale
-            )
-        } catch (t: Throwable) {
-            Service.LOGGER.w(t, "Failed to push permission state to uid=%d pid=%d", record.uid, record.pid)
+        val notifiedNight = nightEndpoint.notifyPermissionChanged(
+            record.uid,
+            record.pid,
+            record.allowed,
+            shouldShowRationale,
+            capabilities
+        )
+        val legacyClient = clientManager.getLegacyApplication(record.uid, record.pid)
+            ?: if (!notifiedNight) record.client else null
+        if (legacyClient != null) {
+            try {
+                LegacyParcelCodec.sendLegacyBindApplication(
+                    legacyClient.asBinder(),
+                    OsUtils.getUid(),
+                    if (record.apiVersion == -1) 12 else ShizukuApiConstants.SERVER_VERSION,
+                    ShizukuApiConstants.SERVER_PATCH_VERSION,
+                    OsUtils.getSELinuxContext(),
+                    record.allowed,
+                    shouldShowRationale
+                )
+            } catch (t: Throwable) {
+                Service.LOGGER.w(t, "Failed to push legacy permission state to uid=%d pid=%d", record.uid, record.pid)
+            }
         }
     }
 
@@ -484,37 +746,42 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         if ((mask and ConfigManager.MASK_PERMISSION) != 0) {
             val allowed = (value and ConfigManager.FLAG_ALLOWED) != 0
             val denied = (value and ConfigManager.FLAG_DENIED) != 0
-            val caps = TransactGuard.effectiveCapabilities(configManager.find(uid))
+            clientManager.clearOneTimeGrant(uid)
+            val paused = configManager.isAccessPaused()
+            val effectiveAllowed = allowed && !paused
+            val caps = TransactGuard.effectiveCapabilities(configManager.find(uid), paused)
 
             val records = clientManager.findClients(uid)
             for (record in records) {
-                record.allowed = allowed
+                record.allowed = effectiveAllowed
                 pushPermissionState(record, denied, caps)
                 if (!allowed) {
                     ActivityManagerApis.forceStopPackageNoThrow(record.packageName, UserHandleCompat.getUserId(record.uid))
-                    onPermissionRevoked(record.packageName)
                 }
             }
 
-            if (!allowed && records.isEmpty()) {
-                for (packageName in uidPackages) {
-                    onPermissionRevoked(packageName)
-                }
+            if (!allowed) {
+                onPermissionRevokedForUid(uid, uidPackages)
             }
 
             syncRuntimePermissionsForUid(uid, allowed)
         }
     }
 
-    private fun onPermissionRevoked(packageName: String) {
-        getUserServiceManager().removeUserServicesForPackage(packageName)
+    private fun onPermissionRevokedForUid(uid: Int, fallbackPackages: List<String> = emptyList()) {
+        val removedByUid = getUserServiceManager().removeUserServicesForUid(uid)
+        if (!removedByUid) {
+            for (pkg in fallbackPackages) {
+                getUserServiceManager().removeUserServicesForPackage(pkg)
+            }
+        }
     }
 
     private fun getApplications(userId: Int): ParcelableListSlice<PackageInfo> {
         val list = ArrayList<PackageInfo>()
         val users = ArrayList<Int>()
         if (userId == -1) {
-            users.addAll(UserManagerApis.getUserIdsNoThrow())
+            users.addAll(UsersCompat.getUserIdsNoThrow())
         } else {
             users.add(userId)
         }
@@ -640,12 +907,33 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             replyParcel.writeNoException()
             replyParcel.writeInt(if (claimed) 1 else 0)
             return true
+        } else if (code == ServerConstants.BINDER_TRANSACTION_setAccessPaused) {
+            val replyParcel = reply!!
+            if (!checkCallerManagerPermission("setAccessPaused", Binder.getCallingUid(), Binder.getCallingPid())) {
+                replyParcel.writeException(SecurityException("Permission denied"))
+                return true
+            }
+            data.enforceInterface(ShizukuApiConstants.BINDER_DESCRIPTOR)
+            val paused = data.readInt() != 0
+            setAccessPaused(paused)
+            replyParcel.writeNoException()
+            return true
+        } else if (code == ServerConstants.BINDER_TRANSACTION_getAccessPaused) {
+            val replyParcel = reply!!
+            if (!checkCallerManagerPermission("getAccessPaused", Binder.getCallingUid(), Binder.getCallingPid())) {
+                replyParcel.writeException(SecurityException("Permission denied"))
+                return true
+            }
+            data.enforceInterface(ShizukuApiConstants.BINDER_DESCRIPTOR)
+            replyParcel.writeNoException()
+            replyParcel.writeInt(if (configManager.isAccessPaused()) 1 else 0)
+            return true
         }
         return super.onTransact(code, data, reply, flags)
     }
 
     fun sendBinderToClient() {
-        for (userId in UserManagerApis.getUserIdsNoThrow()) {
+        for (userId in UsersCompat.getUserIdsNoThrow()) {
             sendBinderToClient(this, nightEndpoint, userId)
         }
     }
@@ -669,6 +957,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                                     BinderSender.register(this@ShizukuService, nightEndpoint)
                                 }
                                 if (name == Context.ACTIVITY_SERVICE || name == "package" || name == Context.USER_SERVICE) {
+                                    reconcileManagerAndClients()
                                     sendBinderToManager()
                                     sendBinderToClient()
                                 }
@@ -702,6 +991,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
     }
 
     fun sendBinderToManager() {
+        if (!verifyManagerSignature()) return
         sendBinderToManager(this, nightEndpoint)
     }
 
@@ -715,6 +1005,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
     companion object {
 
         private const val HEARTBEAT_INTERVAL_MS = 5_000L
+        private const val RECONCILE_INTERVAL_MS = 3_000L
         private const val PROMPT_ANSWER_WINDOW_MS = 5 * 60 * 1000L
 
         @JvmStatic
@@ -736,6 +1027,15 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                     Service.LOGGER.w(e.message, e)
                 }
             }
+        }
+
+        @JvmStatic
+        fun getManagerPackageInfo(): PackageInfo? {
+            return Android17Compat.getPackageInfo(
+                ServerConstants.MANAGER_APPLICATION_ID,
+                PackageSignatureVerifier.signatureLookupFlags(),
+                0
+            )
         }
 
         @JvmStatic
@@ -775,7 +1075,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         }
 
         private fun sendBinderToManager(legacyBinder: Binder, nightBinder: Binder) {
-            for (userId in UserManagerApis.getUserIdsNoThrow()) {
+            for (userId in UsersCompat.getUserIdsNoThrow()) {
                 sendBinderToManager(legacyBinder, nightBinder, userId)
             }
         }
