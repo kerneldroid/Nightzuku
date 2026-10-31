@@ -20,5 +20,6 @@ data class DiscoveredModule(
     val isValid: Boolean,
     val isOfficial: Boolean = false,
     val downloads: Long = 0,
-    val lastCommitAt: Long = 0L
+    val lastCommitAt: Long = 0L,
+    val hasNightzukuGuard: Boolean = false
 )

@@ -223,7 +223,8 @@ class ModuleValidator(private val client: OkHttpClient, private val rateLimit: R
             ownerAvatar = "",
             subPath = subPath,
             lastChecked = System.currentTimeMillis(),
-            isValid = true
+            isValid = true,
+            hasNightzukuGuard = ModuleRuntimeUtils.usesNightzukuGuard(props)
         )
     }
 

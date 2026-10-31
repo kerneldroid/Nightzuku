@@ -3,16 +3,12 @@ package moe.shizuku.manager.module.catalog
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -39,9 +35,25 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Update
+import androidx.compose.material.icons.rounded.Verified
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material.icons.rounded.VpnKey
+import androidx.compose.material3.DropdownMenuGroup
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenuPopup
+import androidx.compose.material3.MenuDefaults
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -143,6 +155,11 @@ fun CatalogScreen(onNavigateUp: () -> Unit) {
     var pendingDangerModule by remember { mutableStateOf<DiscoveredModule?>(null) }
     var showDangerDialog by remember { mutableStateOf(false) }
     var dangerReason by remember { mutableStateOf<String?>(null) }
+    var showPropertiesSheet by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = detailModule != null) {
+        detailModule = null
+    }
 
     LaunchedEffect(token) {
         if (token.isNullOrBlank()) {
@@ -181,17 +198,8 @@ fun CatalogScreen(onNavigateUp: () -> Unit) {
     }
 
     ShizukuExpressiveTheme {
-        AnimatedContent(
-            targetState = detailModule,
-            transitionSpec = {
-                if (targetState != null) {
-                    slideInHorizontally { it } + fadeIn() togetherWith slideOutHorizontally { -it / 3 } + fadeOut()
-                } else {
-                    slideInHorizontally { -it / 3 } + fadeIn() togetherWith slideOutHorizontally { it } + fadeOut()
-                }
-            },
-            label = "detail-transition"
-        ) { activeModule ->
+        run {
+            val activeModule = detailModule
             if (activeModule != null) {
                 ModuleDetailScreen(
                     module = activeModule,
@@ -242,20 +250,38 @@ fun CatalogScreen(onNavigateUp: () -> Unit) {
                     onViewOnGitHub = {
                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it.repoUrl)))
                     },
+                    onOpenProperties = { showPropertiesSheet = true },
+                    onOpenTokenDialog = { showTokenDialog = true },
                     onNavigateUp = onNavigateUp
                 )
             }
         }
 
+        if (showPropertiesSheet) {
+            CatalogPropertiesSheet(
+                modules = modules,
+                installedIds = installedIds,
+                sortMode = sortMode,
+                hasToken = !token.isNullOrBlank(),
+                onDismiss = { showPropertiesSheet = false }
+            )
+        }
+
         if (showTokenDialog) {
             TokenInputDialog(
+                initialToken = token.orEmpty(),
                 onDismiss = {
                     showTokenDialog = false
                     if (TokenStore.getToken(context).isNullOrBlank()) onNavigateUp()
                 },
                 onTokenSet = { pat ->
-                    TokenStore.setToken(context, pat)
-                    token = pat
+                    if (pat.isBlank()) {
+                        TokenStore.clearToken(context)
+                        token = null
+                    } else {
+                        TokenStore.setToken(context, pat)
+                        token = pat
+                    }
                     showTokenDialog = false
                 }
             )
@@ -398,22 +424,47 @@ private fun CatalogListScreen(
     onCardClick: (DiscoveredModule) -> Unit,
     onInstall: (DiscoveredModule) -> Unit,
     onViewOnGitHub: (DiscoveredModule) -> Unit,
+    onOpenProperties: () -> Unit,
+    onOpenTokenDialog: () -> Unit,
     onNavigateUp: () -> Unit
 ) {
+    var menuExpanded by remember { mutableStateOf(false) }
+
     ShizukuLazyScaffold(
         title = stringResource(R.string.modules_catalog_title),
         onNavigateUp = onNavigateUp,
+        isRefreshing = isLoading,
+        onRefresh = onRefresh,
         actions = {
-            FilledTonalButton(modifier = Modifier.height(40.dp), onClick = onRefresh) {
-                ShizukuIcon(R.drawable.ic_server_restart, modifier = Modifier.padding(end = 6.dp).size(16.dp))
-                Text(stringResource(R.string.home_refresh), style = MaterialTheme.typography.labelLarge)
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    ShizukuIcon(
+                        icon = R.drawable.ic_more_vert_24,
+                        contentDescription = null
+                    )
+                }
+                CatalogOverflowMenu(
+                    expanded = menuExpanded,
+                    sortMode = sortMode,
+                    onDismiss = { menuExpanded = false },
+                    onSortChange = { mode ->
+                        menuExpanded = false
+                        onSortChange(mode)
+                    },
+                    onProperties = {
+                        menuExpanded = false
+                        onOpenProperties()
+                    },
+                    onTokenSettings = {
+                        menuExpanded = false
+                        onOpenTokenDialog()
+                    }
+                )
             }
         }
     ) {
-        item { SortChipRow(sortMode = sortMode, onSortChange = onSortChange) }
-
-        item {
-            AnimatedVisibility(visible = isLoading, enter = fadeIn(), exit = fadeOut()) {
+        if (isLoading && modules.isEmpty()) {
+            item {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
                     horizontalArrangement = Arrangement.Center,
@@ -652,11 +703,31 @@ private fun ModuleDetailScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
-                    androidx.compose.foundation.layout.FlowRow(
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         AssistChip(onClick = {}, label = { Text(module.moduleId) })
+                        if (module.hasNightzukuGuard) {
+                            AssistChip(
+                                onClick = {},
+                                leadingIcon = {
+                                    ShizukuIcon(
+                                        R.drawable.ic_shield_24,
+                                        modifier = Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                },
+                                colors = AssistChipDefaults.assistChipColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    labelColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                ),
+                                label = { Text(stringResource(R.string.modules_nightzuku_guard_chip)) }
+                            )
+                        }
                         module.version?.let {
                             AssistChip(onClick = {}, label = { Text("v${it.removePrefix("v")}") })
                         }
@@ -776,25 +847,169 @@ private fun formatCount(value: Long): String = when {
     else -> value.toString()
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun SortChipRow(sortMode: SortMode, onSortChange: (SortMode) -> Unit) {
-    val labels = listOf(
-        stringResource(R.string.modules_catalog_sort_stars),
-        stringResource(R.string.modules_catalog_sort_newest),
-        stringResource(R.string.modules_catalog_sort_oldest),
-        stringResource(R.string.modules_catalog_sort_official)
+private fun CatalogOverflowMenu(
+    expanded: Boolean,
+    sortMode: SortMode,
+    onDismiss: () -> Unit,
+    onSortChange: (SortMode) -> Unit,
+    onProperties: () -> Unit,
+    onTokenSettings: () -> Unit
+) {
+    val sortOptions = listOf(
+        Triple(SortMode.STARS, R.string.modules_catalog_sort_stars, Icons.Rounded.Star),
+        Triple(SortMode.NEWEST, R.string.modules_catalog_sort_newest, Icons.Rounded.Schedule),
+        Triple(SortMode.OLDEST, R.string.modules_catalog_sort_oldest, Icons.Rounded.History),
+        Triple(SortMode.OFFICIAL, R.string.modules_catalog_sort_official, Icons.Rounded.Verified)
     )
-    val entries = listOf(SortMode.STARS, SortMode.NEWEST, SortMode.OLDEST, SortMode.OFFICIAL)
 
-    SingleChoiceSegmentedButtonRow(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+    DropdownMenuPopup(
+        expanded = expanded,
+        onDismissRequest = onDismiss
     ) {
-        entries.forEachIndexed { index, mode ->
-            SegmentedButton(
-                shape = SegmentedButtonDefaults.itemShape(index = index, count = entries.size),
-                onClick = { onSortChange(mode) },
-                selected = sortMode == mode,
-                label = { Text(labels[index], style = MaterialTheme.typography.labelSmall) }
+        DropdownMenuGroup(
+            shapes = MenuDefaults.groupShape(index = 0, count = 2)
+        ) {
+            sortOptions.forEach { (mode, labelRes, icon) ->
+                val selected = sortMode == mode
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = stringResource(labelRes),
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    trailingIcon = if (selected) {
+                        {
+                            Icon(
+                                imageVector = Icons.Rounded.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    } else null,
+                    onClick = { onSortChange(mode) }
+                )
+            }
+        }
+        Spacer(Modifier.height(3.dp))
+        DropdownMenuGroup(
+            shapes = MenuDefaults.groupShape(index = 1, count = 2)
+        ) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.modules_catalog_properties)) },
+                trailingIcon = { Icon(Icons.Rounded.Info, null, Modifier.size(20.dp)) },
+                onClick = onProperties
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.update_settings_github_pat)) },
+                trailingIcon = { Icon(Icons.Rounded.VpnKey, null, Modifier.size(20.dp)) },
+                onClick = onTokenSettings
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CatalogPropertiesSheet(
+    modules: List<DiscoveredModule>,
+    installedIds: Set<String>,
+    sortMode: SortMode,
+    hasToken: Boolean,
+    onDismiss: () -> Unit
+) {
+    val officialCount = remember(modules) { modules.count { it.isOfficial } }
+    val guardedCount = remember(modules) { modules.count { it.hasNightzukuGuard } }
+    val installedCount = remember(modules, installedIds) { modules.count { it.moduleId in installedIds } }
+    val sortLabel = stringResource(
+        when (sortMode) {
+            SortMode.STARS -> R.string.modules_catalog_sort_stars
+            SortMode.NEWEST -> R.string.modules_catalog_sort_newest
+            SortMode.OLDEST -> R.string.modules_catalog_sort_oldest
+            SortMode.OFFICIAL -> R.string.modules_catalog_sort_official
+        }
+    )
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.modules_catalog_properties_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold
+            )
+            CatalogPropertyRow(
+                label = stringResource(R.string.modules_catalog_prop_total),
+                value = modules.size.toString()
+            )
+            CatalogPropertyRow(
+                label = stringResource(R.string.modules_catalog_prop_official),
+                value = officialCount.toString()
+            )
+            CatalogPropertyRow(
+                label = stringResource(R.string.modules_catalog_prop_guarded),
+                value = guardedCount.toString()
+            )
+            CatalogPropertyRow(
+                label = stringResource(R.string.modules_catalog_prop_installed),
+                value = installedCount.toString()
+            )
+            CatalogPropertyRow(
+                label = stringResource(R.string.modules_catalog_prop_sort),
+                value = sortLabel
+            )
+            CatalogPropertyRow(
+                label = stringResource(R.string.modules_catalog_prop_token),
+                value = stringResource(
+                    if (hasToken) R.string.update_settings_github_pat_set
+                    else R.string.update_settings_github_pat_unset
+                )
+            )
+        }
+    }
+}
+
+@Composable
+private fun CatalogPropertyRow(label: String, value: String) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
             )
         }
     }
@@ -887,14 +1102,34 @@ private fun CatalogModuleCard(
                 }
             }
 
-            androidx.compose.foundation.layout.FlowRow(
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 AssistChip(
                     onClick = onCardClick,
                     label = { Text(module.moduleId) }
                 )
+                if (module.hasNightzukuGuard) {
+                    AssistChip(
+                        onClick = onCardClick,
+                        leadingIcon = {
+                            ShizukuIcon(
+                                R.drawable.ic_shield_24,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        },
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            labelColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        ),
+                        label = { Text(stringResource(R.string.modules_nightzuku_guard_chip)) }
+                    )
+                }
                 AssistChip(
                     onClick = onCardClick,
                     leadingIcon = {
@@ -949,7 +1184,7 @@ private fun CatalogModuleCard(
                 }
             }
 
-            AnimatedVisibility(visible = installing, enter = fadeIn(), exit = fadeOut()) {
+            if (installing) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
 
@@ -1024,8 +1259,13 @@ private fun CatalogAvatar(ownerAvatar: String, moduleName: String, modifier: Mod
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun TokenInputDialog(onDismiss: () -> Unit, onTokenSet: (String) -> Unit) {
-    var tokenInput by remember { mutableStateOf("") }
+private fun TokenInputDialog(
+    initialToken: String = "",
+    onDismiss: () -> Unit,
+    onTokenSet: (String) -> Unit
+) {
+    var tokenInput by remember { mutableStateOf(initialToken) }
+    var showToken by remember { mutableStateOf(false) }
     val showWarning = tokenInput.isNotBlank() && !TokenStore.isValidTokenFormat(tokenInput)
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1041,6 +1281,32 @@ private fun TokenInputDialog(onDismiss: () -> Unit, onTokenSet: (String) -> Unit
                     value = tokenInput,
                     onValueChange = { tokenInput = it },
                     label = { Text(stringResource(R.string.modules_catalog_token_hint)) },
+                    visualTransformation = if (showToken) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
+                    trailingIcon = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { showToken = !showToken }) {
+                                Icon(
+                                    imageVector = if (showToken) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                                    contentDescription = stringResource(
+                                        if (showToken) R.string.update_settings_github_pat_hide
+                                        else R.string.update_settings_github_pat_show
+                                    )
+                                )
+                            }
+                            if (tokenInput.isNotEmpty()) {
+                                IconButton(onClick = { tokenInput = "" }) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Close,
+                                        contentDescription = stringResource(R.string.update_settings_github_pat_clear)
+                                    )
+                                }
+                            }
+                        }
+                    },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )

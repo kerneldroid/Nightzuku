@@ -12,7 +12,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -419,6 +425,27 @@ private fun PatInputDialog(
                     } else {
                         PasswordVisualTransformation()
                     },
+                    trailingIcon = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { showPat = !showPat }) {
+                                Icon(
+                                    imageVector = if (showPat) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                                    contentDescription = stringResource(
+                                        if (showPat) R.string.update_settings_github_pat_hide
+                                        else R.string.update_settings_github_pat_show
+                                    )
+                                )
+                            }
+                            if (pat.isNotEmpty()) {
+                                IconButton(onClick = { pat = "" }) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Close,
+                                        contentDescription = stringResource(R.string.update_settings_github_pat_clear)
+                                    )
+                                }
+                            }
+                        }
+                    },
                     singleLine = true
                 )
                 if (showWarning) {
@@ -427,23 +454,6 @@ private fun PatInputDialog(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error
                     )
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    TextButton(onClick = { showPat = !showPat }) {
-                        Text(
-                            text = stringResource(
-                                if (showPat) R.string.update_settings_github_pat_hide
-                                else R.string.update_settings_github_pat_show
-                            )
-                        )
-                    }
-                    Spacer(Modifier.weight(1f))
-                    TextButton(onClick = { pat = "" }) {
-                        Text(stringResource(R.string.update_settings_github_pat_clear))
-                    }
                 }
             }
         },

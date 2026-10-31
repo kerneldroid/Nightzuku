@@ -17,7 +17,8 @@ data class AdbModule(
     val serviceScript: File?,
     val logsDir: File,
     val sizeBytes: Long,
-    val enabled: Boolean
+    val enabled: Boolean,
+    val hasNightzukuGuard: Boolean = false
 ) {
     val hasWebUi: Boolean
         get() = webRoot?.resolve("index.html")?.isFile == true ||

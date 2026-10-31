@@ -9,13 +9,13 @@ package moe.shizuku.manager.home
 import android.os.Build
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -231,6 +231,9 @@ internal fun HomeScreen(
     val adbPermission = status.permission
     val canUseWirelessAdb = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R || EnvironmentUtils.getAdbTcpPort() > 0
     var moreOpen by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    var isRefreshing by remember { mutableStateOf(false) }
+    val pullToRefreshState = rememberPullToRefreshState()
     val diagnostics = remember(status, grantedCount, localNetworkPermissionState) {
         buildDiagnostics(context, status, grantedCount, localNetworkPermissionState)
     }
@@ -254,12 +257,6 @@ internal fun HomeScreen(
                         ShizukuIcon(
                             icon = R.drawable.ic_action_settings_24dp,
                             contentDescription = stringResource(R.string.settings_title)
-                        )
-                    }
-                    IconButton(onClick = onRefresh) {
-                        ShizukuIcon(
-                            icon = R.drawable.ic_server_restart,
-                            contentDescription = stringResource(R.string.home_refresh)
                         )
                     }
                     Box {
@@ -303,10 +300,27 @@ internal fun HomeScreen(
             )
         }
     ) { innerPadding ->
-        LazyColumn(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
+                .padding(innerPadding)
+        ) {
+            PullToRefreshBox(
+                modifier = Modifier.fillMaxSize(),
+                isRefreshing = isRefreshing,
+                onRefresh = {
+                    scope.launch {
+                        isRefreshing = true
+                        onRefresh()
+                        delay(450L)
+                        isRefreshing = false
+                    }
+                },
+                state = pullToRefreshState,
+                indicator = {}
+            ) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
                 start = 16.dp,
                 top = 8.dp,
@@ -504,6 +518,15 @@ internal fun HomeScreen(
                     )
                 }
             }
+                }
+            }
+            PullToRefreshDefaults.LoadingIndicator(
+                state = pullToRefreshState,
+                isRefreshing = isRefreshing,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 12.dp)
+            )
         }
     }
 }
@@ -539,8 +562,6 @@ internal fun StatusHero(
         animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
         label = "status_hero_container"
     )
-    val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
-    val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
     val cta = when {
         running -> HeroAction(R.string.action_stop, R.drawable.ic_close_24, onStop)
         !isPrimaryUser -> null
@@ -559,20 +580,8 @@ internal fun StatusHero(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            AnimatedContent(
-                targetState = running,
-                transitionSpec = {
-                    (
-                        scaleIn(initialScale = 0.9f, animationSpec = spatialSpec) +
-                            fadeIn(animationSpec = effectsSpec)
-                        ) togetherWith
-                        (
-                            scaleOut(targetScale = 0.9f, animationSpec = spatialSpec) +
-                                fadeOut(animationSpec = effectsSpec)
-                            )
-                },
-                label = "status_hero_header"
-            ) { isRunning ->
+            run {
+                val isRunning = running
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.Top

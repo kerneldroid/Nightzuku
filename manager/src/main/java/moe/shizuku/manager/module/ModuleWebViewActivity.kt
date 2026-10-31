@@ -7,6 +7,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
@@ -68,6 +69,14 @@ class ModuleWebViewActivity : AppActivity() {
         }
 
         setContent {
+            BackHandler {
+                val wv = activeWebView
+                if (wv != null && wv.canGoBack()) {
+                    wv.goBack()
+                } else {
+                    finish()
+                }
+            }
             var pendingCommand by remember { mutableStateOf<ModuleCommandRequest?>(null) }
             var pendingDecision by remember { mutableStateOf<((Boolean) -> Unit)?>(null) }
             val trusted = ModuleSettings.isModuleTrusted(module.id)

@@ -389,6 +389,22 @@ object AdbModuleManager {
         val props = parseModuleProp(propsFile.readText(Charsets.UTF_8))
         val id = props["id"]?.takeIf { idRegex.matches(it) } ?: return null
         val name = props["name"]?.takeIf { it.isNotBlank() } ?: id
+        val resolvedWebRoot = findFirstExistingDir(
+            directory,
+            props["webui"],
+            "webroot",
+            "webui",
+            "web"
+        )
+        val resolvedAction = findFirstExistingFile(directory, props["action"], "action.sh", "common/action.sh")
+        val resolvedService = findFirstExistingFile(directory, props["service"], "service.sh", "common/service.sh")
+        val guarded = ModuleRuntimeUtils.usesNightzukuGuard(
+            props = props,
+            directory = directory,
+            webRoot = resolvedWebRoot,
+            actionScript = resolvedAction,
+            serviceScript = resolvedService
+        )
         return AdbModule(
             id = id,
             name = name,
@@ -405,23 +421,18 @@ object AdbModuleManager {
                 "banner.jpeg",
                 "banner.webp"
             ),
-            webRoot = findFirstExistingDir(
-                directory,
-                props["webui"],
-                "webroot",
-                "webui",
-                "web"
-            ),
+            webRoot = resolvedWebRoot,
             declaresShellBridge = props["usesShellBridge"]?.toBooleanStrictOrNull()
                 ?: props["shellBridge"]?.toBooleanStrictOrNull()
                 ?: false,
-            actionScript = findFirstExistingFile(directory, props["action"], "action.sh", "common/action.sh"),
-            serviceScript = findFirstExistingFile(directory, props["service"], "service.sh", "common/service.sh"),
+            actionScript = resolvedAction,
+            serviceScript = resolvedService,
             logsDir = directory.resolve("logs"),
             sizeBytes = directory.walkTopDown()
                 .filter { it.isFile }
                 .sumOf { it.length() },
-            enabled = !directory.resolve(DISABLE_FILE).exists()
+            enabled = !directory.resolve(DISABLE_FILE).exists(),
+            hasNightzukuGuard = guarded
         )
     }
 

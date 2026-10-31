@@ -10,7 +10,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -220,12 +225,13 @@ private fun PatInputDialog(
                             containerColor = TvMaterialTheme.colorScheme.surfaceVariant
                         )
                     ) {
-                        TvText(
-                            text = stringResource(
+                        Icon(
+                            imageVector = if (showPat) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                            contentDescription = stringResource(
                                 if (showPat) R.string.update_settings_github_pat_hide
                                 else R.string.update_settings_github_pat_show
                             ),
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp).size(20.dp)
                         )
                     }
                     Spacer(Modifier.weight(1f))
@@ -236,9 +242,10 @@ private fun PatInputDialog(
                             containerColor = TvMaterialTheme.colorScheme.surfaceVariant
                         )
                     ) {
-                        TvText(
-                            text = stringResource(R.string.update_settings_github_pat_clear),
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = stringResource(R.string.update_settings_github_pat_clear),
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp).size(20.dp)
                         )
                     }
                 }

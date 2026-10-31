@@ -13,6 +13,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.VpnKey
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -172,25 +175,31 @@ fun WearTokenSettingsScreen(
                             .fillMaxWidth()
                             .padding(vertical = 4.dp)
                     )
-                    WearButton(
-                        onClick = { showPat = !showPat },
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = WearButtonDefaults.buttonColors()
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
                     ) {
-                        WearText(
-                            stringResource(
-                                if (showPat) R.string.update_settings_github_pat_hide
-                                else R.string.update_settings_github_pat_show
+                        WearIconButton(
+                            onClick = { showPat = !showPat },
+                            modifier = Modifier.size(WearIconButtonDefaults.DefaultButtonSize)
+                        ) {
+                            WearIcon(
+                                imageVector = if (showPat) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                                contentDescription = stringResource(
+                                    if (showPat) R.string.update_settings_github_pat_hide
+                                    else R.string.update_settings_github_pat_show
+                                )
                             )
-                        )
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    WearButton(
-                        onClick = { tokenInput = "" },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = WearButtonDefaults.buttonColors()
-                    ) {
-                        WearText(stringResource(R.string.update_settings_github_pat_clear))
+                        }
+                        WearIconButton(
+                            onClick = { tokenInput = "" },
+                            modifier = Modifier.size(WearIconButtonDefaults.DefaultButtonSize)
+                        ) {
+                            WearIcon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = stringResource(R.string.update_settings_github_pat_clear)
+                            )
+                        }
                     }
                 }
             }

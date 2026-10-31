@@ -78,6 +78,9 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
@@ -397,6 +400,8 @@ fun ShizukuLazyScaffold(
     actions: @Composable RowScope.() -> Unit = {},
     contentPadding: PaddingValues = PaddingValues(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 16.dp),
     verticalArrangement: Arrangement.Vertical = Arrangement.spacedBy(10.dp),
+    isRefreshing: Boolean = false,
+    onRefresh: (() -> Unit)? = null,
     content: LazyListScope.() -> Unit
 ) {
     val layoutDirection = LocalLayoutDirection.current
@@ -415,14 +420,39 @@ fun ShizukuLazyScaffold(
         navigationIcon = navigationIcon,
         actions = actions
     ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-            contentPadding = mergedContentPadding,
-            verticalArrangement = verticalArrangement,
-            content = content
-        )
+        val listContent = @Composable {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+                contentPadding = mergedContentPadding,
+                verticalArrangement = verticalArrangement,
+                content = content
+            )
+        }
+        if (onRefresh != null) {
+            val pullToRefreshState = rememberPullToRefreshState()
+            Box(modifier = Modifier.fillMaxSize()) {
+                PullToRefreshBox(
+                    modifier = Modifier.fillMaxSize(),
+                    isRefreshing = isRefreshing,
+                    onRefresh = onRefresh,
+                    state = pullToRefreshState,
+                    indicator = {}
+                ) {
+                    listContent()
+                }
+                PullToRefreshDefaults.LoadingIndicator(
+                    state = pullToRefreshState,
+                    isRefreshing = isRefreshing,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = innerPadding.calculateTopPadding() + 12.dp)
+                )
+            }
+        } else {
+            listContent()
+        }
     }
 }
 

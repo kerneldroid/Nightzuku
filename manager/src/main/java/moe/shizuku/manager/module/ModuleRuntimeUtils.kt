@@ -157,6 +157,56 @@ object ModuleRuntimeUtils {
      * Verifies whether a module's `minNightzukuApi` / `minNightzukuVersion` constraints in `module.prop`
      * are satisfied by this genuine Nightzuku host.
      */
+    fun usesNightzukuGuard(
+        props: Map<String, String>,
+        directory: File? = null,
+        webRoot: File? = null,
+        actionScript: File? = null,
+        serviceScript: File? = null
+    ): Boolean {
+        if (props["requireNightzuku"]?.trim()?.equals("true", ignoreCase = true) == true ||
+            props["nightzukuGuard"]?.trim()?.equals("true", ignoreCase = true) == true ||
+            props["minNightzukuApi"]?.trim()?.toIntOrNull() != null ||
+            props["minNightzukuVersion"]?.trim()?.toLongOrNull() != null
+        ) {
+            return true
+        }
+        if (directory != null) {
+            if (directory.resolve("nightzuku-guard.sh").isFile ||
+                directory.resolve("common/nightzuku-guard.sh").isFile
+            ) {
+                return true
+            }
+        }
+        if (webRoot != null) {
+            if (webRoot.resolve("nightzuku-guard.js").isFile) {
+                return true
+            }
+            val indexFile = webRoot.resolve("index.html").takeIf { it.isFile }
+                ?: webRoot.resolve("index.htm").takeIf { it.isFile }
+            if (indexFile != null && indexFile.length() <= 64 * 1024) {
+                val hasGuardJs = runCatching {
+                    val content = indexFile.readText(Charsets.UTF_8)
+                    content.contains("nightzuku-guard.js") || content.contains("verifyHostAttestation")
+                }.getOrDefault(false)
+                if (hasGuardJs) return true
+            }
+        }
+        for (script in listOfNotNull(actionScript, serviceScript)) {
+            if (script.isFile && script.length() <= 64 * 1024) {
+                val hasGuardMarker = runCatching {
+                    val content = script.readText(Charsets.UTF_8)
+                    content.contains("nightzuku-guard.sh") ||
+                        content.contains("NIGHTZUKU_HOST") ||
+                        content.contains("NIGHTZUKU_SESSION_TOKEN") ||
+                        content.contains(".nightzuku_env")
+                }.getOrDefault(false)
+                if (hasGuardMarker) return true
+            }
+        }
+        return false
+    }
+
     fun verifyModuleHostRequirements(props: Map<String, String>): String? {
         val minApi = props["minNightzukuApi"]?.trim()?.toIntOrNull()
         if (minApi != null && HOST_API_VERSION < minApi) {
