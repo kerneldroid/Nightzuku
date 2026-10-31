@@ -82,6 +82,9 @@ class ShizukuClientManager(
 
         if (configManager.isAccessPaused()) {
             record.allowed = false
+        } else if (isOneTimeGranted(uid)) {
+            record.allowed = true
+            configManager.recordConnection(uid)
         } else if (record.allowed && packageName != null) {
             if (!configManager.verifyClientIdentity(uid, packageName)) {
                 record.allowed = false

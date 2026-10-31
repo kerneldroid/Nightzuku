@@ -18,4 +18,10 @@ object ServerConstants {
     const val BINDER_TRANSACTION_getNightDogStatus = 10005
     const val BINDER_TRANSACTION_setAccessPaused = 10006
     const val BINDER_TRANSACTION_getAccessPaused = 10007
+    const val BINDER_TRANSACTION_setOneTimeGrant = 10008
+    const val BINDER_TRANSACTION_isOneTimeGrant = 10009
+    const val BINDER_TRANSACTION_setAccessTimer = 10010
+    const val BINDER_TRANSACTION_getAccessTimerRemaining = 10011
+    const val BINDER_TRANSACTION_forceStopApp = 10012
+    const val BINDER_TRANSACTION_getAppControlInfo = 10013
 }

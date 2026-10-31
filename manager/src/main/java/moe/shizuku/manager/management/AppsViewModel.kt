@@ -37,6 +37,7 @@ import moe.shizuku.manager.utils.UserHandleCompat
 import rikka.lifecycle.Resource
 import rikka.lifecycle.viewModels
 import rikka.shizuku.Shizuku
+import rikka.shizuku.server.ClientRouting
 
 @MainThread
 fun ComponentActivity.appsViewModel() = viewModels { AppsViewModel(this) }
@@ -53,6 +54,9 @@ data class AppRow(
     val icon: ImageBitmap?,
     val requiresRoot: Boolean,
     val granted: Boolean,
+    val isNativeWire: Boolean = false,
+    val isOneTime: Boolean = false,
+    val timerRemainingMs: Long = 0L
 ) {
     val key: String = keyOf(uid, packageName)
 
@@ -89,9 +93,15 @@ class AppsViewModel(context: Context) : ViewModel() {
     private var inFlight = 0
     private var epoch = 0
 
+    private data class UidStatus(
+        val granted: Boolean,
+        val isOneTime: Boolean,
+        val timerRemainingMs: Long
+    )
+
     private class Loaded(
         val packages: List<PackageInfo>,
-        val grantedByUid: Map<Int, Boolean>,
+        val statusByUid: Map<Int, UidStatus>,
         val rows: List<AppRow>?,
     )
 
@@ -105,30 +115,37 @@ class AppsViewModel(context: Context) : ViewModel() {
         try {
             val pm = appContext.packageManager
             val loaded = withContext(Dispatchers.IO) {
-                // Packages without application info cannot be shown or toggled.
                 val list = AuthorizationManager.getPackages().filter { it.applicationInfo != null }
-                // Shizuku permission is per uid, so ask once per uid.
-                val grantedByUid = HashMap<Int, Boolean>()
+                val statusByUid = HashMap<Int, UidStatus>()
                 for (pi in list) {
                     val uid = pi.applicationInfo!!.uid
-                    if (uid !in grantedByUid) {
-                        grantedByUid[uid] = AuthorizationManager.granted(pi.packageName, uid)
+                    if (uid !in statusByUid) {
+                        val oneTime = AuthorizationManager.isOneTime(uid)
+                        val granted = AuthorizationManager.granted(pi.packageName, uid) || oneTime
+                        val timerMs = if ( !onlyCount && buildRows ) {
+                            AuthorizationManager.getAccessTimerRemaining(uid)
+                        } else {
+                            0L
+                        }
+                        statusByUid[uid] = UidStatus(granted, oneTime, timerMs)
                     }
                 }
                 val rows = if (!onlyCount && buildRows) {
-                    list.map { buildRow(pm, it, grantedByUid.getValue(it.applicationInfo!!.uid)) }
+                    list.map {
+                        val status = statusByUid.getValue(it.applicationInfo!!.uid)
+                        buildRow(pm, it, status)
+                    }
                 } else {
                     null
                 }
-                Loaded(list, grantedByUid, rows)
+                Loaded(list, statusByUid, rows)
             }
 
-            val count = loaded.packages.count { loaded.grantedByUid[it.applicationInfo!!.uid] == true }
+            val count = loaded.packages.count { loaded.statusByUid[it.applicationInfo!!.uid]?.granted == true }
             if (!onlyCount) _packages.value = Resource.success(loaded.packages)
             if (loaded.rows != null) _rows.value = loaded.rows
             _grantedCount.value = Resource.success(count)
 
-            // The list is already on screen; icons stream in afterwards.
             if (loaded.rows != null) loadMissingIcons(pm, loaded.packages)
         } catch (e: CancellationException) {
             throw e
@@ -147,7 +164,10 @@ class AppsViewModel(context: Context) : ViewModel() {
         val fresh = withContext(Dispatchers.IO) {
             snapshot.distinctBy { it.uid }.mapNotNull { row ->
                 try {
-                    row.uid to AuthorizationManager.granted(row.packageName, row.uid)
+                    val oneTime = AuthorizationManager.isOneTime(row.uid)
+                    val granted = AuthorizationManager.granted(row.packageName, row.uid) || oneTime
+                    val timerMs = AuthorizationManager.getAccessTimerRemaining(row.uid)
+                    row.uid to UidStatus(granted, oneTime, timerMs)
                 } catch (_: Throwable) {
                     null
                 }
@@ -157,8 +177,20 @@ class AppsViewModel(context: Context) : ViewModel() {
         if (epoch != startEpoch || inFlight > 0) return
         _rows.update { rows ->
             rows?.map { row ->
-                val granted = fresh[row.uid]
-                if (granted != null && granted != row.granted) row.copy(granted = granted) else row
+                val status = fresh[row.uid]
+                if (status != null &&
+                    (status.granted != row.granted ||
+                        status.isOneTime != row.isOneTime ||
+                        status.timerRemainingMs != row.timerRemainingMs)
+                ) {
+                    row.copy(
+                        granted = status.granted,
+                        isOneTime = status.isOneTime,
+                        timerRemainingMs = status.timerRemainingMs
+                    )
+                } else {
+                    row
+                }
             }
         }
         publishCount()
@@ -198,7 +230,7 @@ class AppsViewModel(context: Context) : ViewModel() {
         val targets = _rows.value?.distinctBy { it.uid } ?: return
 
         _rows.update { rows ->
-            rows?.map { if (it.granted != granted) it.copy(granted = granted) else it }
+            rows?.map { if (it.granted != granted) it.copy(granted = granted, isOneTime = false) else it }
         }
         publishCount()
         beginMutation()
@@ -225,7 +257,6 @@ class AppsViewModel(context: Context) : ViewModel() {
             } finally {
                 endMutation()
             }
-            // Some entries may have been refused; show what the server really holds.
             refreshGranted()
         }
     }
@@ -242,7 +273,17 @@ class AppsViewModel(context: Context) : ViewModel() {
 
     private fun setGrantedLocally(uid: Int, granted: Boolean) {
         _rows.update { rows ->
-            rows?.map { if (it.uid == uid && it.granted != granted) it.copy(granted = granted) else it }
+            rows?.map {
+                if (it.uid == uid && (it.granted != granted || !granted)) {
+                    it.copy(
+                        granted = granted,
+                        isOneTime = if (!granted) false else it.isOneTime,
+                        timerRemainingMs = if (!granted) 0L else it.timerRemainingMs
+                    )
+                } else {
+                    it
+                }
+            }
         }
         publishCount()
     }
@@ -266,7 +307,7 @@ class AppsViewModel(context: Context) : ViewModel() {
         if (serverUid != 0) _adbLimited.tryEmit(Unit)
     }
 
-    private fun buildRow(pm: PackageManager, pi: PackageInfo, granted: Boolean): AppRow {
+    private fun buildRow(pm: PackageManager, pi: PackageInfo, status: UidStatus): AppRow {
         val ai = pi.applicationInfo!!
         val userId = UserHandleCompat.getUserId(ai.uid)
         val label = try {
@@ -284,13 +325,17 @@ class AppsViewModel(context: Context) : ViewModel() {
         } else {
             label
         }
+        val isNativeWire = ClientRouting.route(pi) == ClientRouting.Wire.NIGHTZUKU
         return AppRow(
             packageName = pi.packageName,
             uid = ai.uid,
             title = title,
             icon = iconCache.get(iconKey(pi)),
             requiresRoot = ai.metaData?.getBoolean("moe.shizuku.client.V3_REQUIRES_ROOT") == true,
-            granted = granted,
+            granted = status.granted,
+            isNativeWire = isNativeWire,
+            isOneTime = status.isOneTime,
+            timerRemainingMs = status.timerRemainingMs
         )
     }
 

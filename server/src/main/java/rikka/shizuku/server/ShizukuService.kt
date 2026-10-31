@@ -55,6 +55,10 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
     /** Tracks active permission prompts by (uid, pid, requestCode) -> elapsedRealtimeMs to block forged/expired replies. */
     private val openPrompts = ConcurrentHashMap<Triple<Int, Int, Int>, Long>()
 
+    /** Tracks timed access grants by uid -> expiration elapsedRealtimeMs and scheduled revocation callbacks. */
+    private val accessTimerExpiry = ConcurrentHashMap<Int, Long>()
+    private val accessTimerRunnables = ConcurrentHashMap<Int, Runnable>()
+
     init {
         HandlerUtil.setMainHandler(mainHandler)
 
@@ -747,6 +751,9 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             val allowed = (value and ConfigManager.FLAG_ALLOWED) != 0
             val denied = (value and ConfigManager.FLAG_DENIED) != 0
             clientManager.clearOneTimeGrant(uid)
+            if (!allowed) {
+                cancelAccessTimer(uid)
+            }
             val paused = configManager.isAccessPaused()
             val effectiveAllowed = allowed && !paused
             val caps = TransactGuard.effectiveCapabilities(configManager.find(uid), paused)
@@ -765,6 +772,86 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             }
 
             syncRuntimePermissionsForUid(uid, allowed)
+        } else if ((mask and NightProtocol.MASK_CAPABILITIES) != 0) {
+            notifyCapabilitiesUpdated(uid)
+        }
+    }
+
+    private fun cancelAccessTimer(uid: Int) {
+        accessTimerExpiry.remove(uid)
+        accessTimerRunnables.remove(uid)?.let { mainHandler.removeCallbacks(it) }
+    }
+
+    internal fun getAccessTimerRemainingMs(uid: Int): Long {
+        val expiry = accessTimerExpiry[uid] ?: return 0L
+        val remaining = expiry - SystemClock.elapsedRealtime()
+        if (remaining <= 0L) {
+            accessTimerExpiry.remove(uid)
+            return 0L
+        }
+        return remaining
+    }
+
+    internal fun setAccessTimerForUid(uid: Int, durationMs: Long) {
+        cancelAccessTimer(uid)
+        if (durationMs <= 0L) return
+
+        val uidPackages = PackageManagerApis.getPackagesForUidNoThrow(uid).toMutableList()
+        if (configManager.find(uid)?.isAllowed() != true && !clientManager.isOneTimeGranted(uid)) {
+            configManager.update(uid, uidPackages, ConfigManager.MASK_PERMISSION, ConfigManager.FLAG_ALLOWED)
+            val paused = configManager.isAccessPaused()
+            val caps = TransactGuard.effectiveCapabilities(configManager.find(uid), paused)
+            for (record in clientManager.findClients(uid)) {
+                record.allowed = !paused
+                pushPermissionState(record, false, caps)
+            }
+            syncRuntimePermissionsForUid(uid, true)
+        }
+
+        val expiry = SystemClock.elapsedRealtime() + durationMs
+        accessTimerExpiry[uid] = expiry
+        val runnable = Runnable {
+            accessTimerExpiry.remove(uid)
+            accessTimerRunnables.remove(uid)
+            Service.LOGGER.i("Access timer expired for uid=%d, revoking grant", uid)
+            clientManager.clearOneTimeGrant(uid)
+            val pkgs = PackageManagerApis.getPackagesForUidNoThrow(uid).toMutableList()
+            configManager.update(uid, pkgs, ConfigManager.MASK_PERMISSION, 0)
+            for (record in clientManager.findClients(uid)) {
+                record.allowed = false
+                pushPermissionState(record, false, 0)
+                ActivityManagerApis.forceStopPackageNoThrow(record.packageName, UserHandleCompat.getUserId(record.uid))
+            }
+            onPermissionRevokedForUid(uid, pkgs)
+            syncRuntimePermissionsForUid(uid, false)
+        }
+        accessTimerRunnables[uid] = runnable
+        mainHandler.postDelayed(runnable, durationMs)
+    }
+
+    internal fun setOneTimeGrantForUid(uid: Int, enabled: Boolean) {
+        val uidPackages = PackageManagerApis.getPackagesForUidNoThrow(uid).toMutableList()
+        val paused = configManager.isAccessPaused()
+        if (enabled) {
+            configManager.update(uid, uidPackages, ConfigManager.MASK_PERMISSION, 0)
+            clientManager.markOneTimeGrant(uid)
+            val entry = configManager.find(uid)
+            val rawCaps = (entry?.flags ?: 0) and NightProtocol.MASK_CAPABILITIES
+            val caps = if (paused) 0 else if (rawCaps == 0) NightProtocol.DEFAULT_CAPABILITIES else rawCaps
+            for (record in clientManager.findClients(uid)) {
+                record.allowed = !paused
+                pushPermissionState(record, false, caps)
+            }
+            syncRuntimePermissionsForUid(uid, false)
+        } else {
+            clientManager.clearOneTimeGrant(uid)
+            configManager.update(uid, uidPackages, ConfigManager.MASK_PERMISSION, ConfigManager.FLAG_ALLOWED)
+            val caps = TransactGuard.effectiveCapabilities(configManager.find(uid), paused)
+            for (record in clientManager.findClients(uid)) {
+                record.allowed = !paused
+                pushPermissionState(record, false, caps)
+            }
+            syncRuntimePermissionsForUid(uid, true)
         }
     }
 
@@ -927,6 +1014,105 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             data.enforceInterface(ShizukuApiConstants.BINDER_DESCRIPTOR)
             replyParcel.writeNoException()
             replyParcel.writeInt(if (configManager.isAccessPaused()) 1 else 0)
+            return true
+        } else if (code == ServerConstants.BINDER_TRANSACTION_setOneTimeGrant) {
+            val replyParcel = reply!!
+            if (!checkCallerManagerPermission("setOneTimeGrant", Binder.getCallingUid(), Binder.getCallingPid())) {
+                replyParcel.writeException(SecurityException("Permission denied"))
+                return true
+            }
+            data.enforceInterface(ShizukuApiConstants.BINDER_DESCRIPTOR)
+            val targetUid = data.readInt()
+            val enabled = data.readInt() != 0
+            setOneTimeGrantForUid(targetUid, enabled)
+            replyParcel.writeNoException()
+            return true
+        } else if (code == ServerConstants.BINDER_TRANSACTION_isOneTimeGrant) {
+            val replyParcel = reply!!
+            if (!checkCallerManagerPermission("isOneTimeGrant", Binder.getCallingUid(), Binder.getCallingPid())) {
+                replyParcel.writeException(SecurityException("Permission denied"))
+                return true
+            }
+            data.enforceInterface(ShizukuApiConstants.BINDER_DESCRIPTOR)
+            val targetUid = data.readInt()
+            replyParcel.writeNoException()
+            replyParcel.writeInt(if (clientManager.isOneTimeGranted(targetUid)) 1 else 0)
+            return true
+        } else if (code == ServerConstants.BINDER_TRANSACTION_setAccessTimer) {
+            val replyParcel = reply!!
+            if (!checkCallerManagerPermission("setAccessTimer", Binder.getCallingUid(), Binder.getCallingPid())) {
+                replyParcel.writeException(SecurityException("Permission denied"))
+                return true
+            }
+            data.enforceInterface(ShizukuApiConstants.BINDER_DESCRIPTOR)
+            val targetUid = data.readInt()
+            val durationMs = data.readLong()
+            setAccessTimerForUid(targetUid, durationMs)
+            replyParcel.writeNoException()
+            return true
+        } else if (code == ServerConstants.BINDER_TRANSACTION_getAccessTimerRemaining) {
+            val replyParcel = reply!!
+            if (!checkCallerManagerPermission("getAccessTimerRemaining", Binder.getCallingUid(), Binder.getCallingPid())) {
+                replyParcel.writeException(SecurityException("Permission denied"))
+                return true
+            }
+            data.enforceInterface(ShizukuApiConstants.BINDER_DESCRIPTOR)
+            val targetUid = data.readInt()
+            replyParcel.writeNoException()
+            replyParcel.writeLong(getAccessTimerRemainingMs(targetUid))
+            return true
+        } else if (code == ServerConstants.BINDER_TRANSACTION_forceStopApp) {
+            val replyParcel = reply!!
+            if (!checkCallerManagerPermission("forceStopApp", Binder.getCallingUid(), Binder.getCallingPid())) {
+                replyParcel.writeException(SecurityException("Permission denied"))
+                return true
+            }
+            data.enforceInterface(ShizukuApiConstants.BINDER_DESCRIPTOR)
+            val packageName = data.readString()
+            val targetUid = data.readInt()
+            val userId = UserHandleCompat.getUserId(targetUid)
+            val pkgs = if (!packageName.isNullOrBlank()) listOf(packageName) else PackageManagerApis.getPackagesForUidNoThrow(targetUid)
+            for (pkg in pkgs) {
+                ActivityManagerApis.forceStopPackageNoThrow(pkg, userId)
+            }
+            onPermissionRevokedForUid(targetUid, pkgs)
+            replyParcel.writeNoException()
+            return true
+        } else if (code == ServerConstants.BINDER_TRANSACTION_getAppControlInfo) {
+            val replyParcel = reply!!
+            if (!checkCallerManagerPermission("getAppControlInfo", Binder.getCallingUid(), Binder.getCallingPid())) {
+                replyParcel.writeException(SecurityException("Permission denied"))
+                return true
+            }
+            data.enforceInterface(ShizukuApiConstants.BINDER_DESCRIPTOR)
+            val targetUid = data.readInt()
+            val entry = configManager.find(targetUid)
+            val rawCaps = (entry?.flags ?: 0) and NightProtocol.MASK_CAPABILITIES
+            val caps = if (rawCaps == 0) NightProtocol.DEFAULT_CAPABILITIES else rawCaps
+            val activePids = clientManager.findClients(targetUid)
+                .filter { it.client?.asBinder()?.pingBinder() == true || nightEndpoint.hasNightCallback(it.pid) }
+                .map { it.pid }
+                .distinct()
+                .toIntArray()
+            val signer = entry?.signers?.firstOrNull() ?: run {
+                val userId = UserHandleCompat.getUserId(targetUid)
+                val pkg = PackageManagerApis.getPackagesForUidNoThrow(targetUid).firstOrNull()
+                if (pkg != null) {
+                    val pi = Android17Compat.getPackageInfo(pkg, PackageSignatureVerifier.signatureLookupFlags(), userId)
+                    if (pi != null) PackageSignatureVerifier.extractSignerDigests(pi)?.firstOrNull().orEmpty() else ""
+                } else ""
+            }
+            val bundle = Bundle().apply {
+                putBoolean("allowed", entry?.isAllowed() == true)
+                putBoolean("oneTime", clientManager.isOneTimeGranted(targetUid))
+                putLong("timerRemainingMs", getAccessTimerRemainingMs(targetUid))
+                putInt("capabilities", caps)
+                putLong("lastConnectedAt", entry?.lastConnectedAt ?: 0L)
+                putIntArray("activePids", activePids)
+                putString("signerSha256", signer)
+            }
+            replyParcel.writeNoException()
+            replyParcel.writeBundle(bundle)
             return true
         }
         return super.onTransact(code, data, reply, flags)
