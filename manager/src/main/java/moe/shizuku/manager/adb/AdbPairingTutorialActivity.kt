@@ -1,3 +1,8 @@
+@file:OptIn(
+    androidx.compose.material3.ExperimentalMaterial3Api::class,
+    androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class
+)
+
 package moe.shizuku.manager.adb
 
 import android.app.AppOpsManager
@@ -10,36 +15,59 @@ import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.Pin
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Usb
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material3.Button as WearButton
 import androidx.wear.compose.material3.Card as WearCard
 import androidx.wear.compose.material3.CardDefaults as WearCardDefaults
 import androidx.wear.compose.material3.MaterialTheme as WearMaterialTheme
 import androidx.wear.compose.material3.Text as WearText
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import moe.shizuku.manager.AppConstants
 import moe.shizuku.manager.R
 import moe.shizuku.manager.app.AppActivity
 import moe.shizuku.manager.ui.compose.ExpressiveCard
+import moe.shizuku.manager.ui.compose.SettingsSectionHeader
 import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
+import moe.shizuku.manager.ui.compose.ShizukuIcon
 import moe.shizuku.manager.ui.compose.ShizukuLazyScaffold
-import moe.shizuku.manager.ui.compose.StepRow
 import rikka.compatibility.DeviceCompatibility
 
 @RequiresApi(Build.VERSION_CODES.R)
@@ -56,6 +84,10 @@ class AdbPairingTutorialActivity : AppActivity() {
         }
 
         setContent {
+            BackHandler {
+                finish()
+            }
+
             val isWatch = moe.shizuku.manager.utils.EnvironmentUtils.isWatch(this@AdbPairingTutorialActivity)
             val isTv = moe.shizuku.manager.utils.EnvironmentUtils.isTV(this@AdbPairingTutorialActivity)
 
@@ -158,35 +190,154 @@ class AdbPairingTutorialActivity : AppActivity() {
                 ShizukuExpressiveTheme {
                     ShizukuLazyScaffold(
                         title = stringResource(R.string.adb_pairing_tutorial_title),
-                        onNavigateUp = { finish() }
+                        onNavigateUp = { finish() },
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        if (notificationEnabled) {
-                            item {
-                                ExpressiveCard(
-                                    icon = R.drawable.ic_outline_notifications_active_24,
-                                    title = stringResource(R.string.notification_channel_adb_pairing),
-                                    body = stringResource(R.string.adb_pairing_tutorial_content_notification)
-                                )
+                        item {
+                            val heroContainer = if (notificationEnabled) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.errorContainer
                             }
-                            item {
-                                ExpressiveCard(
-                                    icon = R.drawable.ic_help_outline_24dp,
-                                    title = stringResource(R.string.home_local_network_title),
-                                    body = stringResource(R.string.adb_pairing_tutorial_content_network) +
-                                            "\n\n" +
-                                            stringResource(R.string.adb_pairing_tutorial_content_network_limation_not_foreground)
-                                )
+                            val heroOnContainer = if (notificationEnabled) {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onErrorContainer
                             }
-                        } else {
-                            item {
-                                ExpressiveCard(
-                                    icon = R.drawable.ic_outline_info_24,
-                                    title = stringResource(R.string.notification_settings),
-                                    body = stringResource(R.string.adb_pairing_tutorial_content_notification_blocked),
-                                    danger = true
+                            val badgeContainer = if (notificationEnabled) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.error
+                            }
+                            val badgeOnContainer = if (notificationEnabled) {
+                                MaterialTheme.colorScheme.onPrimary
+                            } else {
+                                MaterialTheme.colorScheme.onError
+                            }
+
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = MaterialTheme.shapes.extraExtraLarge,
+                                color = heroContainer
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(20.dp),
+                                    verticalArrangement = Arrangement.spacedBy(14.dp)
                                 ) {
-                                    Button(onClick = ::openNotificationSettings) {
-                                        Text(stringResource(R.string.notification_settings))
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                                        verticalAlignment = Alignment.Top
+                                    ) {
+                                        Surface(
+                                            modifier = Modifier.size(44.dp),
+                                            shape = CircleShape,
+                                            color = badgeContainer
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                ShizukuIcon(
+                                                    icon = if (notificationEnabled) {
+                                                        R.drawable.ic_outline_notifications_active_24
+                                                    } else {
+                                                        R.drawable.ic_warning_24
+                                                    },
+                                                    contentDescription = null,
+                                                    tint = badgeOnContainer,
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                            }
+                                        }
+                                        Column(
+                                            modifier = Modifier.weight(1f),
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Text(
+                                                text = stringResource(
+                                                    if (notificationEnabled) {
+                                                        R.string.notification_channel_adb_pairing
+                                                    } else {
+                                                        R.string.notification_settings
+                                                    }
+                                                ),
+                                                style = MaterialTheme.typography.titleLarge,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = heroOnContainer
+                                            )
+                                            Text(
+                                                text = stringResource(
+                                                    if (notificationEnabled) {
+                                                        R.string.adb_pairing_tutorial_content_notification
+                                                    } else {
+                                                        R.string.adb_pairing_tutorial_content_notification_blocked
+                                                    }
+                                                ),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = heroOnContainer
+                                            )
+                                        }
+                                    }
+
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = badgeContainer,
+                                        contentColor = badgeOnContainer
+                                    ) {
+                                        Text(
+                                            text = stringResource(
+                                                if (notificationEnabled) {
+                                                    R.string.adb_pairing_status_ready
+                                                } else {
+                                                    R.string.adb_pairing_status_blocked
+                                                }
+                                            ),
+                                            style = MaterialTheme.typography.labelLarge,
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                        )
+                                    }
+
+                                    if (notificationEnabled) {
+                                        Button(
+                                            onClick = ::openDeveloperOptions,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(48.dp),
+                                            shape = MaterialTheme.shapes.extraLargeIncreased
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Settings,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(
+                                                text = stringResource(R.string.development_settings),
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                    } else {
+                                        Button(
+                                            onClick = ::openNotificationSettings,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(48.dp),
+                                            shape = MaterialTheme.shapes.extraLargeIncreased,
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.error,
+                                                contentColor = MaterialTheme.colorScheme.onError
+                                            )
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.NotificationsActive,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(
+                                                text = stringResource(R.string.notification_settings),
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -198,8 +349,8 @@ class AdbPairingTutorialActivity : AppActivity() {
                                     icon = R.drawable.ic_warning_24,
                                     title = "MIUI",
                                     body = stringResource(R.string.adb_pairing_tutorial_content_miui) +
-                                            "\n\n" +
-                                            stringResource(R.string.adb_pairing_tutorial_content_miui_2),
+                                        "\n\n" +
+                                        stringResource(R.string.adb_pairing_tutorial_content_miui_2),
                                     danger = true
                                 )
                             }
@@ -207,33 +358,73 @@ class AdbPairingTutorialActivity : AppActivity() {
 
                         if (notificationEnabled) {
                             item {
-                                StepRow(
-                                    number = 1,
-                                    title = stringResource(R.string.adb_pairing_tutorial_content_steps),
-                                    body = stringResource(R.string.adb_pairing_tutorial_content_left_is_clickable),
-                                    action = {
-                                        Button(onClick = ::openDeveloperOptions) {
-                                            Text(stringResource(R.string.development_settings))
-                                        }
+                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    SettingsSectionHeader(title = stringResource(R.string.home_wireless_adb_view_guide_button))
+                                    Column(
+                                        verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)
+                                    ) {
+                                        PairingExpressiveStepCard(
+                                            index = 0,
+                                            count = 3,
+                                            stepNumber = 1,
+                                            icon = Icons.Rounded.Settings,
+                                            title = stringResource(R.string.adb_pairing_tutorial_content_steps),
+                                            body = stringResource(R.string.adb_pairing_tutorial_content_left_is_clickable),
+                                            action = {
+                                                FilledTonalButton(
+                                                    onClick = ::openDeveloperOptions,
+                                                    shape = MaterialTheme.shapes.largeIncreased
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Settings,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                    Spacer(Modifier.width(8.dp))
+                                                    Text(stringResource(R.string.development_settings))
+                                                }
+                                            }
+                                        )
+                                        PairingExpressiveStepCard(
+                                            index = 1,
+                                            count = 3,
+                                            stepNumber = 2,
+                                            icon = Icons.Rounded.Pin,
+                                            title = stringResource(R.string.adb_pairing_tutorial_content_enter_pairing_code),
+                                            body = stringResource(R.string.adb_pairing_tutorial_content_notification)
+                                        )
+                                        PairingExpressiveStepCard(
+                                            index = 2,
+                                            count = 3,
+                                            stepNumber = 3,
+                                            icon = Icons.Rounded.Check,
+                                            title = stringResource(R.string.adb_pairing_tutorial_content_finish),
+                                            action = {
+                                                FilledTonalButton(
+                                                    onClick = { finish() },
+                                                    shape = MaterialTheme.shapes.largeIncreased
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Check,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                    Spacer(Modifier.width(8.dp))
+                                                    Text(stringResource(android.R.string.ok))
+                                                }
+                                            }
+                                        )
                                     }
-                                )
+                                }
                             }
+
                             item {
-                                StepRow(
-                                    number = 2,
-                                    title = stringResource(R.string.adb_pairing_tutorial_content_enter_pairing_code),
-                                    body = stringResource(R.string.adb_pairing_tutorial_content_notification)
-                                )
-                            }
-                            item {
-                                StepRow(
-                                    number = 3,
-                                    title = stringResource(R.string.adb_pairing_tutorial_content_finish),
-                                    action = {
-                                        FilledTonalButton(onClick = { finish() }) {
-                                            Text(stringResource(android.R.string.ok))
-                                        }
-                                    }
+                                ExpressiveCard(
+                                    icon = R.drawable.ic_help_outline_24dp,
+                                    title = stringResource(R.string.home_local_network_title),
+                                    body = stringResource(R.string.adb_pairing_tutorial_content_network) +
+                                        "\n\n" +
+                                        stringResource(R.string.adb_pairing_tutorial_content_network_limation_not_foreground)
                                 )
                             }
                         }
@@ -266,7 +457,7 @@ class AdbPairingTutorialActivity : AppActivity() {
         val nm = getSystemService(NotificationManager::class.java)
         val channel = nm.getNotificationChannel(AdbPairingService.notificationChannel)
         return nm.areNotificationsEnabled() &&
-                (channel == null || channel.importance != NotificationManager.IMPORTANCE_NONE)
+            (channel == null || channel.importance != NotificationManager.IMPORTANCE_NONE)
     }
 
     override fun onResume() {
@@ -289,8 +480,8 @@ class AdbPairingTutorialActivity : AppActivity() {
         } catch (e: Throwable) {
             Log.e(AppConstants.TAG, "startForegroundService", e)
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-                && e is ForegroundServiceStartNotAllowedException
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                e is ForegroundServiceStartNotAllowedException
             ) {
                 val mode = getSystemService(AppOpsManager::class.java)
                     .noteOpNoThrow("android:start_foreground", android.os.Process.myUid(), packageName, null, null)
@@ -298,6 +489,75 @@ class AdbPairingTutorialActivity : AppActivity() {
                     Toast.makeText(this, "OP_START_FOREGROUND is denied. What are you doing?", Toast.LENGTH_LONG).show()
                 }
                 startService(intent)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PairingExpressiveStepCard(
+    index: Int,
+    count: Int,
+    stepNumber: Int,
+    icon: ImageVector,
+    title: String,
+    body: String? = null,
+    action: (@Composable () -> Unit)? = null
+) {
+    val itemShapes = ListItemDefaults.segmentedShapes(index = index, count = count)
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = itemShapes.shape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh
+    ) {
+        Row(
+            modifier = Modifier.padding(18.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            Surface(
+                modifier = Modifier.size(34.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.secondaryContainer
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = stepNumber.toString(),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                if (!body.isNullOrBlank()) {
+                    Text(
+                        text = body,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                action?.invoke()
             }
         }
     }
