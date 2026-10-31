@@ -33,6 +33,8 @@ class ModuleJsBridge(
             put("author", module.author ?: "")
             put("enabled", module.enabled)
             put("webRoot", module.webRoot?.absolutePath ?: "")
+            put("webOrigin", ModuleWebAssetServer.originForModule(module.id))
+            put("virtualBridgeUrl", "${ModuleWebAssetServer.originForModule(module.id)}${ModuleWebAssetServer.VIRTUAL_BRIDGE_PATH}")
             put("moduleDir", module.directory.absolutePath)
             put("accessMode", ModuleSettings.getAccessMode().value)
             put("trusted", ModuleSettings.isModuleTrusted(module.id))

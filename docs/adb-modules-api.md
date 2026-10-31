@@ -155,9 +155,18 @@ Execution policy:
 - Last output is written to `logs/service-last.log`.
 - Timeout (120s) returns exit code `124`.
 
-## WebUI & JavaScript Bridge
+## WebUI, Virtual HTTPS Asset Server & ES6 Modules
 
-WebUI is loaded from `webui/index.html`. Both `window.Nightzuku` and `window.Shizuku` are exposed when `usesShellBridge=true` in `module.prop` and policy allows.
+WebUI is served from `webui/index.html` over a dedicated, per-module isolated virtual HTTPS origin (`https://mod-<sha256_prefix>.appassets.androidplatform.net/`) via `ModuleWebAssetServer`:
+
+- **Native ES6 Modules Without Full Trust**: `<script type="module" src="...">`, static/dynamic `import`/`export` statements (`.js`, `.mjs`, `.cjs`, including extensionless imports), `fetch()`, Web Workers, WASM (`.wasm`), and CSS `@import` work out of the box under standard browser same-origin rules for all enabled modules — **Full Trust is not required**.
+- **Per-Module Origin Isolation**: Each module ID resolves to its own isolated subdomain so `localStorage`, `sessionStorage`, `IndexedDB`, and `CacheStorage` cannot leak across different modules.
+- **Zero Raw `file://` Exposure**: Raw `file://` and `content://` WebView access (`allowFileAccess`, `allowFileAccessFromFileURLs`, `allowUniversalAccessFromFileURLs`) are disabled for all modules, and all asset paths are canonically verified inside `webRoot` (`ModuleRuntimeUtils.ensureInside`).
+- **Built-in ES6 Bridge Module (`/__nightzuku__/bridge.js` / `/nightzuku.mjs`)**: Modern ES6 modules can import async helpers directly:
+  ```js
+  import { exec, getModuleInfo, verifyHost, download } from "/__nightzuku__/bridge.js";
+  ```
+- Both `window.Nightzuku` and `window.Shizuku` globals are also exposed when `usesShellBridge=true` in `module.prop` and policy allows.
 
 ### Bridge Methods
 

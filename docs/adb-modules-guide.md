@@ -121,6 +121,10 @@ action=scripts/action.sh
 
 `usesShellBridge=true` is mandatory for WebUI pages that need `window.Nightzuku` / `window.Shizuku`.
 
+### ES6 Modules in WebUI
+
+Every module WebUI is served over an isolated virtual HTTPS origin (`https://mod-<hash>.appassets.androidplatform.net/`). You can use `<script type="module" src="js/main.js">`, `import`/`export` across local `.js`/`.mjs` files, `fetch(./config.json)`, and the built-in `/__nightzuku__/bridge.js` ES6 module in any enabled module without needing Full Trust.
+
 ## Script Environment
 
 Scripts run from the module directory. Use these variables:
