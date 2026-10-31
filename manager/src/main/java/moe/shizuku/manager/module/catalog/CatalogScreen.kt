@@ -113,6 +113,7 @@ import moe.shizuku.manager.module.ModuleSettings
 import moe.shizuku.manager.module.discovery.DiscoveredModule
 import moe.shizuku.manager.module.discovery.ModuleDiscoveryManager
 import moe.shizuku.manager.module.update.ModuleInstaller
+import moe.shizuku.manager.ui.compose.ExpressiveSwitch
 import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
 import moe.shizuku.manager.ui.compose.ShizukuIcon
 import moe.shizuku.manager.ui.compose.ShizukuLazyScaffold
@@ -1339,15 +1340,55 @@ private fun InstallModeDialog(
     onDismiss: () -> Unit,
     onInstall: (ModuleSettings.InstallMode) -> Unit
 ) {
+    var allowBackground by remember { mutableStateOf(ModuleSettings.allowBackgroundActions()) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(module.moduleName) },
         text = {
-            Text(
-                text = stringResource(R.string.modules_catalog_install_description),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = stringResource(R.string.modules_catalog_install_description),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Surface(
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                allowBackground = !allowBackground
+                                ModuleSettings.setAllowBackgroundActions(allowBackground)
+                            }
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.modules_background_actions),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = stringResource(R.string.modules_background_actions_summary),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        ExpressiveSwitch(
+                            checked = allowBackground,
+                            onCheckedChange = {
+                                allowBackground = it
+                                ModuleSettings.setAllowBackgroundActions(it)
+                            }
+                        )
+                    }
+                }
+            }
         },
         confirmButton = {
             Column(

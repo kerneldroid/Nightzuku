@@ -66,6 +66,7 @@ fun UpdateSettingsScreen(
     var wifiOnly by remember { mutableStateOf(ModuleSettings.isUpdateWifiOnly()) }
     var notificationsEnabled by remember { mutableStateOf(ModuleSettings.isUpdateNotificationsEnabled()) }
     var installMode by remember { mutableStateOf(ModuleSettings.getInstallMode()) }
+    var allowBackgroundActions by remember { mutableStateOf(ModuleSettings.allowBackgroundActions()) }
     var githubPat by remember { mutableStateOf(TokenStore.getToken(context) ?: "") }
     var showPatDialog by remember { mutableStateOf(false) }
 
@@ -182,10 +183,24 @@ fun UpdateSettingsScreen(
             item {
                 SettingsSection(title = stringResource(R.string.update_settings_install_mode)) {
                     InstallModeDropdown(
+                        index = 0,
+                        count = 2,
                         selected = installMode,
                         onSelect = {
                             installMode = it
                             ModuleSettings.setInstallMode(it)
+                        }
+                    )
+                    SettingsSwitchItem(
+                        index = 1,
+                        count = 2,
+                        icon = R.drawable.ic_terminal_24,
+                        title = stringResource(R.string.modules_background_actions),
+                        summary = stringResource(R.string.modules_background_actions_summary),
+                        checked = allowBackgroundActions,
+                        onCheckedChange = {
+                            allowBackgroundActions = it
+                            ModuleSettings.setAllowBackgroundActions(it)
                         }
                     )
                 }
@@ -346,6 +361,8 @@ private fun UpdateFrequencyDropdown(
 
 @Composable
 private fun InstallModeDropdown(
+    index: Int = 0,
+    count: Int = 1,
     selected: ModuleSettings.InstallMode,
     onSelect: (ModuleSettings.InstallMode) -> Unit
 ) {
@@ -356,8 +373,8 @@ private fun InstallModeDropdown(
         onExpandedChange = { expanded = !expanded }
     ) {
         SettingsItem(
-            index = 0,
-            count = 1,
+            index = index,
+            count = count,
             icon = R.drawable.ic_outline_arrow_upward_24,
             title = stringResource(R.string.update_settings_install_mode_label),
             summary = stringResource(
