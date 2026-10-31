@@ -1,9 +1,4 @@
 <resources>
-    <string name="app_name" translatable="false">Nightzuku</string>
-
-    <!-- To translators: you can leave your here -->
-    <string name="translation_contributors" />
-
     <!-- Home - Status -->
     <string name="home_status_service_is_running">%1$s запущено</string>
     <string name="home_status_service_not_running">%1$s не запущено</string>
@@ -23,20 +18,16 @@
 
     <!-- Home - Adb -->
     <string name="home_adb_title"><![CDATA[Запуск через підключення до комп\'ютера]]></string>
-    <string name="home_adb_description"><![CDATA[Для пристроїв без root-доступу потрібно використовувати adb для запуску Nightzuku (потрібне підключення до комп\'ютера). Цю процедуру необхідно повторювати щоразу після перезавантаження пристрою. Будь ласка, <b><a href=\"%1$s\">ознайомтеся з довідкою</a></b>.]]>
-
-Примітка: Nightzuku є сучасним наступником Shizuku. Перед використанням обов\'язково видаліть стару офіційну програму Shizuku, щоб уникнути конфліктів.</string>
+    <string name="home_adb_description"><![CDATA[Для пристроїв без root-доступу потрібно використовувати adb для запуску Nightzuku (потрібне підключення до комп\'ютера). Цю процедуру необхідно повторювати щоразу після перезавантаження пристрою. Будь ласка, <b><a href=\"%1$s\">ознайомтеся з довідкою</a></b>.]]></string>
     <string name="home_adb_button_view_help">Переглянути довідку</string>
     <string name="home_adb_button_view_command">Переглянути команду</string>
-    <string name="home_adb_dialog_view_command_message"><![CDATA[<font face="monospace">%1$s</font><br><br>* Існують додаткові нюанси, будь ласка, спочатку ознайомтеся з довідкою.]]></string>
+    <string name="home_adb_dialog_view_command_message"><![CDATA[<font face=\"monospace\">%1$s</font><br><br>* Існують додаткові нюанси, будь ласка, спочатку ознайомтеся з довідкою.]]></string>
     <string name="home_adb_dialog_view_command_copy_button">Копіювати</string>
     <string name="home_adb_dialog_view_command_button_send">Надіслати</string>
 
     <!-- Home - Wireless Adb -->
     <string name="home_wireless_adb_title"><![CDATA[Запуск через бездротове налагодження]]></string>
-    <string name="home_wireless_adb_description"><![CDATA[На Android 11 і вище можна увімкнути бездротове налагодження та запустити Nightzuku безпосередньо з пристрою, без підключення до комп\'ютера.<p>Спочатку перегляньте покрокову інструкцію.]]>
-
-Примітка: Nightzuku є сучасним наступником Shizuku. Перед використанням обов\'язково видаліть стару офіційну програму Shizuku, щоб уникнути конфліктів.</string>
+    <string name="home_wireless_adb_description"><![CDATA[На Android 11 і вище можна увімкнути бездротове налагодження та запустити Nightzuku безпосередньо з пристрою, без підключення до комп\'ютера.<p>Спочатку перегляньте покрокову інструкцію.]]></string>
     <string name="home_wireless_adb_description_pre_11"><![CDATA[До версії Android 11 для ввімкнення бездротового налагодження потрібне підключення до комп\'ютера.]]></string>
     <string name="home_wireless_adb_view_guide_button">Покрокова інструкція</string>
     <string name="home_local_network_title">Доступ до локальної мережі</string>
@@ -80,9 +71,7 @@
 
     <!-- Home - Root -->
     <string name="home_root_title"><![CDATA[Запуск (для пристроїв з root)]]></string>
-    <string name="home_root_description"><![CDATA[Крім того, Nightzuku можна запускати автоматично під час завантаження. Якщо це не відбувається, перевірте, чи не обмежують роботу Nightzuku ваша система або сторонні інструменти.<br>Додаткову інформацію можна знайти тут: %s.]]>
-
-Примітка: Nightzuku є сучасним наступником Shizuku. Перед використанням обов\'язково видаліть стару офіційну програму Shizuku, щоб уникнути конфліктів.</string>
+    <string name="home_root_description"><![CDATA[Крім того, Nightzuku можна запускати автоматично під час завантаження. Якщо це не відбувається, перевірте, чи не обмежують роботу Nightzuku ваша система або сторонні інструменти.<br>Додаткову інформацію можна знайти тут: %s.]]></string>
     <string name="home_root_description_sui"><![CDATA[Якщо ви використовуєте Magisk, спробуйте %1$s. Для користувачів з root-доступом він з часом замінить Nightzuku. Зверніть увагу: наявним застосункам потрібні невеликі зміни для роботи з %2$s.]]></string>
     <string name="home_root_button_start">Запустити</string>
     <string name="home_root_button_restart">Перезапустити</string>
@@ -90,10 +79,10 @@
     <!-- Home - Application management -->
     <string name="home_app_management_title">Керування застосунками</string>
     <plurals name="home_app_management_authorized_apps_count">
-        <item quantity="one"><![CDATA[Авторизовано %d застосунок]]></item>
-        <item quantity="few"><![CDATA[Авторизовано %d застосунки]]></item>
-        <item quantity="many"><![CDATA[Авторизовано %d застосунків]]></item>
-        <item quantity="other"><![CDATA[Авторизовано %d застосунку]]></item>
+        <item quantity="one">Авторизовано %d застосунок</item>
+        <item quantity="few">Авторизовано %d застосунки</item>
+        <item quantity="many">Авторизовано %d застосунків</item>
+        <item quantity="other">Авторизовано %d застосунку</item>
     </plurals>
     <string name="home_app_management_view_authorized_apps"><![CDATA[Торкніться, щоб керувати авторизованими застосунками]]></string>
     <string name="home_app_management_empty">Тут відображатимуться застосунки, які запитали доступ до Nightzuku або оголосили про його використання.</string>
@@ -121,10 +110,10 @@
     <string name="app_management_item_summary_requires_root">* потребує запуску Nightzuku з root-правами</string>
 
     <!-- Terminal -->
-    <string name="home_terminal_title">Використання Nightzuku в термінальних застосунках</string>
+    <string name="home_terminal_title">Використання Nightzuku в терміналі</string>
     <string name="home_terminal_description">Виконуйте команди через Nightzuku в улюблених термінальних застосунках</string>
     <string name="terminal_tutorial_1">Спочатку експортуйте файли в будь-яке зручне місце. Ви отримаєте два файли: %1$s та %2$s.</string>
-    <string name="terminal_tutorial_1_description">Якщо у вибраній папці вже є файли з такими самими іменами, вони будуть видалені.\n\nФункція експорту використовує SAF (Storage Access Framework). Відомо, що MIUI порушує роботу функцій SAF. Якщо ви використовуєте MIUI, можливо, доведеться видобути файл з apk Nightzuku або завантажити його з GitHub.</string>
+    <string name="terminal_tutorial_1_description">Якщо у вибраній папці вже є файли з такими самими іменами, вони будуть видалені.\n\nФункція експорту використовує SAF (Storage Access Framework). Відомо, що MIUI порушує роботу функцій SAF. Якщо ви використовуєте MIUI, можливо, доведеться видобути файл з APK Nightzuku або завантажити його з GitHub.</string>
     <string name="terminal_export_files">Експортувати файли</string>
     <string name="terminal_tutorial_2">Потім відкрийте та відредагуйте %1$s у будь-якому текстовому редакторі.</string>
     <string name="terminal_tutorial_2_description">Наприклад, якщо ви хочете використовувати Nightzuku в %1$s, замініть %2$s на %3$s (%4$s — це ім\'я пакета %1$s).</string>
@@ -132,7 +121,7 @@
     <string name="terminal_tutorial_3_description">Порада: надайте право на виконання файлу %1$s і додайте його до %2$s — тоді ви зможете використовувати %1$s безпосередньо.</string>
     <string name="rish_description"><![CDATA[
 За допомогою %1$s у будь-якому термінальному застосунку ви можете підключитися до оболонки, запущеної Nightzuku, і взаємодіяти з нею.
-<p>Щоб дізнатися про детальне використання %1$s, торкніться, щоб переглянути документацію.
+<p>Щоб дізнатися про детальне використання %1$s, торкніться для перегляду документації.
     ]]></string>
 
     <!-- Settings -->
@@ -141,7 +130,7 @@
     <string name="settings_user_interface">Зовнішній вигляд</string>
     <string name="settings_black_night_theme">Чорна нічна тема</string>
     <string name="settings_black_night_theme_summary">Використовувати повністю чорну тему, коли увімкнено нічний режим</string>
-    <string name="settings_startup">Запуск</string>
+    <string name="settings_startup">Автозапуск</string>
     <string name="settings_translation_contributors">Автори перекладу</string>
     <string name="settings_translation">Взяти участь у перекладі</string>
     <string name="settings_translation_summary">Допоможіть нам перекласти %s вашою мовою</string>
@@ -150,7 +139,7 @@
     <string name="settings_use_system_color">Використовувати системний колір теми</string>
     <string name="settings_category_startup_summary">Автоматичний запуск Nightzuku</string>
     <string name="settings_category_appearance_summary">Тема, темний режим і кольори</string>
-    <string name="settings_category_language_summary">Мова програми та переклад</string>
+    <string name="settings_category_language_summary">Мова застосунку та переклад</string>
     <string name="settings_category_modules_summary">Доступ до модулів і дозволи</string>
 
     <!-- ADB modules -->
@@ -158,7 +147,7 @@
     <string name="modules_settings_title">Модулі</string>
     <string name="modules_settings_summary">Встановлюйте ZIP-модулі та виконуйте їхні дії через активний ADB/root-сервер Nightzuku</string>
     <string name="settings_modules_recommendations">Рекомендації</string>
-    <string name="modules_header_summary">%1$d встановлено, %2$d увімкнено</string>
+    <string name="modules_header_summary">Встановлено: %1$d, увімкнено: %2$d</string>
     <string name="modules_version_label">Версія: %s</string>
     <string name="modules_author_label">Автор: %s</string>
     <string name="modules_access_mode">Режим доступу модуля</string>
@@ -170,22 +159,34 @@
     <string name="modules_access_mode_full_summary">Дозволяє shell-міст, дії, служби та завантаження WebUI. Доступ WebView до інтернету залишається заблокованим.</string>
     <string name="modules_custom_permissions">Користувацькі дозволи</string>
     <string name="modules_custom_permissions_summary">Налаштуйте кожен дозвіл модуля окремо</string>
-    <string name="modules_permission_action">Виконати дію</string>
+    <string name="modules_permission_action">Виконання дій</string>
     <string name="modules_permission_action_summary">Дозволити ручне виконання action.sh.</string>
-    <string name="modules_permission_service">Запустити службу</string>
-    <string name="modules_permission_service_summary">Дозволити service.sh, якщо також увімкнено фонові дії.</string>
+    <string name="modules_permission_service">Запуск служби</string>
+    <string name="modules_permission_service_summary">Дозволити service.sh при увімкнених фонових діях.</string>
     <string name="modules_permission_web_bridge">Shell-міст WebUI</string>
     <string name="modules_permission_web_bridge_summary">Надавати window.Nightzuku лише для локального WebUI і лише коли доступ WebView до інтернету вимкнено.</string>
-    <string name="modules_permission_web_network">Інтернет для WebView</string>
-    <string name="modules_permission_web_network_summary">Дозволити навігацію/ресурси через HTTPS. Це вимикає доступність shell-мосту для цього WebView.</string>
-    <string name="modules_permission_web_download">WebUI download()</string>
-    <string name="modules_permission_web_download_summary">Дозволити завантаження файлів через HTTPS у папку WebUI, крім index.html.</string>
+    <string name="modules_permission_web_network">Інтернет у WebView</string>
+    <string name="modules_permission_web_network_summary">Дозволити HTTPS-навігацію/ресурси. Це вимикає доступ до shell-мосту для цього WebView.</string>
+    <string name="modules_permission_web_download">Завантаження WebUI()</string>
+    <string name="modules_permission_web_download_summary">Дозволити HTTPS-завантаження файлів у папку WebUI, крім index.html.</string>
     <string name="modules_background_actions">Дозволити фонові дії</string>
-    <string name="modules_background_actions_summary">Дозволити встановленим модулям запитувати фонову роботу ADB в режимі повного доступу</string>
-    <string name="modules_background_allowed">Фонова робота дозволена</string>
-    <string name="modules_background_blocked">Фонова робота заблокована</string>
+    <string name="modules_background_actions_summary">Дозволити встановленим модулям запускати фонові сценарії service.sh</string>
+    <string name="modules_background_allowed">Фон дозволено</string>
+    <string name="modules_background_blocked">Фон заблоковано</string>
+    <string name="modules_background_check_title">Фонова перевірка модулів</string>
+    <string name="modules_background_check_summary">Фонова перевірка оновлень через JobScheduler та контроль цілісності через NightDog</string>
+    <string name="modules_background_check_short">Перевірити</string>
+    <string name="modules_background_check_run_now">Перевірити модулі та сервер зараз</string>
+    <string name="modules_background_check_running">Перевірка модулів та сервера…</string>
+    <string name="modules_background_check_never">Торкніться для перевірки стану модулів, фонових служб та оновлень</string>
+    <string name="modules_background_check_report_summary">Справні: %1$d/%2$d • Оновлень: %3$d • Проблем: %4$d</string>
+    <string name="modules_background_check_toast">Перевірено: справні %1$d з %2$d, оновлень: %3$d</string>
+    <string name="modules_health_ok">Справний</string>
+    <string name="modules_health_issue">Виявлено проблему</string>
+    <string name="modules_update_available_chip">Оновлення: v%s</string>
+    <string name="modules_update_success">Оновлено %1$s (%2$s)</string>
     <string name="modules_install_zip">Встановити ZIP</string>
-    <string name="modules_empty_title">Немає встановлених модулів</string>
+    <string name="modules_empty_title">Модулі не встановлені</string>
     <string name="modules_empty_summary">Модулі ADB використовують ZIP-архів у стилі KernelSU/Magisk із module.prop, необов\'язковим банером, WebUI, action.sh та service.sh.</string>
     <string name="modules_install_success">Встановлено %s</string>
     <string name="modules_install_failed">Помилка встановлення: %s</string>
@@ -204,9 +205,9 @@
     <string name="modules_delete">Видалити</string>
     <string name="modules_delete_title">Видалити модуль?</string>
     <string name="modules_delete_message">%s буде видалено зі сховища модулів Nightzuku.</string>
-    <string name="modules_action_result">Дію завершено: код виходу %d</string>
+    <string name="modules_action_result">Дію завершено: код %d</string>
     <string name="modules_action_failed">Помилка виконання дії</string>
-    <string name="modules_service_result">Службу завершено: код виходу %d</string>
+    <string name="modules_service_result">Службу завершено: код %d</string>
     <string name="modules_service_failed">Помилка служби</string>
     <string name="modules_recommand_title">ReCommand</string>
     <string name="modules_recommand_source">%1$s / %2$s</string>
@@ -217,14 +218,15 @@
     <string name="modules_recommand_close">Закрити</string>
     <string name="modules_recommand_command_clip_label">Команда модуля</string>
     <string name="modules_recommand_webui">ReCommand для WebUI</string>
-    <string name="modules_recommand_webui_summary">Показувати діалог підтвердження перед виконанням shell-команд з WebUI.</string>
+    <string name="modules_recommand_webui_summary">Показувати діалог підтвердження перед виконанням shell-команд у WebUI.</string>
     <string name="modules_recommand_action">ReCommand для дій</string>
     <string name="modules_recommand_action_summary">Показувати діалог підтвердження перед виконанням action.sh.</string>
+    <string name="modules_update_action">Оновити</string>
 
     <!-- About -->
-    <string name="action_about">Про програму</string>
+    <string name="action_about">Про застосунок</string>
     <string name="about_source_code_button">Вихідний код</string>
-    <string name="about_view_source_code"><![CDATA[Переглянути вихідний код на %s]]></string>
+    <string name="about_view_source_code"><![CDATA[Вихідний код: %s]]></string>
 
     <!-- Stop -->
     <string name="action_stop">Зупинити Nightzuku</string>
@@ -248,29 +250,27 @@
     <string name="notification_adb_pairing_retry">Повторити</string>
 
     <!-- Permission related, appears in system permission UI -->
-    <string name="permission_group_label" translatable="false">Nightzuku</string>
-    <string name="permission_group_description" translatable="false">@string/permission_label</string>
     <string name="permission_label">доступ до Nightzuku</string>
     <string name="permission_description">Дозволити застосунку використовувати Nightzuku.</string>
     <string name="permission_warning_template"><![CDATA[Дозволити <b>%1$s</b> %2$s?]]></string>
+    <string name="grant_dialog_button_allow_onetime">Лише цього разу</string>
     <string name="grant_dialog_button_allow_always">Дозволяти завжди</string>
-    <string name="grant_dialog_button_deny">"Відмовити"</string>
+    <string name="grant_dialog_button_deny">«Відхилити»</string>
 
     <!-- Starter -->
-    <string name="starter">Стартер</string>
-    <string name="starting_root_shell" translatable="false">Starting root shell…</string>
-    <string name="start_with_root_failed">Не вдалося запустити службу, оскільки root-дозвіл не надано або пристрій не має root-доступу.</string>
+    <string name="starter">Завантажувач</string>
+    <string name="start_with_root_failed">Не вдалося запустити службу: root-дозвіл не надано або пристрій не має root-прав.</string>
 
     <!-- Misc -->
-    <string name="dialog_cannot_open_browser_title">Не вдалося запустити браузер</string>
-    <string name="toast_copied_to_clipboard">%s\nскопійовано в буфер обміну.</string>
+    <string name="dialog_cannot_open_browser_title">Не вдалося відкрити браузер</string>
+    <string name="toast_copied_to_clipboard">%s\nСкопійовано в буфер обміну.</string>
     <string name="toast_copied_to_clipboard_with_text"><![CDATA[<b>%s</b> скопійовано в буфер обміну.]]></string>
 
     <!-- Messages for legacy -->
     <string name="dialog_legacy_not_support_title">%1$s не підтримує сучасний Nightzuku</string>
-    <string name="dialog_legacy_not_support_message"><![CDATA[Застарілий Nightzuku не підтримується з березня 2019 року. Крім того, застарілий Nightzuku не працює в новіших версіях Android.<p>Будь ласка, попросіть розробника <b>%1$s</b> оновити застосунок.]]></string>
+    <string name="dialog_legacy_not_support_message"><![CDATA[Застарілий Nightzuku не підтримується з березня 2019 року. Крім того, він не працює на нових версіях Android.<p>Будь ласка, попросіть розробника <b>%1$s</b> оновити застосунок.]]></string>
     <string name="dialog_requesting_legacy_title">%1$s запитує застарілий Nightzuku</string>
-    <string name="dialog_requesting_legacy_message"><![CDATA[<b>%1$s</b> підтримує сучасний Nightzuku, але запитує застарілу версію. Це може статися, якщо Nightzuku не запущено — перевірте це в застосунку Nightzuku.<p>Застарілий Nightzuku не підтримується з березня 2019 року.]]></string>
+    <string name="dialog_requesting_legacy_message"><![CDATA[<b>%1$s</b> підтримує сучасний Nightzuku, але запитує застарілу версію. Можливо, Nightzuku не запущено — перевірте в застосунку.<p>Застарілий Nightzuku не підтримується з березня 2019 року.]]></string>
     <string name="dialog_requesting_legacy_button_open_shizuku">Відкрити Nightzuku</string>
 
     <!-- Lab Features -->
@@ -278,14 +278,18 @@
     <string name="lab_features_summary">Експериментальні можливості</string>
     <string name="shizuku_connectors_title">Конектори Nightzuku</string>
     <string name="shizuku_connectors_summary">Дозволити плагінам активувати Nightzuku</string>
-    <string name="nightdog_title">NightDog (бета)</string>
-    <string name="nightdog_summary">Легкий системний монітор з нульовим споживанням енергії</string>
-    <string name="nightdog_description">NightDog відстежує стан сервера за допомогою inotify (без опитування). Працює як shell-процес.</string>
-    <string name="unsafe_warning_title">Попередження</string>
+    <string name="nightdog_section_title">Сторожовий таймер сервера NightDog</string>
+    <string name="nightdog_title">Сторожовий таймер NightDog</string>
+    <string name="nightdog_summary">Моніторинг здоров\'я сервера та автовідновлення при зависаннях</string>
+    <string name="nightdog_description">NightDog відстежує чутливість головного потоку сервера через періодичні сигнали (heartbeat) та стан критичних системних служб (package, activity, user, appops) через Binder linkToDeath. У разі зависання сервера або втрати служб NightDog перезапускає процес через завантажувач.</string>
+    <string name="nightdog_status_active_summary">NightDog активний (служб: %1$d, переприв\'язок: %2$d)</string>
+    <string name="nightdog_status_inactive_summary">NightDog неактивний</string>
+    <string name="unsafe_warning_title">Увага</string>
     <string name="unsafe_warning_message">Увімкнення цієї функції НЕБЕЗПЕЧНЕ. Ви впевнені?</string>
 
     <!-- Update Settings -->
-    <string name="update_settings_title">Налаштування оновлень</string>
+    <string name="update_settings_title">Оновлення та фонова перевірка</string>
+    <string name="update_settings_entry_summary">Фонова перевірка модулів, частота оновлень, каталог і токен GitHub</string>
     <string name="update_settings_catalog">Каталог модулів</string>
     <string name="update_settings_catalog_enabled">Увімкнути каталог</string>
     <string name="update_settings_catalog_enabled_summary">Показувати знайдені модулі з GitHub Topics</string>
@@ -296,14 +300,14 @@
     <string name="update_settings_frequency_weekly">Щотижня</string>
     <string name="update_settings_install_mode">Режим встановлення</string>
     <string name="update_settings_install_mode_label">Спосіб встановлення за замовчуванням</string>
-    <string name="update_settings_install_mode_sources">Збірка з вихідного коду</string>
-    <string name="update_settings_install_mode_release">Завантажити ZIP релізу</string>
+    <string name="update_settings_install_mode_sources">Зібрати з вихідного коду</string>
+    <string name="update_settings_install_mode_release">Завантажити ZIP-реліз</string>
     <string name="update_settings_github">GitHub</string>
     <string name="update_settings_github_pat">Персональний токен доступу</string>
     <string name="update_settings_github_pat_set">Токен встановлено</string>
     <string name="update_settings_github_pat_unset">Не встановлено (60 запитів/год)</string>
-    <string name="update_settings_github_pat_title">Персональний токен доступу GitHub</string>
-    <string name="update_settings_github_pat_description">Необов\'язково. Персональний токен GitHub (PAT) збільшує ліміт запитів API з 60 до 5000 на годину. Для публічних репозиторіїв достатньо області доступу public_repo.</string>
+    <string name="update_settings_github_pat_title">GitHub Personal Access Token</string>
+    <string name="update_settings_github_pat_description">Необов\'язково. GitHub PAT збільшує ліміт запитів API з 60 до 5000 на годину. Потрібен лише scope public_repo для публічних репозиторіїв.</string>
     <string name="update_settings_github_pat_label">Токен</string>
     <string name="update_settings_github_pat_show">Показати</string>
     <string name="update_settings_github_pat_hide">Приховати</string>
@@ -317,35 +321,124 @@
     <string name="modules_catalog_empty">Модулів не знайдено</string>
     <string name="modules_catalog_sort_newest">Найновіші</string>
     <string name="modules_catalog_sort_oldest">Найстаріші</string>
-    <string name="modules_catalog_sort_stars">Зірки</string>
+    <string name="modules_catalog_sort_stars">За зірками</string>
     <string name="modules_catalog_sort_official">Офіційні</string>
     <string name="modules_outdated">Застарілий</string>
     <string name="modules_catalog_install_sources">Встановити з вихідного коду</string>
-    <string name="modules_catalog_install_release">Завантажити ZIP релізу</string>
+    <string name="modules_catalog_install_release">Завантажити ZIP-реліз</string>
     <string name="modules_catalog_install_description">Виберіть спосіб встановлення цього модуля:</string>
     <string name="modules_catalog_install_success">Модуль успішно встановлено</string>
     <string name="modules_catalog_install_failed">Помилка встановлення: %s</string>
     <string name="modules_catalog_token_required">Потрібен токен GitHub</string>
-    <string name="modules_catalog_token_hint">Персональний токен доступу GitHub</string>
+    <string name="modules_catalog_token_hint">GitHub Personal Access Token</string>
     <string name="modules_catalog_token_description">Для пошуку модулів на GitHub потрібен токен. Створити його можна на github.com/settings/tokens</string>
     <string name="modules_catalog_token_format_warning">Токен має починатися з ghp_ або github_pat_ і містити щонайменше 30 символів</string>
     <string name="modules_catalog_loading">Завантаження каталогу…</string>
     <string name="modules_catalog_error">Не вдалося завантажити каталог</string>
     <string name="modules_catalog_install">Встановити</string>
     <string name="modules_catalog_installing">Встановлення…</string>
-    <string name="modules_catalog_view_github">Переглянути на GitHub</string>
+    <string name="modules_catalog_view_github">Відкрити на GitHub</string>
     <string name="modules_catalog_skip_token">Пропустити</string>
     <string name="modules_catalog_open">Відкрити каталог</string>
 
     <!-- TV Status -->
-    <string name="tv_status_active">АКТИВНО</string>
-    <string name="tv_status_disabled">ВИМКНЕНО</string>
-    <string name="tv_status_trusted">ДОВІРЕНО</string>
+    <string name="tv_status_active">АКТИВНИЙ</string>
+    <string name="tv_status_disabled">ВИМКНЕНИЙ</string>
+    <string name="tv_status_trusted">ДОВІРЕНИЙ</string>
 
     <!-- Wear Catalog -->
     <string name="wear_catalog_sort_newest">Найновіші</string>
     <string name="wear_catalog_sort_stars">Зірки</string>
     <string name="wear_catalog_sort_official">Офіційні</string>
-    <string name="wear_catalog_sort_by">Сортувати за</string>
+    <string name="wear_catalog_sort_by">Сортування</string>
     <string name="wear_catalog_filter">Фільтр</string>
+    <string name="update_settings_frequency_on_start">При запуску сервера</string>
+    <string name="update_settings_frequency_6h">Кожні 6 годин</string>
+    <string name="update_settings_auto_update">Автооновлення модулів</string>
+    <string name="update_settings_auto_update_summary">Перевірка оновлень через JobScheduler та привілейоване встановлення через NightDog</string>
+    <string name="update_settings_wifi_only">Лише по Wi-Fi (безлімітна мережа)</string>
+    <string name="update_settings_wifi_only_summary">Перевіряти та завантажувати оновлення у фоні лише в безлімітних мережах</string>
+    <string name="update_settings_notifications">Сповіщення про оновлення</string>
+    <string name="update_settings_notifications_summary">Сповіщати про знайдені або встановлені у фоні оновлення модулів</string>
+    <string name="update_settings_notifications_channel">Оновлення модулів</string>
+    <string name="modules_updates_available_notification_title">Доступні оновлення модулів (%d)</string>
+    <string name="modules_updates_available_notification_body">Торкніться для перегляду змін та встановлення оновлень</string>
+    <string name="modules_auto_updated_notification_title">Модулі оновлено автоматично (%d)</string>
+    <string name="modules_update_all_button">Оновити всі (%d)</string>
+    <string name="modules_update_all_short">Оновити всі</string>
+    <string name="modules_update_all_progress">Оновлення %1$d з %2$d</string>
+    <string name="modules_update_all_result">Оновлено модулів: %1$d з %2$d</string>
+    <string name="modules_update_version_transition">Версія: %1$s → %2$s</string>
+    <string name="modules_update_changelog_title">Список змін</string>
+    <string name="modules_update_changelog_empty">Автор модуля не вказав опис змін.</string>
+    <string name="modules_update_mode_default">За замовчуванням</string>
+    <string name="modules_update_now">Оновити зараз</string>
+    <string name="modules_update_pin">Заморозити версію</string>
+    <string name="modules_update_unpin">Розморозити версію</string>
+    <string name="modules_update_pinned_chip">Версію заморожено</string>
+    <string name="dark_theme">Темна тема</string>
+    <string name="dark_theme_off">Завжди вимкнено</string>
+    <string name="dark_theme_on">Завжди увімкнено</string>
+    <string name="follow_system">Системна</string>
+    <string name="modules_nightzuku_guard_chip">Захист Nightzuku</string>
+    <string name="modules_catalog_menu_sort">Фільтр сортування</string>
+    <string name="modules_catalog_properties">Властивості</string>
+    <string name="modules_catalog_properties_title">Властивості каталогу</string>
+    <string name="modules_catalog_prop_total">Знайдено модулів</string>
+    <string name="modules_catalog_prop_official">Офіційних модулів</string>
+    <string name="modules_catalog_prop_guarded">Із захистом Nightzuku</string>
+    <string name="modules_catalog_prop_installed">Встановлено модулів</string>
+    <string name="modules_catalog_prop_sort">Активний фільтр</string>
+    <string name="modules_catalog_prop_token">Токен GitHub API</string>
+    <string name="terminal_step_export_title">Експорт обгортки оболонки</string>
+    <string name="terminal_step_configure_title">Налаштування пакета термінала</string>
+    <string name="terminal_step_launch_title">Запуск привілейованої оболонки</string>
+    <string name="terminal_copy_command">Копіювати команду</string>
+    <string name="adb_pairing_status_ready">Служба спряження активна</string>
+    <string name="adb_pairing_status_blocked">Сповіщення заблоковано</string>
+    <string name="starter_mode_root_badge">Root (uid 0)</string>
+    <string name="starter_mode_adb_badge">Бездротове налагодження (uid 2000)</string>
+    <string name="starter_output_title">Журнал виконання</string>
+    <string name="starter_copy_log">Копіювати журнал</string>
+    <string name="app_management_search_hint">Пошук застосунків або пакетів…</string>
+    <string name="app_management_search_empty">Відповідних застосунків не знайдено.</string>
+    <string name="app_management_section_native">Нативний протокол (Nightzuku API)</string>
+    <string name="app_management_section_legacy">Застарілий протокол (Shizuku API)</string>
+    <string name="app_management_hold_hint">Утримуйте застосунок 3–4 сек. для глибокого налаштування</string>
+    <string name="app_management_badge_native">Native Wire</string>
+    <string name="app_management_badge_legacy">Legacy Wire</string>
+    <string name="app_control_title">Контроль застосунку</string>
+    <string name="app_control_session_section">Сесія та таймер доступу</string>
+    <string name="app_control_session_only">Доступ лише на сесію</string>
+    <string name="app_control_session_only_summary">Автоматично відкликати доступ після завершення процесу застосунку або перезапуску сервера</string>
+    <string name="app_control_timer_title">Таймер автовідкликання доступу</string>
+    <string name="app_control_timer_off">Вимкнено (без обмеження)</string>
+    <string name="app_control_timer_active">Відкликання через %1$s</string>
+    <string name="app_control_timer_5m">5 хв</string>
+    <string name="app_control_timer_15m">15 хв</string>
+    <string name="app_control_timer_30m">30 хв</string>
+    <string name="app_control_timer_1h">1 год</string>
+    <string name="app_control_timer_cancel">Скинути</string>
+    <string name="app_control_capabilities_section">Можливості Nightzuku</string>
+    <string name="app_control_cap_shell">Виконання Shell-команд</string>
+    <string name="app_control_cap_shell_summary">Дозволити запуск привілейованих shell-процесів (execFast / newProcess)</string>
+    <string name="app_control_cap_binder">Проксіювання системного Binder</string>
+    <string name="app_control_cap_binder_summary">Дозволити пересилання транзакцій Binder до системних служб (transactRemote)</string>
+    <string name="app_control_cap_userservice">Привілейовані UserService</string>
+    <string name="app_control_cap_userservice_summary">Дозволити запуск ізольованих привілейованих фонових служб</string>
+    <string name="app_control_cap_sysprops">Системні властивості (SystemProperties)</string>
+    <string name="app_control_cap_sysprops_summary">Дозволити читання та зміну системних властивостей Android</string>
+    <string name="app_control_runtime_section">Runtime-дозволи</string>
+    <string name="app_control_runtime_empty">Пакет не запитує небезпечних runtime-дозволів</string>
+    <string name="app_control_runtime_grant_all">Надати всі</string>
+    <string name="app_control_runtime_revoke_all">Відкликати всі</string>
+    <string name="app_control_process_section">Керування процесом та діагностика</string>
+    <string name="app_control_force_stop">Примусово зупинити та завершити UserServices</string>
+    <string name="app_control_force_stop_summary">Завершити всі процеси та привілейовані служби для UID %1$d</string>
+    <string name="app_control_force_stopped_toast">%1$s зупинено</string>
+    <string name="app_control_active_pids">Активні підключені PID</string>
+    <string name="app_control_active_pids_none">Немає активних підключень</string>
+    <string name="app_control_last_connected">Останнє підключення до сервера</string>
+    <string name="app_control_last_connected_never">Ніколи не підключалося</string>
+    <string name="app_control_signer_sha256">SHA-256 сертифіката підпису</string>
 </resources>

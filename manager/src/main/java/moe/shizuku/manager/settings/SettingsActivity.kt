@@ -11,12 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatDelegate
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -182,11 +177,11 @@ class SettingsActivity : AppActivity() {
                 buildLocaleOptions(languageTag)
             }
             val languageSummary = localeOptions.firstOrNull { it.tag == languageTag }?.summary
-                ?: stringResource(rikka.core.R.string.follow_system)
+                ?: stringResource(R.string.follow_system)
             val nightValues = resources.getIntArray(R.array.night_mode_value).toList()
             val nightLabels = stringArrayResource(R.array.night_mode).toList()
             val nightSummary = nightLabels.getOrElse(nightValues.indexOf(nightMode)) {
-                stringResource(rikka.core.R.string.follow_system)
+                stringResource(R.string.follow_system)
             }
             val contributors = htmlToPlainText(getString(R.string.translation_contributors))
 
@@ -212,17 +207,8 @@ class SettingsActivity : AppActivity() {
                         secondarySubscreen = SecondarySubscreen.ROOT
                     }
                     moe.shizuku.manager.ui.compose.WearShizukuTheme {
-                        AnimatedContent(
-                            targetState = secondarySubscreen,
-                            transitionSpec = {
-                                if (targetState.depth >= initialState.depth) {
-                                    slideInHorizontally { it } + fadeIn() togetherWith slideOutHorizontally { -it / 3 } + fadeOut()
-                                } else {
-                                    slideInHorizontally { -it / 3 } + fadeIn() togetherWith slideOutHorizontally { it } + fadeOut()
-                                }
-                            },
-                            label = "wear-settings-subscreen"
-                        ) { subscreen ->
+                        run {
+                            val subscreen = secondarySubscreen
                             when (subscreen) {
                                 SecondarySubscreen.TOKEN_SETTINGS -> {
                                     moe.shizuku.manager.module.catalog.WearTokenSettingsScreen(
@@ -293,17 +279,8 @@ class SettingsActivity : AppActivity() {
                         secondarySubscreen = SecondarySubscreen.ROOT
                     }
                     moe.shizuku.manager.ui.compose.TvShizukuTheme {
-                        AnimatedContent(
-                            targetState = secondarySubscreen,
-                            transitionSpec = {
-                                if (targetState.depth >= initialState.depth) {
-                                    slideInHorizontally { it } + fadeIn() togetherWith slideOutHorizontally { -it / 3 } + fadeOut()
-                                } else {
-                                    slideInHorizontally { -it / 3 } + fadeIn() togetherWith slideOutHorizontally { it } + fadeOut()
-                                }
-                            },
-                            label = "tv-settings-subscreen"
-                        ) { subscreen ->
+                        run {
+                            val subscreen = secondarySubscreen
                             when (subscreen) {
                                 SecondarySubscreen.TOKEN_SETTINGS -> {
                                     TvTokenSettingsScreen(
@@ -386,17 +363,8 @@ class SettingsActivity : AppActivity() {
                             }
                         }
 
-                        AnimatedContent(
-                            targetState = phoneRoute,
-                            transitionSpec = {
-                                if (targetState.depth >= initialState.depth) {
-                                    slideInHorizontally { it } + fadeIn() togetherWith slideOutHorizontally { -it / 3 } + fadeOut()
-                                } else {
-                                    slideInHorizontally { -it / 3 } + fadeIn() togetherWith slideOutHorizontally { it } + fadeOut()
-                                }
-                            },
-                            label = "settings-category"
-                        ) { route ->
+                        run {
+                            val route = phoneRoute
                             when (route) {
                                 is PhoneSettingsRoute.UpdateSettings -> {
                                     UpdateSettingsScreen(
@@ -513,7 +481,7 @@ class SettingsActivity : AppActivity() {
                                                             index = 0,
                                                             count = itemCount,
                                                             icon = R.drawable.ic_outline_dark_mode_24,
-                                                            title = stringResource(rikka.core.R.string.dark_theme),
+                                                            title = stringResource(R.string.dark_theme),
                                                             summary = nightSummary,
                                                             onClick = { showNightDialog = true }
                                                         )
@@ -754,7 +722,7 @@ class SettingsActivity : AppActivity() {
                     if (isWatch) {
                         moe.shizuku.manager.ui.compose.WearShizukuTheme {
                             WearChoiceDialog(
-                                title = stringResource(rikka.core.R.string.dark_theme),
+                                title = stringResource(R.string.dark_theme),
                                 choices = choices,
                                 selectedIndex = selectedIndex,
                                 onDismiss = { showNightDialog = false },
@@ -771,7 +739,7 @@ class SettingsActivity : AppActivity() {
                     } else if (isTv) {
                         moe.shizuku.manager.ui.compose.TvShizukuTheme {
                             TvChoiceDialog(
-                                title = stringResource(rikka.core.R.string.dark_theme),
+                                title = stringResource(R.string.dark_theme),
                                 choices = choices,
                                 selectedIndex = selectedIndex,
                                 onDismiss = { showNightDialog = false },
@@ -788,7 +756,7 @@ class SettingsActivity : AppActivity() {
                     } else {
                         ShizukuExpressiveTheme {
                             ChoiceDialog(
-                                title = stringResource(rikka.core.R.string.dark_theme),
+                                title = stringResource(R.string.dark_theme),
                                 choices = choices,
                                 selectedIndex = selectedIndex,
                                 onDismiss = { showNightDialog = false },
@@ -917,7 +885,7 @@ class SettingsActivity : AppActivity() {
 
         return localeTags.mapIndexed { index, tag ->
             if (index == 0) {
-                LocaleOption(tag.toString(), getString(rikka.core.R.string.follow_system), null)
+                LocaleOption(tag.toString(), getString(R.string.follow_system), null)
             } else {
                 val locale = Locale.forLanguageTag(displayLocaleTags[index].toString())
                 val localeName = if (!TextUtils.isEmpty(locale.script)) locale.getDisplayScript(locale) else locale.getDisplayName(locale)
