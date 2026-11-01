@@ -12,11 +12,11 @@ import java.util.Locale
 import kerneldroid.nightzuku.api.LegacyParcelCodec
 import kerneldroid.nightzuku.api.NightProtocol
 import kerneldroid.nightzuku.util.PackageSignatureVerifier
-import moe.shizuku.starter.util.IContentProviderCompat
 import rikka.hidden.compat.ActivityManagerApis
 import rikka.hidden.compat.PackageManagerApis
 import rikka.shizuku.ShizukuApiConstants
 import rikka.shizuku.server.UserService
+import rikka.shizuku.server.util.IContentProviderUtils
 
 object ServiceStarter {
 
@@ -107,14 +107,12 @@ object ServiceStarter {
             }
         }
 
-        // Verify that the launch token is still live on the server before loading client APK code
         if (!isLaunchTokenLive(launchToken)) {
             Log.w(TAG, "UserService launch token is not active, aborting")
             System.exit(1)
             return
         }
 
-        // Verify the client APK's UID and cryptographic signing identity right before loading its code
         if (!verifyTargetPackageIdentity(targetPackage, targetUid, expectedSigners)) {
             Log.e(TAG, "UserService target package failed identity verification, aborting")
             System.exit(1)
@@ -184,9 +182,8 @@ object ServiceStarter {
             try {
                 provider = ActivityManagerApis.getContentProviderExternal(authority, 0, null, authority)
                 if (provider != null) {
-                    val reply = IContentProviderCompat.call(
+                    val reply = IContentProviderUtils.callCompat(
                         provider,
-                        null,
                         null,
                         authority,
                         NightProtocol.METHOD_GET_BINDER,
@@ -275,9 +272,8 @@ object ServiceStarter {
                 putString(ShizukuApiConstants.USER_SERVICE_ARG_TOKEN, token)
             }
 
-            val reply = IContentProviderCompat.call(
+            val reply = IContentProviderUtils.callCompat(
                 p,
-                null,
                 null,
                 name,
                 NightProtocol.METHOD_SEND_USER_SERVICE,

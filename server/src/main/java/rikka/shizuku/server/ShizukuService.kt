@@ -25,7 +25,7 @@ import kerneldroid.nightzuku.api.NightProtocol
 import kerneldroid.nightzuku.util.PackageSignatureVerifier
 import moe.shizuku.api.BinderContainer
 import moe.shizuku.common.util.BuildUtils
-import moe.shizuku.common.util.OsUtils
+import rikka.shizuku.server.util.OsUtils
 import moe.shizuku.server.IShizukuApplication
 import rikka.hidden.compat.ActivityManagerApis
 import rikka.hidden.compat.DeviceIdleControllerApis
@@ -33,7 +33,7 @@ import rikka.hidden.compat.PackageManagerApis
 import rikka.shizuku.ShizukuApiConstants
 import rikka.shizuku.common.util.InstalledPackagesCompat
 import rikka.shizuku.nightdog.NightDog
-import rikka.shizuku.server.api.IContentProviderUtils
+import rikka.shizuku.server.util.IContentProviderUtils
 import rikka.shizuku.server.util.Android17Compat
 import rikka.shizuku.server.util.HandlerUtil
 import rikka.shizuku.server.util.UserHandleCompat
@@ -44,8 +44,6 @@ import rikka.rish.RishConfig
 class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, ShizukuConfigManager>() {
 
     private val mainHandler: Handler = Handler(Looper.myLooper()!!)
-    private val clientManager: ShizukuClientManager
-    private val configManager: ShizukuConfigManager
     private val managerAppId: Int
     private val managerBaseline: PackageSignatureVerifier.Baseline
     val nightEndpoint: NightServiceEndpoint
@@ -84,8 +82,6 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
 
         managerAppId = UserHandleCompat.getAppId(ai.uid)
 
-        configManager = getConfigManager()
-        clientManager = getClientManager()
         clientManager.onClientDiedCallback = { uid, _, packageName ->
             handleClientProcessDied(uid, packageName)
         }
@@ -119,7 +115,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
     }
 
     override fun onCreateClientManager(): ShizukuClientManager {
-        return ShizukuClientManager(getConfigManager())
+        return ShizukuClientManager(configManager)
     }
 
     override fun onCreateConfigManager(): ShizukuConfigManager {
@@ -856,10 +852,10 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
     }
 
     private fun onPermissionRevokedForUid(uid: Int, fallbackPackages: List<String> = emptyList()) {
-        val removedByUid = getUserServiceManager().removeUserServicesForUid(uid)
+        val removedByUid = userServiceManager.removeUserServicesForUid(uid)
         if (!removedByUid) {
             for (pkg in fallbackPackages) {
-                getUserServiceManager().removeUserServicesForPackage(pkg)
+                userServiceManager.removeUserServicesForPackage(pkg)
             }
         }
     }
@@ -990,7 +986,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             }
             data.enforceInterface(ShizukuApiConstants.BINDER_DESCRIPTOR)
             val token = data.readString()
-            val claimed = token != null && getUserServiceManager().claimUserServiceLaunch(token, Binder.getCallingPid())
+            val claimed = token != null && userServiceManager.claimUserServiceLaunch(token, Binder.getCallingPid())
             replyParcel.writeNoException()
             replyParcel.writeInt(if (claimed) 1 else 0)
             return true

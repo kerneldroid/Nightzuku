@@ -13,11 +13,11 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kerneldroid.nightzuku.api.NightProtocol
-import moe.shizuku.common.util.OsUtils
 import moe.shizuku.server.IShizukuApplication
 import rikka.hidden.compat.PackageManagerApis
 import rikka.shizuku.ShizukuApiConstants
 import rikka.shizuku.server.util.Logger
+import rikka.shizuku.server.util.OsUtils
 
 class NightServiceEndpoint(
     private val service: ShizukuService
@@ -200,6 +200,22 @@ class NightServiceEndpoint(
                 reply!!.writeNoException()
                 return true
             }
+            NightProtocol.TRANSACTION_GET_SERVER_DIAGNOSTICS -> {
+                data.enforceInterface(NightProtocol.DESCRIPTOR)
+                service.enforceCallingPermission("getServerDiagnostics")
+                val diagnostics = Bundle().apply {
+                    putInt("uid", OsUtils.getUid())
+                    putInt("pid", OsUtils.getPid())
+                    putInt("protocolVersion", NightProtocol.PROTOCOL_VERSION)
+                    putString("seContext", OsUtils.getSELinuxContext())
+                    putBoolean("accessPaused", service.configManager.isAccessPaused())
+                    putBoolean("nightDogEnabled", service.configManager.getNightDogEnabled())
+                    putInt("activeClientsCount", service.clientManager.getActiveClients().size)
+                }
+                reply!!.writeNoException()
+                reply.writeBundle(diagnostics)
+                return true
+            }
         }
         return super.onTransact(code, data, reply, flags)
     }
@@ -269,8 +285,6 @@ class NightServiceEndpoint(
                 )
                 notifyRequestPermissionResult(callingUid, callingPid, requestCode, allowed, caps)
             }
-
-            override fun showPermissionConfirmation(uid: Int, pid: Int, pkg: String?, code: Int) {}
         }
 
         val record = service.attachNightClient(callingUid, callingPid, bridgeApp, packageName, clientProtocolVersion)
@@ -415,8 +429,6 @@ class NightServiceEndpoint(
             throw IllegalStateException("Interrupted while waiting for process", e)
         }
 
-        // Wait briefly for pipe drain; if a backgrounded child process inherited the pipe FDs,
-        // close the streams to unblock the reader threads and return the bytes captured so far.
         try {
             stdoutFuture.get(250, TimeUnit.MILLISECONDS)
         } catch (_: Throwable) {
