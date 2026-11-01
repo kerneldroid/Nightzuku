@@ -84,6 +84,12 @@ object ModuleRuntimeUtils {
     }
 
     /**
+     * Non-throwing variant of [ensureInside] for callers that probe candidate paths.
+     */
+    fun isInside(root: File, child: File): Boolean =
+        runCatching { ensureInside(root, child) }.isSuccess
+
+    /**
      * Reads UTF-8 output from a [ParcelFileDescriptor] while retaining at most the last [maxChars] characters.
      */
     fun readStreamTail(

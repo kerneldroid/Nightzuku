@@ -132,16 +132,15 @@ class ModuleWebAssetServer(
         }
 
         val root = webRoot ?: return errorResponse(404, "Not Found", "Module webRoot is missing")
-        val cleanRelative = ModuleRuntimeUtils.cleanRelativePath(
-            if (trimmedPath.isEmpty() || decodedPath.endsWith("/")) {
-                "${trimmedPath.trimEnd('/')}/index.html".trimStart('/')
-            } else {
-                trimmedPath
-            }
-        )
-        if (cleanRelative == null) {
-            return forbiddenResponse("Invalid or escaped module asset path")
-        }
+        val cleanRelative = runCatching {
+            ModuleRuntimeUtils.cleanRelativePath(
+                if (trimmedPath.isEmpty() || decodedPath.endsWith("/")) {
+                    "${trimmedPath.trimEnd('/')}/index.html".trimStart('/')
+                } else {
+                    trimmedPath
+                }
+            )
+        }.getOrNull() ?: return forbiddenResponse("Invalid or escaped module asset path")
 
         val candidate = resolveAssetCandidate(root, cleanRelative)
             ?: return errorResponse(404, "Not Found", "Asset not found: $cleanRelative")
@@ -153,7 +152,7 @@ class ModuleWebAssetServer(
         val root = webRoot ?: return forbiddenResponse("Module webRoot is missing")
         val path = uri.path ?: return forbiddenResponse("Invalid file URI")
         val target = File(path)
-        if (!ModuleRuntimeUtils.ensureInside(root, target)) {
+        if (!ModuleRuntimeUtils.isInside(root, target)) {
             return forbiddenResponse("Access outside module webRoot is forbidden")
         }
         val actualFile = when {
@@ -163,7 +162,7 @@ class ModuleWebAssetServer(
             else -> null
         } ?: return errorResponse(404, "Not Found", "File not found")
 
-        if (!ModuleRuntimeUtils.ensureInside(root, actualFile)) {
+        if (!ModuleRuntimeUtils.isInside(root, actualFile)) {
             return forbiddenResponse("Canonical path escaped module webRoot")
         }
         val normalizedMethod = method?.uppercase(Locale.US) ?: "GET"
@@ -172,7 +171,7 @@ class ModuleWebAssetServer(
 
     internal fun resolveAssetCandidate(root: File, cleanRelative: String): File? {
         val direct = if (cleanRelative.isEmpty()) root else root.resolve(cleanRelative)
-        if (!ModuleRuntimeUtils.ensureInside(root, direct)) {
+        if (!ModuleRuntimeUtils.isInside(root, direct)) {
             return null
         }
         if (direct.isFile) {
@@ -180,11 +179,11 @@ class ModuleWebAssetServer(
         }
         if (direct.isDirectory) {
             val indexHtml = direct.resolve("index.html")
-            if (indexHtml.isFile && ModuleRuntimeUtils.ensureInside(root, indexHtml)) {
+            if (indexHtml.isFile && ModuleRuntimeUtils.isInside(root, indexHtml)) {
                 return indexHtml
             }
             val indexHtm = direct.resolve("index.htm")
-            if (indexHtm.isFile && ModuleRuntimeUtils.ensureInside(root, indexHtm)) {
+            if (indexHtm.isFile && ModuleRuntimeUtils.isInside(root, indexHtm)) {
                 return indexHtm
             }
             return null
@@ -195,12 +194,12 @@ class ModuleWebAssetServer(
         if (!lastSegment.contains('.')) {
             for (ext in MODULE_FALLBACK_EXTENSIONS) {
                 val withExt = root.resolve("$cleanRelative$ext")
-                if (withExt.isFile && ModuleRuntimeUtils.ensureInside(root, withExt)) {
+                if (withExt.isFile && ModuleRuntimeUtils.isInside(root, withExt)) {
                     return withExt
                 }
             }
             val subDirIndex = root.resolve("$cleanRelative/index.js")
-            if (subDirIndex.isFile && ModuleRuntimeUtils.ensureInside(root, subDirIndex)) {
+            if (subDirIndex.isFile && ModuleRuntimeUtils.isInside(root, subDirIndex)) {
                 return subDirIndex
             }
         }
@@ -299,6 +298,7 @@ class ModuleWebAssetServer(
         const val LEGACY_SHARED_ASSET_HOST = "appassets.androidplatform.net"
         const val BUILTIN_BRIDGE_PATH = "__nightzuku__/bridge.js"
         const val BUILTIN_BRIDGE_ALIAS_PATH = "nightzuku.mjs"
+        const val VIRTUAL_BRIDGE_PATH = "/$BUILTIN_BRIDGE_PATH"
 
         private val MODULE_FALLBACK_EXTENSIONS = listOf(".js", ".mjs", ".cjs", ".json")
 
@@ -347,6 +347,9 @@ class ModuleWebAssetServer(
             }
             return "mod-$hexPrefix.$LEGACY_SHARED_ASSET_HOST"
         }
+
+        fun originForModule(moduleId: String): String =
+            "$HTTPS_SCHEME://${computeModuleHost(moduleId)}"
 
         fun resolveMimeType(fileName: String): String {
             val ext = fileName.substringAfterLast('.', "").lowercase(Locale.US)
