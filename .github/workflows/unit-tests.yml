@@ -73,9 +73,9 @@ jobs:
           echo 'org.gradle.caching=true' >> gradle.properties
           echo 'org.gradle.parallel=true' >> gradle.properties
 
-      - name: Run JVM & Robolectric Unit Tests (:common, :nightdog, :server, :manager)
+      - name: Run JVM & Robolectric Unit Tests (:shared, :common, :nightdog, :server, :manager)
         if: ${{ (inputs.suite || 'all') == 'all' || inputs.suite == 'jvm' }}
-        run: ./gradlew :common:testDebugUnitTest :nightdog:testDebugUnitTest :server:testDebugUnitTest :manager:testDebugUnitTest --continue
+        run: ./gradlew :shared:testDebugUnitTest :common:testDebugUnitTest :nightdog:testDebugUnitTest :server:testDebugUnitTest :manager:testDebugUnitTest --continue
 
       - name: Upload Unit Test Reports
         if: always() && ((inputs.suite || 'all') == 'all' || inputs.suite == 'jvm')

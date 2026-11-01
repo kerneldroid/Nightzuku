@@ -5,26 +5,20 @@ import androidx.core.os.bundleOf
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kerneldroid.nightzuku.api.LegacyParcelCodec
-import kerneldroid.nightzuku.api.NightClient
+import kerneldroid.nightzuku.api.NightProvider
 import kerneldroid.nightzuku.api.NightProtocol
 import moe.shizuku.api.BinderContainer
 import moe.shizuku.manager.module.ModuleRuntimeUtils
 import moe.shizuku.manager.utils.Logger.LOGGER
 import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuApiConstants.USER_SERVICE_ARG_TOKEN
-import rikka.shizuku.ShizukuProvider
 import rikka.shizuku.server.ktx.workerHandler
 
-class ShizukuManagerProvider : ShizukuProvider() {
+class ShizukuManagerProvider : NightProvider() {
 
     companion object {
         private const val METHOD_SEND_USER_SERVICE = "sendUserService"
         const val METHOD_VERIFY_HOST = "verifyNightzukuHost"
-    }
-
-    override fun onCreate(): Boolean {
-        disableAutomaticSuiInitialization()
-        return super.onCreate()
     }
 
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
@@ -49,21 +43,6 @@ class ShizukuManagerProvider : ShizukuProvider() {
         if (extras == null) return null
 
         return when (method) {
-            NightProtocol.METHOD_SEND_BINDER -> {
-                val binder = extras.getBinder(NightProtocol.EXTRA_BINDER)
-                if (binder != null && context != null) {
-                    NightClient.onBinderReceived(binder, context!!.packageName)
-                }
-                Bundle()
-            }
-            NightProtocol.METHOD_GET_BINDER -> {
-                val activeBinder = NightClient.getBinder()?.takeIf { it.pingBinder() }
-                    ?: Shizuku.getBinder()?.takeIf { it.pingBinder() }
-                    ?: return null
-                Bundle().apply {
-                    putBinder(NightProtocol.EXTRA_BINDER, activeBinder)
-                }
-            }
             NightProtocol.METHOD_SEND_USER_SERVICE, METHOD_SEND_USER_SERVICE -> {
                 handleSendUserService(extras)
             }

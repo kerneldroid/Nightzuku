@@ -32,6 +32,7 @@ import java.io.PrintWriter
 import java.io.StringWriter
 import java.text.SimpleDateFormat
 import java.util.*
+import kerneldroid.nightzuku.api.NightBinderWrapper
 import kerneldroid.nightzuku.api.NightClient
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -301,9 +302,14 @@ class MainActivity : ComponentActivity() {
             }
 
             runTestItem("package") {
-                if (!Shizuku.pingBinder()) throw IllegalStateException("Binder is inactive.")
-                if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
-                    throw IllegalStateException("Shizuku permission not granted.")
+                if (!NightClient.pingBinder() && !Shizuku.pingBinder()) throw IllegalStateException("Binder is inactive.")
+                val granted = if (NightClient.pingBinder()) {
+                    NightClient.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+                } else {
+                    Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+                }
+                if (!granted) {
+                    throw IllegalStateException("Nightzuku permission not granted.")
                 }
                 val count = queryPackagesCount()
                 TestResult(
@@ -373,7 +379,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun queryPackagesCount(): Int {
-        val binder = ShizukuBinderWrapper(SystemServiceHelper.getSystemService("package"))
+        val rawService = SystemServiceHelper.getSystemService("package") ?: throw IllegalStateException("package service not found")
+        val binder = if (NightClient.pingBinder()) NightBinderWrapper(rawService) else ShizukuBinderWrapper(rawService)
         val stubClass = Class.forName("android.content.pm.IPackageManager\$Stub")
         val asInterfaceMethod = stubClass.getMethod("asInterface", android.os.IBinder::class.java)
         val packageManagerInstance = asInterfaceMethod.invoke(null, binder)
