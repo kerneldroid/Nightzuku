@@ -2,9 +2,6 @@ name: Screenshots
 
 on:
   workflow_dispatch:
-  schedule:
-    # Weekly refresh so README screenshots do not drift too far from the UI.
-    - cron: '0 4 * * 1'
 
 permissions:
   contents: write
