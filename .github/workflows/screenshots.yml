@@ -1,0 +1,196 @@
+name: Screenshots
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly refresh so README screenshots do not drift too far from the UI.
+    - cron: '0 4 * * 1'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build debug APKs
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0
+      - name: Setup Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+      - name: Setup Android SDK
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --channel=3 \
+            "platforms;android-37.0" \
+            "build-tools;37.0.0" \
+            "ndk;29.0.14206865"
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+      - name: Configure Gradle
+        run: |
+          echo 'android.sdk.channel=3' >> gradle.properties
+          echo 'android.native.buildOutput=verbose' >> gradle.properties
+          echo 'org.gradle.caching=true' >> gradle.properties
+          echo 'org.gradle.parallel=true' >> gradle.properties
+      - name: Build debug APKs
+        run: ./gradlew :manager:assembleDebug :shizutest:assembleDebug
+      - name: Stage APKs
+        run: |
+          mkdir -p artifacts/apk
+          cp "$(ls out/apk/*-debug.apk | head -n 1)" artifacts/apk/nightzuku-debug.apk
+          cp shizutest/build/outputs/apk/debug/shizutest-debug.apk artifacts/apk/shizutest-debug.apk
+          ls -lh artifacts/apk
+      - name: Upload APKs
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshot-apks
+          path: artifacts/apk/
+          if-no-files-found: error
+          overwrite: true
+
+  capture:
+    name: Capture ${{ matrix.screen }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Android 17 (API 37 preview, canary SDK channel)
+          - screen: phone
+            api: '37.0'
+            target: google_apis
+            device: pixel_6
+          # Wear OS 7 (API 37 preview, signed Wear image)
+          - screen: wearos
+            api: '37.0'
+            target: android-wear-signed
+            device: wearos_small_round
+          # Android TV 16 (API 36)
+          - screen: tv
+            api: '36'
+            target: android-tv
+            device: tv_1080p
+    env:
+      SCREEN: ${{ matrix.screen }}
+      API_LEVEL: ${{ matrix.api }}
+      IMAGE_TARGET: ${{ matrix.target }}
+      DEVICE_PROFILE: ${{ matrix.device }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Download APKs
+        uses: actions/download-artifact@v8
+        with:
+          name: screenshot-apks
+          path: artifacts/apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install emulator and system image
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" --channel=3 \
+            "platform-tools" \
+            "emulator" \
+            "system-images;android-${API_LEVEL};${IMAGE_TARGET};x86_64"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+      - name: Create AVD
+        run: |
+          echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd \
+            -n screenshot \
+            -k "system-images;android-${API_LEVEL};${IMAGE_TARGET};x86_64" \
+            --device "${DEVICE_PROFILE}" \
+            --force
+      - name: Boot emulator and capture
+        run: |
+          set -euo pipefail
+          "$ANDROID_HOME/emulator/emulator" -avd screenshot \
+            -no-window -no-audio -no-boot-anim -no-snapshot \
+            -gpu swiftshader_indirect -accel on \
+            -camera-back none -camera-front none \
+            > emulator.log 2>&1 &
+          EMULATOR_PID=$!
+          trap 'kill "$EMULATOR_PID" 2>/dev/null || true' EXIT
+          adb wait-for-device
+          timeout 420 bash -c 'until [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d "\r")" = "1" ]; do sleep 2; done'
+          adb shell settings put secure user_setup_complete 1 || true
+          adb shell settings put global device_provisioned 1 || true
+          adb shell input keyevent 82 || true
+          ./scripts/capture-screenshots.sh "${SCREEN}"
+      - name: Upload emulator log on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: emulator-log-${{ matrix.screen }}
+          path: emulator.log
+          if-no-files-found: warn
+          overwrite: true
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots-${{ matrix.screen }}
+          path: artifacts/screenshots/${{ matrix.screen }}/
+          if-no-files-found: error
+          overwrite: true
+
+  publish:
+    name: Update README screenshots
+    needs: capture
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Download screenshots
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+      - name: Update screenshot directories
+        run: |
+          set -euo pipefail
+          for screen in phone wearos tv; do
+            mkdir -p "screenshots/${screen}"
+            cp -R "artifacts/screenshots-${screen}/." "screenshots/${screen}/"
+          done
+          git status --short screenshots
+      - name: Commit and push
+        run: |
+          set -euo pipefail
+          git add screenshots
+          if git diff --cached --quiet; then
+            echo "No screenshot changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(screenshots): refresh emulator screenshots"
+          git push origin "HEAD:${GITHUB_REF_NAME}"

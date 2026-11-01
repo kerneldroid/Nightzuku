@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      Debug-only overrides used by the Screenshots workflow. The screenshot runner
+      launches each screen directly with `adb shell am start`; these activities
+      stay non-exported in release builds.
+    -->
+    <application>
+        <activity
+            android:name=".management.ApplicationManagementActivity"
+            android:exported="true" />
+        <activity
+            android:name=".settings.SettingsActivity"
+            android:exported="true"
+            tools:replace="android:exported" />
+        <activity
+            android:name=".settings.LabFeaturesActivity"
+            android:exported="true"
+            tools:replace="android:exported" />
+        <activity
+            android:name=".module.ModulesActivity"
+            android:exported="true"
+            tools:replace="android:exported" />
+        <activity
+            android:name=".module.ModuleWebViewActivity"
+            android:exported="true"
+            tools:replace="android:exported" />
+        <activity
+            android:name=".starter.StarterActivity"
+            android:exported="true" />
+    </application>
+</manifest>

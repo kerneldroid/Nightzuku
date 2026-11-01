@@ -23,3 +23,4 @@ signing.properties
 !gradle/wrapper/gradle-wrapper.jar
 view.xml
 packages.txt
+/artifacts/
