@@ -26,4 +26,7 @@
 
     <!-- Lab Features -->
     <string name="lab_features_title">實驗室功能</string>
+    <string name="stub_notice_title">喂，朋友，請睇吓！</string>
+    <string name="stub_notice_message"><![CDATA[Nightzuku 可以同使用 Shizuku API 嘅客戶端一齊運作，但佢唔可以啟用 stub 令其他應用程式見到 Shizuku 套件 ID。建議安裝任何版本嘅普通 Shizuku；唔需要啟用，佢會係一個空殼。我基於原則唔會提供呢個空殼：涉及授權問題，亦都唔想建立同維護佢。]]></string>
+    <string name="stub_notice_confirm">知道</string>
 </resources>

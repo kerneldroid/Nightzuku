@@ -45,11 +45,19 @@ abstract class AppActivity : MaterialActivity() {
         enableEdgeToEdge(statusBarStyle = barStyle, navigationBarStyle = barStyle)
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, 0, 0)
-            overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, 0, 0)
+            overrideActivityTransition(
+                OVERRIDE_TRANSITION_OPEN,
+                R.anim.activity_open_enter,
+                R.anim.activity_open_exit
+            )
+            overrideActivityTransition(
+                OVERRIDE_TRANSITION_CLOSE,
+                R.anim.activity_close_enter,
+                R.anim.activity_close_exit
+            )
         } else {
             @Suppress("DEPRECATION")
-            overridePendingTransition(0, 0)
+            overridePendingTransition(R.anim.activity_open_enter, R.anim.activity_open_exit)
         }
     }
 
@@ -57,7 +65,7 @@ abstract class AppActivity : MaterialActivity() {
         super.startActivity(intent)
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             @Suppress("DEPRECATION")
-            overridePendingTransition(0, 0)
+            overridePendingTransition(R.anim.activity_open_enter, R.anim.activity_open_exit)
         }
     }
 
@@ -65,7 +73,7 @@ abstract class AppActivity : MaterialActivity() {
         super.finish()
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             @Suppress("DEPRECATION")
-            overridePendingTransition(0, 0)
+            overridePendingTransition(R.anim.activity_close_enter, R.anim.activity_close_exit)
         }
     }
 

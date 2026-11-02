@@ -473,4 +473,7 @@ With %1$s, in any terminal app, you can connect to and interact with the shell r
     <string name="app_control_last_connected">Last server connection</string>
     <string name="app_control_last_connected_never">Never connected</string>
     <string name="app_control_signer_sha256">Signing certificate SHA-256</string>
+    <string name="stub_notice_title">Hey, friend — please read!</string>
+    <string name="stub_notice_message"><![CDATA[Nightzuku can work with clients that use the Shizuku API, BUT it cannot activate the stub that makes other apps see the Shizuku package ID. Please install the regular Shizuku app (any version); you do not need to activate it — it can stay an empty shell. I do not ship that stub on principle: licensing concerns and no desire to build and maintain it.]]></string>
+    <string name="stub_notice_confirm">Got it</string>
 </resources>

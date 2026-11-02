@@ -18,8 +18,34 @@ object ShizukuSettings {
     const val LANGUAGE = "language"
     const val KEEP_START_ON_BOOT = "start_on_boot"
     private const val LAST_BOOT_COUNT = "last_boot_count"
+    private const val STUB_NOTICE_COUNT = "stub_notice_count"
+    private const val STUB_NOTICE_DONE = "stub_notice_done"
+    private const val STUB_NOTICE_LIMIT = 2
 
     private var sPreferences: SharedPreferences? = null
+
+    /**
+     * Returns true while the Shizuku-stub notice should still be displayed. The notice is
+     * shown at most [STUB_NOTICE_LIMIT] times; the done flag is persisted with the last show.
+     */
+    @JvmStatic
+    fun consumeStubNotice(): Boolean {
+        val prefs = getPreferences()
+        if (prefs.getBoolean(STUB_NOTICE_DONE, false)) {
+            return false
+        }
+        val shown = prefs.getInt(STUB_NOTICE_COUNT, 0)
+        if (shown >= STUB_NOTICE_LIMIT) {
+            prefs.edit().putBoolean(STUB_NOTICE_DONE, true).apply()
+            return false
+        }
+        val next = shown + 1
+        prefs.edit()
+            .putInt(STUB_NOTICE_COUNT, next)
+            .putBoolean(STUB_NOTICE_DONE, next >= STUB_NOTICE_LIMIT)
+            .apply()
+        return true
+    }
 
     @JvmStatic
     fun getPreferences(): SharedPreferences {

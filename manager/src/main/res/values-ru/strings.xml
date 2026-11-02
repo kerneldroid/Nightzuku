@@ -467,4 +467,7 @@
     <string name="app_control_last_connected">Последнее подключение к серверу</string>
     <string name="app_control_last_connected_never">Никогда не подключалось</string>
     <string name="app_control_signer_sha256">SHA-256 сертификата подписи</string>
+    <string name="stub_notice_title">Эй, дружище, прочти!</string>
+    <string name="stub_notice_message"><![CDATA[Nightzuku умеет работать с клиентами, использующими Shizuku API, НО он не умеет активировать stub, чтобы другие приложения видели ID пакета Shizuku. Желательно установить обычный Shizuku любой версии — активировать его не надо, он будет пустышкой. Я не делаю пустышку из принципа: проблема с лицензией и нежелание её создавать и поддерживать.]]></string>
+    <string name="stub_notice_confirm">Понятно</string>
 </resources>

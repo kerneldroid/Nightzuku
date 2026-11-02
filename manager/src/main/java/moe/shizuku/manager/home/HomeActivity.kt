@@ -107,6 +107,11 @@ abstract class HomeActivity : AppActivity() {
             var showWadbNotEnabledDialog by remember { mutableStateOf(false) }
             var showAdbPairDialog by remember { mutableStateOf(false) }
             var showStartMethodDialog by remember { mutableStateOf(false) }
+            var showStubNotice by remember { mutableStateOf(false) }
+
+            LaunchedEffect(Unit) {
+                showStubNotice = ShizukuSettings.consumeStubNotice()
+            }
 
             ShizukuExpressiveTheme {
                 Box(modifier = Modifier.fillMaxSize()) {
@@ -164,6 +169,10 @@ abstract class HomeActivity : AppActivity() {
                                 CustomTabsHelper.launchUrlOrCopy(this@HomeActivity, "https://github.com/kerneldroid/Nightzuku")
                             }
                         )
+                    }
+
+                    if (showStubNotice) {
+                        StubNoticeDialog(onDismiss = { showStubNotice = false })
                     }
 
                     if (showStopDialog) {

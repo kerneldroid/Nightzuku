@@ -85,4 +85,7 @@
     <string name="wear_catalog_sort_official">官方</string>
     <string name="wear_catalog_sort_by">排序方式</string>
     <string name="wear_catalog_filter">筛选</string>
+    <string name="stub_notice_title">嘿，朋友，请读一下！</string>
+    <string name="stub_notice_message"><![CDATA[Nightzuku 可以与使用 Shizuku API 的客户端配合工作，但它无法激活 stub 来让其他应用看到 Shizuku 包 ID。建议安装任意版本的普通 Shizuku；无需激活，它只作为空壳存在。出于原则我不提供这个空壳：涉及许可证问题，也不希望创建和维护它。]]></string>
+    <string name="stub_notice_confirm">知道了</string>
 </resources>

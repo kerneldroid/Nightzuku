@@ -394,8 +394,8 @@ class ApplicationManagementActivity : AppActivity() {
                                                             query = searchQuery,
                                                             onQueryChange = { searchQuery = it },
                                                             onSearch = { searchActive = false },
-                                                            expanded = searchActive,
-                                                            onExpandedChange = { searchActive = it },
+                                                            expanded = false,
+                                                            onExpandedChange = { },
                                                             placeholder = {
                                                                 Text(stringResource(R.string.app_management_search_hint))
                                                             },
@@ -418,8 +418,8 @@ class ApplicationManagementActivity : AppActivity() {
                                                             }
                                                         )
                                                     },
-                                                    expanded = searchActive,
-                                                    onExpandedChange = { searchActive = it },
+                                                    expanded = false,
+                                                    onExpandedChange = { },
                                                     modifier = Modifier.fillMaxWidth(),
                                                     shape = MaterialTheme.shapes.extraLarge
                                                 ) {
