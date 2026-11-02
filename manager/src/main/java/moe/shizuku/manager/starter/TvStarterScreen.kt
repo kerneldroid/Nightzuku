@@ -63,7 +63,7 @@ fun TvStarterScreen(
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
             item {
-                TvStarterStatusCard(
+                TvStarterStatus(
                     failed = failed,
                     startedWithRoot = startedWithRoot
                 )
@@ -78,54 +78,40 @@ fun TvStarterScreen(
 }
 
 @Composable
-private fun TvStarterStatusCard(
+private fun TvStarterStatus(
     failed: Boolean,
     startedWithRoot: Boolean
 ) {
-    val alpha = if (isSystemInDarkTheme()) 0.3f else 0.12f
-    TvSurface(
-        onClick = {},
+    Row(
         modifier = Modifier.fillMaxWidth(),
-        shape = TvClickableSurfaceDefaults.shape(shape = TvMaterialTheme.shapes.large),
-        colors = TvClickableSurfaceDefaults.colors(
-            containerColor = if (failed) {
-                TvMaterialTheme.colorScheme.errorContainer.copy(alpha = alpha)
-            } else {
-                TvMaterialTheme.colorScheme.surfaceVariant.copy(alpha = alpha)
-            },
-            focusedContainerColor = if (failed) {
-                TvMaterialTheme.colorScheme.errorContainer
-            } else {
-                TvMaterialTheme.colorScheme.surfaceVariant
-            }
-        )
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        Row(
-            modifier = Modifier.padding(24.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(20.dp)
-        ) {
-            ShizukuIcon(
-                icon = if (startedWithRoot) R.drawable.ic_root_24dp else R.drawable.ic_adb_24dp,
-                modifier = Modifier.size(48.dp),
-                tint = if (failed) TvMaterialTheme.colorScheme.error else TvMaterialTheme.colorScheme.primary
+        ShizukuIcon(
+            icon = if (startedWithRoot) R.drawable.ic_root_24dp else R.drawable.ic_adb_24dp,
+            modifier = Modifier.size(40.dp),
+            tint = if (failed) TvMaterialTheme.colorScheme.error else TvMaterialTheme.colorScheme.primary
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            TvText(
+                text = if (startedWithRoot) {
+                    stringResource(R.string.home_root_title)
+                } else {
+                    stringResource(R.string.home_wireless_adb_title)
+                },
+                style = TvMaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
             )
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                TvText(
-                    text = if (startedWithRoot) stringResource(R.string.home_root_title) else stringResource(R.string.home_wireless_adb_title),
-                    style = TvMaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                TvText(
-                    text = if (failed) {
-                        stringResource(R.string.notification_service_start_failed)
-                    } else {
-                        stringResource(R.string.notification_service_starting)
-                    },
-                    style = TvMaterialTheme.typography.bodyMedium,
-                    color = if (failed) TvMaterialTheme.colorScheme.error else TvMaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            TvText(
+                text = if (failed) {
+                    stringResource(R.string.notification_service_start_failed)
+                } else {
+                    stringResource(R.string.notification_service_starting)
+                },
+                style = TvMaterialTheme.typography.bodyMedium,
+                color = if (failed) TvMaterialTheme.colorScheme.error
+                else TvMaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

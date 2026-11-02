@@ -1,22 +1,30 @@
+@file:OptIn(
+    androidx.compose.foundation.layout.ExperimentalLayoutApi::class,
+    androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class
+)
+
 package moe.shizuku.manager.shell
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Code
-import androidx.compose.material.icons.rounded.HelpOutline
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.HelpOutline
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -24,13 +32,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import moe.shizuku.manager.R
-import moe.shizuku.manager.ui.compose.GuideHero
-import moe.shizuku.manager.ui.compose.GuideQuickStart
+import moe.shizuku.manager.ui.compose.GuideContent
+import moe.shizuku.manager.ui.compose.GuideIntro
 import moe.shizuku.manager.ui.compose.GuideStep
-import moe.shizuku.manager.ui.compose.GuideTimeline
+import moe.shizuku.manager.ui.compose.GuideStepList
+import moe.shizuku.manager.ui.compose.SettingsSectionHeader
 import moe.shizuku.manager.ui.compose.ShizukuIcon
 import moe.shizuku.manager.ui.compose.ShizukuLazyScaffold
-import moe.shizuku.manager.ui.compose.TerminalGuideIllustration
 
 @Composable
 fun ShellGuideScreen(
@@ -49,6 +57,7 @@ fun ShellGuideScreen(
     ShizukuLazyScaffold(
         title = stringResource(R.string.guide_rish_topbar),
         onNavigateUp = onNavigateUp,
+        contentPadding = PaddingValues(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 24.dp),
         actions = {
             IconButton(onClick = onViewHelp) {
                 ShizukuIcon(
@@ -59,95 +68,94 @@ fun ShellGuideScreen(
         }
     ) {
         item {
-            GuideHero(
-                icon = Icons.Rounded.Terminal,
-                eyebrow = "RISH",
-                title = stringResource(R.string.home_terminal_title),
-                subtitle = stringResource(R.string.guide_rish_hero_subtitle)
-            ) {
-                TerminalGuideIllustration(shName = shName, dexName = dexName)
-            }
-        }
+            GuideContent {
+                GuideIntro(stringResource(R.string.guide_rish_hero_subtitle))
 
-        item {
-            GuideQuickStart(
-                title = stringResource(R.string.guide_quick_start),
-                body = stringResource(R.string.guide_rish_quick_start_body)
-            ) {
-                Button(
-                    onClick = onExportFiles,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = androidx.compose.material3.MaterialTheme.shapes.largeIncreased
-                ) {
-                    Icon(Icons.Rounded.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.terminal_export_files))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = onExportFiles,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp),
+                        shape = MaterialTheme.shapes.largeIncreased
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.FolderOpen,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.terminal_export_files))
+                    }
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilledTonalButton(
+                            onClick = onCopySetup,
+                            shape = MaterialTheme.shapes.largeIncreased
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.ContentCopy,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(stringResource(R.string.guide_rish_copy_setup))
+                        }
+                        FilledTonalButton(
+                            onClick = onOpenTerminal,
+                            shape = MaterialTheme.shapes.largeIncreased
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Terminal,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(stringResource(R.string.guide_rish_open_terminal))
+                        }
+                    }
                 }
-                FilledTonalButton(
-                    onClick = onCopySetup,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = androidx.compose.material3.MaterialTheme.shapes.largeIncreased,
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surface,
-                        contentColor = androidx.compose.material3.MaterialTheme.colorScheme.primary
-                    )
-                ) {
-                    Icon(Icons.Rounded.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.guide_rish_copy_setup))
-                }
-                FilledTonalButton(
-                    onClick = onOpenTerminal,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = androidx.compose.material3.MaterialTheme.shapes.largeIncreased,
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surface,
-                        contentColor = androidx.compose.material3.MaterialTheme.colorScheme.primary
-                    )
-                ) {
-                    Icon(Icons.Rounded.Terminal, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.guide_rish_open_terminal))
-                }
-            }
-        }
 
-        item {
-            GuideTimeline(
-                steps = listOf(
-                    GuideStep(
-                        icon = Icons.Rounded.FolderOpen,
-                        title = stringResource(R.string.terminal_step_export_title),
-                        summary = stringResource(R.string.guide_rish_step_export_summary),
-                        detail = stringResource(R.string.guide_rish_step_export_detail),
-                        actionLabel = stringResource(R.string.terminal_export_files),
-                        onAction = onExportFiles
-                    ),
-                    GuideStep(
-                        icon = Icons.Rounded.Code,
-                        title = stringResource(R.string.terminal_step_configure_title),
-                        summary = stringResource(R.string.guide_rish_step_configure_summary),
-                        detail = stringResource(R.string.guide_rish_step_configure_detail),
-                        code = configureCommand,
-                        onCopyCode = { onCopyCommand(configureCommand) }
-                    ),
-                    GuideStep(
-                        icon = Icons.Rounded.Terminal,
-                        title = stringResource(R.string.terminal_step_launch_title),
-                        summary = stringResource(R.string.guide_rish_step_launch_summary),
-                        detail = stringResource(R.string.guide_rish_step_launch_detail),
-                        code = launchCommand,
-                        onCopyCode = { onCopyCommand(launchCommand) },
-                        actionLabel = stringResource(R.string.guide_rish_open_terminal),
-                        onAction = onOpenTerminal
-                    )
-                )
-            )
-        }
+                Spacer(Modifier.height(8.dp))
 
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                TextButton(onClick = onViewHelp) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SettingsSectionHeader(stringResource(R.string.guide_steps))
+                    GuideStepList(
+                        steps = listOf(
+                            GuideStep(
+                                title = stringResource(R.string.terminal_step_export_title),
+                                summary = stringResource(R.string.guide_rish_step_export_summary),
+                                detail = stringResource(R.string.guide_rish_step_export_detail),
+                                actionLabel = stringResource(R.string.terminal_export_files),
+                                onAction = onExportFiles
+                            ),
+                            GuideStep(
+                                title = stringResource(R.string.terminal_step_configure_title),
+                                summary = stringResource(R.string.guide_rish_step_configure_summary),
+                                detail = stringResource(R.string.guide_rish_step_configure_detail),
+                                code = configureCommand,
+                                onCopyCode = { onCopyCommand(configureCommand) }
+                            ),
+                            GuideStep(
+                                title = stringResource(R.string.terminal_step_launch_title),
+                                summary = stringResource(R.string.guide_rish_step_launch_summary),
+                                detail = stringResource(R.string.guide_rish_step_launch_detail),
+                                code = launchCommand,
+                                onCopyCode = { onCopyCommand(launchCommand) },
+                                actionLabel = stringResource(R.string.guide_rish_open_terminal),
+                                onAction = onOpenTerminal
+                            )
+                        )
+                    )
+                }
+
+                TextButton(
+                    onClick = onViewHelp,
+                    modifier = Modifier.heightIn(min = 48.dp),
+                    contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp)
+                ) {
                     Icon(
                         imageVector = Icons.Rounded.HelpOutline,
                         contentDescription = null,

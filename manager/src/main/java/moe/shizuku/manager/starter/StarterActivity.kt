@@ -20,21 +20,26 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
-import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableIntStateOf
@@ -43,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.LiveData
@@ -64,7 +70,6 @@ import moe.shizuku.manager.adb.AdbPairingRequiredException
 import moe.shizuku.manager.adb.PreferenceAdbKeyStore
 import moe.shizuku.manager.app.AppActivity
 import moe.shizuku.manager.ui.compose.HtmlText
-import moe.shizuku.manager.ui.compose.MonospaceLog
 import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
 import moe.shizuku.manager.ui.compose.ShizukuIcon
 import moe.shizuku.manager.ui.compose.ShizukuLazyScaffold
@@ -216,174 +221,45 @@ class StarterActivity : AppActivity() {
                             }
                         ) {
                             item {
-                                val heroContainer = if (failed) {
-                                    MaterialTheme.colorScheme.errorContainer
-                                } else {
-                                    MaterialTheme.colorScheme.primaryContainer
-                                }
-                                val heroOnContainer = if (failed) {
-                                    MaterialTheme.colorScheme.onErrorContainer
-                                } else {
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                }
-                                val badgeContainer = if (failed) {
-                                    MaterialTheme.colorScheme.error
-                                } else {
-                                    MaterialTheme.colorScheme.primary
-                                }
-                                val badgeOnContainer = if (failed) {
-                                    MaterialTheme.colorScheme.onError
-                                } else {
-                                    MaterialTheme.colorScheme.onPrimary
-                                }
+                                StarterStatusBlock(
+                                    failed = failed,
+                                    startedWithRoot = startedWithRoot
+                                )
+                            }
 
-                                Surface(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = MaterialTheme.shapes.extraExtraLarge,
-                                    color = heroContainer
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(20.dp),
-                                        verticalArrangement = Arrangement.spacedBy(14.dp)
-                                    ) {
-                                        Row(
-                                            horizontalArrangement = Arrangement.spacedBy(14.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Surface(
-                                                modifier = Modifier.size(44.dp),
-                                                shape = CircleShape,
-                                                color = badgeContainer
-                                            ) {
-                                                Box(contentAlignment = Alignment.Center) {
-                                                    ShizukuIcon(
-                                                        icon = if (failed) {
-                                                            R.drawable.ic_warning_24
-                                                        } else if (startedWithRoot) {
-                                                            R.drawable.ic_root_24dp
-                                                        } else {
-                                                            R.drawable.ic_adb_24dp
-                                                        },
-                                                        contentDescription = null,
-                                                        tint = badgeOnContainer,
-                                                        modifier = Modifier.size(24.dp)
-                                                    )
-                                                }
-                                            }
-                                            Column(
-                                                modifier = Modifier.weight(1f),
-                                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                                            ) {
-                                                Text(
-                                                    text = if (startedWithRoot) {
-                                                        HtmlText(R.string.home_root_title)
-                                                    } else {
-                                                        HtmlText(R.string.home_wireless_adb_title)
-                                                    },
-                                                    style = MaterialTheme.typography.titleLarge,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = heroOnContainer
-                                                )
-                                                Text(
-                                                    text = if (failed) {
-                                                        stringResource(R.string.notification_service_start_failed)
-                                                    } else {
-                                                        stringResource(R.string.notification_service_starting)
-                                                    },
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    color = heroOnContainer
-                                                )
-                                            }
-                                            if (!failed) {
-                                                LoadingIndicator(modifier = Modifier.size(30.dp))
-                                            }
-                                        }
-
-                                        Row(
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Surface(
-                                                shape = CircleShape,
-                                                color = badgeContainer,
-                                                contentColor = badgeOnContainer
-                                            ) {
-                                                Text(
-                                                    text = stringResource(
-                                                        if (startedWithRoot) R.string.starter_mode_root_badge
-                                                        else R.string.starter_mode_adb_badge
-                                                    ),
-                                                    style = MaterialTheme.typography.labelLarge,
-                                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                                                )
-                                            }
-                                        }
-
-                                        if (failed) {
-                                            FilledTonalButton(
-                                                onClick = { finish() },
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .height(44.dp),
-                                                shape = MaterialTheme.shapes.extraLargeIncreased
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Rounded.Close,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                                Spacer(Modifier.width(8.dp))
-                                                Text(stringResource(android.R.string.cancel))
-                                            }
-                                        }
-                                    }
+                            if (!failed) {
+                                item {
+                                    LinearProgressIndicator(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 4.dp)
+                                    )
                                 }
                             }
 
                             item {
-                                Surface(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = MaterialTheme.shapes.extraLarge,
-                                    color = MaterialTheme.colorScheme.surfaceContainerHigh
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(16.dp),
-                                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                                StarterLogSection(
+                                    logText = logText,
+                                    onCopy = { copyLogToClipboard(logText) }
+                                )
+                            }
+
+                            if (failed) {
+                                item {
+                                    FilledTonalButton(
+                                        onClick = { finish() },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(min = 48.dp),
+                                        shape = MaterialTheme.shapes.largeIncreased
                                     ) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Rounded.Terminal,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(18.dp),
-                                                    tint = MaterialTheme.colorScheme.primary
-                                                )
-                                                Text(
-                                                    text = stringResource(R.string.starter_output_title),
-                                                    style = MaterialTheme.typography.titleSmall,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
-                                            }
-                                            IconButton(
-                                                onClick = { copyLogToClipboard(logText) },
-                                                modifier = Modifier.size(32.dp)
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Rounded.ContentCopy,
-                                                    contentDescription = stringResource(R.string.starter_copy_log),
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                            }
-                                        }
-                                        MonospaceLog(text = logText)
+                                        Icon(
+                                            imageVector = Icons.Rounded.Close,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(stringResource(android.R.string.cancel))
                                     }
                                 }
                             }
@@ -522,6 +398,128 @@ private class ViewModel(context: Context, root: Boolean, host: String?, port: In
 
                 appendLine("\n${Log.getStackTraceString(it)}")
                 postResult(it)
+            }
+        }
+    }
+}
+
+@Composable
+private fun StarterStatusBlock(
+    failed: Boolean,
+    startedWithRoot: Boolean
+) {
+    val accent by animateColorAsState(
+        targetValue = if (failed) {
+            MaterialTheme.colorScheme.errorContainer
+        } else {
+            MaterialTheme.colorScheme.primaryContainer
+        },
+        label = "starterAccent"
+    )
+    val onAccent = if (failed) {
+        MaterialTheme.colorScheme.onErrorContainer
+    } else {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Surface(
+            modifier = Modifier.size(44.dp),
+            shape = CircleShape,
+            color = accent
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                ShizukuIcon(
+                    icon = when {
+                        failed -> R.drawable.ic_warning_24
+                        startedWithRoot -> R.drawable.ic_root_24dp
+                        else -> R.drawable.ic_adb_24dp
+                    },
+                    contentDescription = null,
+                    tint = onAccent,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = if (startedWithRoot) {
+                    HtmlText(R.string.home_root_title)
+                } else {
+                    HtmlText(R.string.home_wireless_adb_title)
+                },
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = stringResource(
+                    if (failed) R.string.notification_service_start_failed
+                    else R.string.notification_service_starting
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = stringResource(
+                    if (startedWithRoot) R.string.starter_mode_root_badge
+                    else R.string.starter_mode_adb_badge
+                ),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun StarterLogSection(
+    logText: String,
+    onCopy: () -> Unit
+) {
+    val scroll = rememberScrollState()
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = stringResource(R.string.starter_output_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            IconButton(onClick = onCopy) {
+                Icon(
+                    imageVector = Icons.Rounded.ContentCopy,
+                    contentDescription = stringResource(R.string.starter_copy_log)
+                )
+            }
+        }
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surfaceContainerLow
+        ) {
+            SelectionContainer {
+                Text(
+                    text = logText,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 280.dp)
+                        .verticalScroll(scroll)
+                        .padding(12.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
             }
         }
     }

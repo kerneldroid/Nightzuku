@@ -414,6 +414,10 @@
     <string name="guide_pairing_step_code_summary">Введите шестизначный код с компьютера.</string>
     <string name="guide_pairing_step_done_summary">Вернитесь в Nightzuku и запустите сервер.</string>
     <string name="guide_step_toggle">Показать или скрыть описание шага</string>
+    <string name="guide_step_expanded">Развёрнуто</string>
+    <string name="guide_step_collapsed">Свёрнуто</string>
+    <string name="guide_steps">Шаги</string>
+    <string name="guide_pairing_code_preview">Шестизначный код сопряжения</string>
     <string name="guide_copy_code">Скопировать код</string>
     <string name="adb_pairing_status_ready">Служба сопряжения активна</string>
     <string name="adb_pairing_status_blocked">Уведомления заблокированы</string>

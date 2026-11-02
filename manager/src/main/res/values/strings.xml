@@ -420,6 +420,10 @@ With %1$s, in any terminal app, you can connect to and interact with the shell r
     <string name="guide_pairing_step_code_summary">Enter the six-digit code shown on your computer.</string>
     <string name="guide_pairing_step_done_summary">Return to Nightzuku and start the server.</string>
     <string name="guide_step_toggle">Show or hide step details</string>
+    <string name="guide_step_expanded">Expanded</string>
+    <string name="guide_step_collapsed">Collapsed</string>
+    <string name="guide_steps">Steps</string>
+    <string name="guide_pairing_code_preview">Six-digit pairing code</string>
     <string name="guide_copy_code">Copy code</string>
     <string name="adb_pairing_status_ready">Pairing service active</string>
     <string name="adb_pairing_status_blocked">Notifications blocked</string>

@@ -53,16 +53,12 @@ fun WearStarterScreen(
                 )
             }
             item {
-                WearCard(
-                    onClick = {},
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    WearText(
-                        text = bodyText,
-                        style = WearMaterialTheme.typography.bodyMedium,
-                        color = if (failed) WearMaterialTheme.colorScheme.error else WearMaterialTheme.colorScheme.onSurface
-                    )
-                }
+                WearText(
+                    text = bodyText,
+                    style = WearMaterialTheme.typography.bodyMedium,
+                    color = if (failed) WearMaterialTheme.colorScheme.error
+                    else WearMaterialTheme.colorScheme.onSurface
+                )
             }
             item {
                 Box(

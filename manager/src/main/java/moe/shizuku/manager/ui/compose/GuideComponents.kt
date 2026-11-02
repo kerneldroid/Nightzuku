@@ -2,77 +2,80 @@ package moe.shizuku.manager.ui.compose
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowForward
-import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.Laptop
-import androidx.compose.material.icons.rounded.PhoneAndroid
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import moe.shizuku.manager.R
 
 /**
- * One step of a visual guide. Steps are rendered as expandable cards connected by
- * rounded arrows; the first one is expanded by default.
+ * Compact guide block used by the rish and ADB pairing screens.
+ *
+ * This intentionally does not have a hero/illustration container: the screen already has
+ * a top app bar, and the guide itself is a scannable list of short steps.
  */
 @Immutable
 data class GuideStep(
-    val icon: ImageVector,
     val title: String,
     val summary: String,
     val detail: String? = null,
@@ -84,221 +87,114 @@ data class GuideStep(
 )
 
 @Composable
-fun GuideHero(
-    icon: ImageVector,
-    eyebrow: String,
-    title: String,
-    subtitle: String,
-    modifier: Modifier = Modifier,
-    illustration: @Composable () -> Unit
-) {
-    var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { visible = true }
-
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(tween(350)) + slideInVertically(tween(450)) { it / 8 }
-    ) {
-        val shape = MaterialTheme.shapes.extraExtraLarge
-        val gradient = Brush.linearGradient(
-            listOf(
-                MaterialTheme.colorScheme.primaryContainer,
-                MaterialTheme.colorScheme.secondaryContainer,
-                MaterialTheme.colorScheme.tertiaryContainer
-            )
-        )
-        Box(
-            modifier = modifier
-                .fillMaxWidth()
-                .clip(shape)
-                .background(gradient)
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Surface(
-                        modifier = Modifier.size(46.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.primary
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                    }
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text(
-                            text = eyebrow,
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = title,
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                        Text(
-                            text = subtitle,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                        )
-                    }
-                }
-                illustration()
-            }
-        }
-    }
-}
-
-@Composable
-fun GuideQuickStart(
-    title: String,
-    body: String,
+fun GuideContent(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraExtraLarge,
-        color = MaterialTheme.colorScheme.secondaryContainer
-    ) {
+    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
         Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(
-                    modifier = Modifier.size(32.dp),
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.secondary
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Rounded.Bolt,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSecondary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                )
-            }
-            Text(
-                text = body,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f)
-            )
-            content()
-        }
+            modifier = Modifier
+                .widthIn(max = 640.dp)
+                .fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            content = content
+        )
     }
 }
 
 @Composable
-fun GuideTimeline(
-    steps: List<GuideStep>,
-    modifier: Modifier = Modifier
-) {
-    var expandedIndex by rememberSaveable { mutableIntStateOf(0) }
+fun GuideIntro(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        modifier = modifier.fillMaxWidth(),
+        style = MaterialTheme.typography.bodyLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
 
-    Column(modifier = modifier.fillMaxWidth()) {
+@Composable
+fun GuideStepList(
+    steps: List<GuideStep>,
+    modifier: Modifier = Modifier,
+    initiallyExpanded: Int = -1
+) {
+    var expandedIndex by rememberSaveable { mutableIntStateOf(initiallyExpanded) }
+    Column(modifier.fillMaxWidth()) {
         steps.forEachIndexed { index, step ->
-            GuideStepCard(
+            GuideStepRow(
                 step = step,
                 number = index + 1,
                 expanded = expandedIndex == index,
+                isLast = index == steps.lastIndex,
                 onToggle = {
                     expandedIndex = if (expandedIndex == index) -1 else index
                 }
             )
-            if (index < steps.lastIndex) {
-                GuideArrow(active = expandedIndex >= index)
-            }
         }
     }
 }
 
+private val GuideRailWidth = 36.dp
+private val GuideBadgeSize = 28.dp
+
 @Composable
-private fun GuideStepCard(
+private fun GuideStepRow(
     step: GuideStep,
     number: Int,
     expanded: Boolean,
+    isLast: Boolean,
     onToggle: () -> Unit
 ) {
-    val container by animateColorAsState(
-        targetValue = if (expanded) {
-            MaterialTheme.colorScheme.surfaceContainerHigh
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerLow
-        },
-        animationSpec = tween(250),
-        label = "guideStepContainer"
-    )
-    val badge by animateColorAsState(
-        targetValue = if (expanded) {
-            MaterialTheme.colorScheme.primary
-        } else {
-            MaterialTheme.colorScheme.secondaryContainer
-        },
-        animationSpec = tween(250),
-        label = "guideStepBadge"
+    val badgeContainer by animateColorAsState(
+        targetValue = if (expanded) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.surfaceContainerHighest,
+        animationSpec = tween(200),
+        label = "guideBadgeContainer"
     )
     val badgeContent by animateColorAsState(
-        targetValue = if (expanded) {
-            MaterialTheme.colorScheme.onPrimary
-        } else {
-            MaterialTheme.colorScheme.onSecondaryContainer
-        },
-        animationSpec = tween(250),
-        label = "guideStepBadgeContent"
+        targetValue = if (expanded) MaterialTheme.colorScheme.onPrimary
+        else MaterialTheme.colorScheme.onSurfaceVariant,
+        animationSpec = tween(200),
+        label = "guideBadgeContent"
     )
-    val arrowRotation by animateFloatAsState(
+    val rotation by animateFloatAsState(
         targetValue = if (expanded) 180f else 0f,
-        animationSpec = tween(250),
-        label = "guideStepArrow"
+        animationSpec = tween(200),
+        label = "guideChevron"
     )
+    val stateLabel = stringResource(
+        if (expanded) R.string.guide_step_expanded else R.string.guide_step_collapsed
+    )
+    val layoutDirection = LocalLayoutDirection.current
+    val railColor = MaterialTheme.colorScheme.outlineVariant
 
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .animateContentSize()
-            .clickable(onClick = onToggle),
-        shape = MaterialTheme.shapes.extraLarge,
-        color = container
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.Top
+    Box(Modifier.fillMaxWidth()) {
+        if (!isLast) {
+            Canvas(Modifier.matchParentSize()) {
+                val x = if (layoutDirection == LayoutDirection.Rtl) {
+                    size.width - GuideRailWidth.toPx() / 2f
+                } else {
+                    GuideRailWidth.toPx() / 2f
+                }
+                drawLine(
+                    color = railColor,
+                    start = Offset(x, GuideBadgeSize.toPx() + 4.dp.toPx()),
+                    end = Offset(x, size.height),
+                    strokeWidth = 2.dp.toPx(),
+                    cap = StrokeCap.Round
+                )
+            }
+        }
+
+        Row(Modifier.fillMaxWidth()) {
+            Box(
+                modifier = Modifier.width(GuideRailWidth),
+                contentAlignment = Alignment.TopCenter
             ) {
                 Surface(
-                    modifier = Modifier.size(36.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    color = badge
+                    modifier = Modifier.size(GuideBadgeSize),
+                    shape = CircleShape,
+                    color = badgeContainer
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(
@@ -309,61 +205,89 @@ private fun GuideStepCard(
                         )
                     }
                 }
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    Text(
-                        text = step.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = step.summary,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Icon(
-                    imageVector = Icons.Rounded.KeyboardArrowDown,
-                    contentDescription = stringResource(R.string.guide_step_toggle),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .size(22.dp)
-                        .rotate(arrowRotation)
-                )
             }
-
-            AnimatedVisibility(
-                visible = expanded,
-                enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(tween(200)),
-                exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(tween(150))
+            Spacer(Modifier.width(12.dp))
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(bottom = if (isLast) 0.dp else 20.dp)
             ) {
-                Column(
-                    modifier = Modifier.padding(start = 48.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(MaterialTheme.shapes.medium)
+                        .clickable(
+                            onClickLabel = stringResource(R.string.guide_step_toggle),
+                            role = Role.Button,
+                            onClick = onToggle
+                        )
+                        .semantics { stateDescription = stateLabel }
+                        .padding(vertical = 4.dp)
+                        .heightIn(min = 44.dp),
+                    verticalAlignment = Alignment.Top
                 ) {
-                    step.visual?.invoke()
-                    if (!step.detail.isNullOrBlank()) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
                         Text(
-                            text = step.detail,
+                            text = step.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = step.summary,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    if (!step.code.isNullOrBlank()) {
-                        GuideCodeChip(
-                            code = step.code,
-                            onCopy = step.onCopyCode
-                        )
-                    }
-                    if (step.actionLabel != null && step.onAction != null) {
-                        FilledTonalButton(
-                            onClick = step.onAction,
-                            shape = MaterialTheme.shapes.largeIncreased
-                        ) {
-                            Text(step.actionLabel)
+                    Icon(
+                        imageVector = Icons.Rounded.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .size(20.dp)
+                            .rotate(rotation)
+                    )
+                }
+
+                AnimatedVisibility(
+                    visible = expanded,
+                    enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(tween(200)),
+                    exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(tween(150))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(top = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        if (!step.detail.isNullOrBlank()) {
+                            Text(
+                                text = step.detail,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        step.visual?.invoke()
+                        if (!step.code.isNullOrBlank()) {
+                            CommandBlock(code = step.code, onCopy = step.onCopyCode)
+                        }
+                        if (step.actionLabel != null && step.onAction != null) {
+                            TextButton(
+                                onClick = step.onAction,
+                                modifier = Modifier.heightIn(min = 40.dp),
+                                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp)
+                            ) {
+                                Text(
+                                    text = step.actionLabel,
+                                    style = MaterialTheme.typography.labelLarge
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Icon(
+                                    imageVector = Icons.Rounded.ArrowForward,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -373,28 +297,33 @@ private fun GuideStepCard(
 }
 
 @Composable
-private fun GuideCodeChip(code: String, onCopy: (() -> Unit)?) {
+fun CommandBlock(
+    code: String,
+    onCopy: (() -> Unit)?,
+    modifier: Modifier = Modifier
+) {
+    val scroll = rememberScrollState()
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainerHighest
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            modifier = Modifier.padding(start = 12.dp, top = 2.dp, bottom = 2.dp, end = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = code,
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f)
-            )
+            SelectionContainer(Modifier.weight(1f)) {
+                Text(
+                    text = code,
+                    modifier = Modifier.horizontalScroll(scroll),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1
+                )
+            }
             if (onCopy != null) {
-                IconButton(onClick = onCopy) {
+                IconButton(onClick = onCopy, modifier = Modifier.size(40.dp)) {
                     Icon(
                         imageVector = Icons.Rounded.ContentCopy,
                         contentDescription = stringResource(R.string.guide_copy_code),
@@ -406,166 +335,75 @@ private fun GuideCodeChip(code: String, onCopy: (() -> Unit)?) {
     }
 }
 
+enum class GuideNoteTone { Neutral, Warning }
+
 @Composable
-private fun GuideArrow(active: Boolean) {
-    val alpha by animateFloatAsState(
-        targetValue = if (active) 1f else 0.4f,
-        animationSpec = tween(250),
-        label = "guideArrowAlpha"
-    )
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 3.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Box(
-            modifier = Modifier
-                .width(2.dp)
-                .height(6.dp)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = alpha * 0.4f), CircleShape)
-        )
-        Surface(
-            modifier = Modifier.size(30.dp),
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Rounded.ArrowDownward,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary.copy(alpha = alpha),
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        }
-        Box(
-            modifier = Modifier
-                .width(2.dp)
-                .height(6.dp)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = alpha * 0.4f), CircleShape)
-        )
-    }
-}
-
-/** Animated fake terminal used by the rish guide. */
-@Composable
-fun TerminalGuideIllustration(shName: String, dexName: String) {
-    val transition = rememberInfiniteTransition(label = "terminalCursor")
-    val cursorAlpha by transition.animateFloat(
-        initialValue = 1f,
-        targetValue = 0.15f,
-        animationSpec = infiniteRepeatable(tween(650), RepeatMode.Reverse),
-        label = "terminalCursorAlpha"
-    )
-
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        color = Color(0xFF11151B)
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf(Color(0xFFFF6B6B), Color(0xFFFFD166), Color(0xFF7BD88F)).forEach {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .background(it.copy(alpha = 0.85f), CircleShape)
-                    )
-                }
-            }
-            Text(
-                text = "$ export $shName $dexName",
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
-                color = Color(0xFFB9F6CA)
-            )
-            Text(
-                text = "$ sh $shName",
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
-                color = Color(0xFFE8EAED)
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "›",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                    color = Color(0xFFB9F6CA)
-                )
-                Spacer(Modifier.width(6.dp))
-                Box(
-                    modifier = Modifier
-                        .width(8.dp)
-                        .height(14.dp)
-                        .alpha(cursorAlpha)
-                        .background(Color(0xFFB9F6CA), RoundedCornerShape(2.dp))
-                )
-            }
-        }
-    }
-}
-
-/** Animated phone-to-computer illustration used by the pairing guide. */
-@Composable
-fun PairingGuideIllustration(connectionReady: Boolean) {
-    val transition = rememberInfiniteTransition(label = "pairingPulse")
-    val pulse by transition.animateFloat(
-        initialValue = 0.45f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
-        label = "pairingPulseAlpha"
-    )
-    val arrowAlpha = if (connectionReady) pulse else 0.35f
-
+fun GuideNote(
+    icon: ImageVector,
+    text: String,
+    modifier: Modifier = Modifier,
+    title: String? = null,
+    tone: GuideNoteTone = GuideNoteTone.Neutral
+) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.Top
     ) {
-        GuideDeviceTile(icon = Icons.Rounded.PhoneAndroid)
         Icon(
-            imageVector = Icons.Rounded.ArrowForward,
+            imageVector = icon,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary.copy(alpha = arrowAlpha),
-            modifier = Modifier.size(30.dp)
+            tint = if (tone == GuideNoteTone.Warning) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            modifier = Modifier
+                .padding(top = 2.dp)
+                .size(20.dp)
         )
-        GuideDeviceTile(icon = Icons.Rounded.Laptop)
-    }
-}
-
-@Composable
-private fun GuideDeviceTile(icon: ImageVector) {
-    Surface(
-        modifier = Modifier.size(74.dp),
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f)
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(34.dp)
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            if (title != null) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
 }
 
-/** Six empty rounded slots that mirror the pairing code dialog. */
+/** Six compact slots that mirror the pairing code dialog. */
 @Composable
-fun PairingCodePreview() {
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+fun PairingCodePreview(modifier: Modifier = Modifier) {
+    val label = stringResource(R.string.guide_pairing_code_preview)
+    Row(
+        modifier = modifier
+            .widthIn(max = 240.dp)
+            .fillMaxWidth()
+            .clearAndSetSemantics { contentDescription = label },
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
         repeat(6) {
             Surface(
-                modifier = Modifier.size(width = 34.dp, height = 42.dp),
-                shape = RoundedCornerShape(11.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .aspectRatio(0.8f),
+                shape = RoundedCornerShape(8.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerHighest
             ) {
-                Box(contentAlignment = Alignment.Center) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
                         text = "•",
                         style = MaterialTheme.typography.titleMedium,
