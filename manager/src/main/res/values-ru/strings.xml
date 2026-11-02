@@ -429,7 +429,8 @@
     <string name="app_management_search_empty">Подходящие приложения не найдены.</string>
     <string name="app_management_section_native">Нативный протокол (Nightzuku API)</string>
     <string name="app_management_section_legacy">Устаревший протокол (Shizuku API)</string>
-    <string name="app_management_hold_hint">Удерживайте приложение 3–4 сек. для глубокой настройки</string>
+    <string name="app_management_search_clear">Очистить поиск</string>
+    <string name="app_management_hold_hint">Удерживайте приложение 2 сек. для глубокой настройки</string>
     <string name="app_management_badge_native">Native Wire</string>
     <string name="app_management_badge_legacy">Legacy Wire</string>
     <string name="app_control_title">Контроль приложения</string>

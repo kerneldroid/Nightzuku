@@ -435,7 +435,8 @@ With %1$s, in any terminal app, you can connect to and interact with the shell r
     <string name="app_management_search_empty">No matching applications found.</string>
     <string name="app_management_section_native">Native Wire (Nightzuku API)</string>
     <string name="app_management_section_legacy">Legacy Wire (Shizuku API)</string>
-    <string name="app_management_hold_hint">Hold an app for 3–4s to open deep control</string>
+    <string name="app_management_search_clear">Clear search</string>
+    <string name="app_management_hold_hint">Hold an app for 2s to open deep control</string>
     <string name="app_management_badge_native">Native Wire</string>
     <string name="app_management_badge_legacy">Legacy Wire</string>
     <string name="app_control_title">App Control</string>

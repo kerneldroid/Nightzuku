@@ -34,6 +34,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DoneAll
@@ -47,8 +49,12 @@ import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DockedSearchBar
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -122,7 +128,7 @@ import rikka.lifecycle.Status
 import rikka.shizuku.Shizuku
 
 private const val PERMISSION_POLL_MS = 2500L
-private const val DEEP_CONTROL_HOLD_MS = 3200L
+private const val DEEP_CONTROL_HOLD_MS = 2000L
 private const val DEEP_CONTROL_PROGRESS_DELAY_MS = 220L
 
 class ApplicationManagementActivity : AppActivity() {
@@ -263,6 +269,7 @@ class ApplicationManagementActivity : AppActivity() {
             } else {
                 val rows by viewModel.rows.collectAsStateWithLifecycle()
                 var searchQuery by rememberSaveable { mutableStateOf("") }
+                var searchActive by rememberSaveable { mutableStateOf(false) }
                 var activeControlKey by rememberSaveable { mutableStateOf<String?>(null) }
                 val activeControlRow = remember(rows, activeControlKey) {
                     activeControlKey?.let { key -> rows?.firstOrNull { it.key == key } }
@@ -381,39 +388,48 @@ class ApplicationManagementActivity : AppActivity() {
                                                     .padding(bottom = 10.dp),
                                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                                             ) {
-                                                TextField(
-                                                    value = searchQuery,
-                                                    onValueChange = { searchQuery = it },
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    placeholder = {
-                                                        Text(stringResource(R.string.app_management_search_hint))
-                                                    },
-                                                    leadingIcon = {
-                                                        Icon(
-                                                            imageVector = Icons.Rounded.Search,
-                                                            contentDescription = null,
-                                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                DockedSearchBar(
+                                                    inputField = {
+                                                        SearchBarDefaults.InputField(
+                                                            query = searchQuery,
+                                                            onQueryChange = { searchQuery = it },
+                                                            onSearch = { searchActive = false },
+                                                            expanded = searchActive,
+                                                            onExpandedChange = { searchActive = it },
+                                                            placeholder = {
+                                                                Text(stringResource(R.string.app_management_search_hint))
+                                                            },
+                                                            leadingIcon = {
+                                                                Icon(
+                                                                    imageVector = Icons.Rounded.Search,
+                                                                    contentDescription = null,
+                                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                                )
+                                                            },
+                                                            trailingIcon = {
+                                                                if (searchQuery.isNotEmpty()) {
+                                                                    IconButton(onClick = { searchQuery = "" }) {
+                                                                        Icon(
+                                                                            imageVector = Icons.Rounded.Close,
+                                                                            contentDescription = stringResource(R.string.app_management_search_clear)
+                                                                        )
+                                                                    }
+                                                                }
+                                                            }
                                                         )
                                                     },
-                                                    trailingIcon = {
-                                                        if (searchQuery.isNotEmpty()) {
-                                                            IconButton(onClick = { searchQuery = "" }) {
-                                                                Icon(
-                                                                    imageVector = Icons.Rounded.Close,
-                                                                    contentDescription = stringResource(R.string.update_settings_github_pat_clear)
-                                                                )
-                                                            }
-                                                        }
-                                                    },
-                                                    singleLine = true,
-                                                    shape = MaterialTheme.shapes.extraLarge,
-                                                    colors = TextFieldDefaults.colors(
-                                                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                                        focusedIndicatorColor = Color.Transparent,
-                                                        unfocusedIndicatorColor = Color.Transparent
+                                                    expanded = searchActive,
+                                                    onExpandedChange = { searchActive = it },
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    shape = MaterialTheme.shapes.extraLarge
+                                                ) {
+                                                    Text(
+                                                        text = stringResource(R.string.app_management_search_hint),
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        modifier = Modifier.padding(16.dp)
                                                     )
-                                                )
+                                                }
                                                 Text(
                                                     text = stringResource(R.string.app_management_hold_hint),
                                                     style = MaterialTheme.typography.labelSmall,
@@ -625,29 +641,6 @@ private fun AppPermissionRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        AssistChip(
-                            onClick = {},
-                            colors = AssistChipDefaults.assistChipColors(
-                                containerColor = if (row.isNativeWire) {
-                                    MaterialTheme.colorScheme.primaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceContainerHighest
-                                },
-                                labelColor = if (row.isNativeWire) {
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                }
-                            ),
-                            label = {
-                                Text(
-                                    stringResource(
-                                        if (row.isNativeWire) R.string.app_management_badge_native
-                                        else R.string.app_management_badge_legacy
-                                    )
-                                )
-                            }
-                        )
                         if (row.isOneTime && row.granted) {
                             AssistChip(
                                 onClick = {},
@@ -884,29 +877,6 @@ private fun DeepAppControlScreen(
                     ) {
                         AssistChip(
                             onClick = {},
-                            colors = AssistChipDefaults.assistChipColors(
-                                containerColor = if (row.isNativeWire) {
-                                    MaterialTheme.colorScheme.primaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceContainerHighest
-                                },
-                                labelColor = if (row.isNativeWire) {
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                }
-                            ),
-                            label = {
-                                Text(
-                                    stringResource(
-                                        if (row.isNativeWire) R.string.app_management_badge_native
-                                        else R.string.app_management_badge_legacy
-                                    )
-                                )
-                            }
-                        )
-                        AssistChip(
-                            onClick = {},
                             label = { Text("UID ${row.uid}") }
                         )
                         packageInfo?.versionName?.takeIf { it.isNotBlank() }?.let { ver ->
@@ -1075,7 +1045,7 @@ private fun DeepAppControlScreen(
                     SettingsSectionHeader(title = stringResource(R.string.app_control_runtime_section))
                     if (runtimePermissions.isNotEmpty()) {
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            FilledTonalButton(
+                            FilledTonalIconButton(
                                 onClick = {
                                     runPrivilegedAction {
                                         runtimePermissions.forEach { (perm, _) ->
@@ -1083,17 +1053,15 @@ private fun DeepAppControlScreen(
                                         }
                                     }
                                 },
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                modifier = Modifier.height(32.dp)
+                                modifier = Modifier.size(40.dp)
                             ) {
-                                Icon(Icons.Rounded.DoneAll, null, modifier = Modifier.size(15.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text(
-                                    stringResource(R.string.app_control_runtime_grant_all),
-                                    style = MaterialTheme.typography.labelMedium
+                                Icon(
+                                    imageVector = Icons.Rounded.CheckCircle,
+                                    contentDescription = stringResource(R.string.app_control_runtime_grant_all),
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
-                            OutlinedButton(
+                            OutlinedIconButton(
                                 onClick = {
                                     runPrivilegedAction {
                                         runtimePermissions.forEach { (perm, _) ->
@@ -1101,14 +1069,12 @@ private fun DeepAppControlScreen(
                                         }
                                     }
                                 },
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                modifier = Modifier.height(32.dp)
+                                modifier = Modifier.size(40.dp)
                             ) {
-                                Icon(Icons.Rounded.RemoveDone, null, modifier = Modifier.size(15.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text(
-                                    stringResource(R.string.app_control_runtime_revoke_all),
-                                    style = MaterialTheme.typography.labelMedium
+                                Icon(
+                                    imageVector = Icons.Rounded.Block,
+                                    contentDescription = stringResource(R.string.app_control_runtime_revoke_all),
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                         }

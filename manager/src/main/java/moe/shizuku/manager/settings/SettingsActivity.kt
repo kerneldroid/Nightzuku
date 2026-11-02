@@ -29,6 +29,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -52,6 +54,7 @@ import moe.shizuku.manager.receiver.BootCompleteReceiver
 import moe.shizuku.manager.ui.compose.SettingsItem
 import moe.shizuku.manager.ui.compose.SettingsSection
 import moe.shizuku.manager.ui.compose.SettingsSwitchItem
+import moe.shizuku.manager.ui.compose.AnimatedScreenContent
 import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
 import moe.shizuku.manager.ui.compose.ShizukuIcon
 import moe.shizuku.manager.ui.compose.ShizukuLazyScaffold
@@ -112,6 +115,29 @@ private enum class SecondarySubscreen(val depth: Int) {
     LAB_FEATURES(1)
 }
 
+private val PhoneSettingsRouteSaver = Saver<PhoneSettingsRoute, String>(
+    save = { route ->
+        when (route) {
+            PhoneSettingsRoute.Root -> "root"
+            is PhoneSettingsRoute.Category -> "category:${route.category.name}"
+            PhoneSettingsRoute.UpdateSettings -> "update"
+        }
+    },
+    restore = { value ->
+        when {
+            value == "root" -> PhoneSettingsRoute.Root
+            value == "update" -> PhoneSettingsRoute.UpdateSettings
+            value.startsWith("category:") -> {
+                val name = value.substringAfter("category:")
+                SettingsCategory.entries.firstOrNull { it.name == name }
+                    ?.let { PhoneSettingsRoute.Category(it) }
+                    ?: PhoneSettingsRoute.Root
+            }
+            else -> PhoneSettingsRoute.Root
+        }
+    }
+)
+
 @Composable
 private fun settingsCategoryAccent(index: Int): Pair<Color, Color> {
     val scheme = MaterialTheme.colorScheme
@@ -150,8 +176,12 @@ class SettingsActivity : AppActivity() {
             var showNightDialog by remember { mutableStateOf(false) }
             var showModuleModeDialog by remember { mutableStateOf(false) }
             var showCustomPermissionsDialog by remember { mutableStateOf(false) }
-            var phoneRoute by remember { mutableStateOf<PhoneSettingsRoute>(PhoneSettingsRoute.Root) }
-            var secondarySubscreen by remember { mutableStateOf(SecondarySubscreen.ROOT) }
+            var phoneRoute by rememberSaveable(stateSaver = PhoneSettingsRouteSaver) {
+                mutableStateOf<PhoneSettingsRoute>(PhoneSettingsRoute.Root)
+            }
+            var secondarySubscreen by rememberSaveable {
+                mutableStateOf(SecondarySubscreen.ROOT)
+            }
 
             var moduleAccessMode by remember {
                 mutableStateOf(ModuleSettings.getAccessMode())
@@ -207,8 +237,11 @@ class SettingsActivity : AppActivity() {
                         secondarySubscreen = SecondarySubscreen.ROOT
                     }
                     moe.shizuku.manager.ui.compose.WearShizukuTheme {
-                        run {
-                            val subscreen = secondarySubscreen
+                        AnimatedScreenContent(
+                            targetState = secondarySubscreen,
+                            label = "settingsWatchRoute",
+                            depth = { it.depth }
+                        ) { subscreen ->
                             when (subscreen) {
                                 SecondarySubscreen.TOKEN_SETTINGS -> {
                                     moe.shizuku.manager.module.catalog.WearTokenSettingsScreen(
@@ -279,8 +312,11 @@ class SettingsActivity : AppActivity() {
                         secondarySubscreen = SecondarySubscreen.ROOT
                     }
                     moe.shizuku.manager.ui.compose.TvShizukuTheme {
-                        run {
-                            val subscreen = secondarySubscreen
+                        AnimatedScreenContent(
+                            targetState = secondarySubscreen,
+                            label = "settingsTvRoute",
+                            depth = { it.depth }
+                        ) { subscreen ->
                             when (subscreen) {
                                 SecondarySubscreen.TOKEN_SETTINGS -> {
                                     TvTokenSettingsScreen(
@@ -363,8 +399,11 @@ class SettingsActivity : AppActivity() {
                             }
                         }
 
-                        run {
-                            val route = phoneRoute
+                        AnimatedScreenContent(
+                            targetState = phoneRoute,
+                            label = "settingsPhoneRoute",
+                            depth = { it.depth }
+                        ) { route ->
                             when (route) {
                                 is PhoneSettingsRoute.UpdateSettings -> {
                                     UpdateSettingsScreen(

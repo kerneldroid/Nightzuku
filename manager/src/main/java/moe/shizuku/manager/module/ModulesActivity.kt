@@ -114,6 +114,7 @@ import moe.shizuku.manager.module.update.UpdateSettingsScreen
 import moe.shizuku.manager.nightdog.NightDogClient
 import moe.shizuku.manager.ui.compose.ExpressiveSwitch
 import moe.shizuku.manager.ui.compose.MonospaceLog
+import moe.shizuku.manager.ui.compose.AnimatedScreenContent
 import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
 import moe.shizuku.manager.ui.compose.ShizukuIcon
 import moe.shizuku.manager.ui.compose.ShizukuLazyScaffold
@@ -315,8 +316,11 @@ class ModulesActivity : AppActivity() {
 
             if (isWatch) {
                 moe.shizuku.manager.ui.compose.WearShizukuTheme {
-                    run {
-                        val subscreen = activeSubscreen
+                    AnimatedScreenContent(
+                        targetState = activeSubscreen,
+                        label = "modulesRoute",
+                        depth = { it.depth }
+                    ) { subscreen ->
                         when (subscreen) {
                             ModulesSubscreen.CATALOG -> {
                                 moe.shizuku.manager.module.catalog.WearCatalogScreen(
@@ -429,8 +433,11 @@ class ModulesActivity : AppActivity() {
             } else if (isTv) {
                 moe.shizuku.manager.ui.compose.TvShizukuTheme {
                     Box(modifier = Modifier.fillMaxSize()) {
-                        run {
-                            val subscreen = activeSubscreen
+                        AnimatedScreenContent(
+                            targetState = activeSubscreen,
+                            label = "modulesRoute",
+                            depth = { it.depth }
+                        ) { subscreen ->
                             when (subscreen) {
                                 ModulesSubscreen.CATALOG -> {
                                     moe.shizuku.manager.module.catalog.TvCatalogScreen(
@@ -556,8 +563,11 @@ class ModulesActivity : AppActivity() {
                     }
                 }
             } else {
-                run {
-                    val subscreen = activeSubscreen
+                AnimatedScreenContent(
+                    targetState = activeSubscreen,
+                    label = "modulesRoute",
+                    depth = { it.depth }
+                ) { subscreen ->
                     when (subscreen) {
                         ModulesSubscreen.CATALOG -> {
                             moe.shizuku.manager.module.catalog.CatalogScreen(
