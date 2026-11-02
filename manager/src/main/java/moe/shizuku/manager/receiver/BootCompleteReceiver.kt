@@ -1,10 +1,8 @@
 package moe.shizuku.manager.receiver
 
-import android.Manifest.permission.WRITE_SECURE_SETTINGS
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
@@ -22,6 +20,7 @@ import moe.shizuku.manager.ShizukuSettings.LaunchMethod
 import moe.shizuku.manager.adb.AdbClient
 import moe.shizuku.manager.adb.AdbKey
 import moe.shizuku.manager.adb.AdbMdns
+import moe.shizuku.manager.adb.AdbSettings
 import moe.shizuku.manager.adb.PreferenceAdbKeyStore
 import moe.shizuku.manager.starter.Starter
 import moe.shizuku.manager.utils.UserHandleCompat
@@ -57,7 +56,6 @@ class BootCompleteReceiver : BroadcastReceiver() {
         if (launchMode == LaunchMethod.ROOT) {
             rootStart(currentBootCount)
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
-            && context.checkSelfPermission(WRITE_SECURE_SETTINGS) == PackageManager.PERMISSION_GRANTED
             && launchMode == LaunchMethod.ADB
         ) {
             adbStart(context, currentBootCount)
@@ -94,12 +92,7 @@ class BootCompleteReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val cr = context.contentResolver
-                Settings.Global.putInt(cr, "adb_wifi_enabled", 1)
-                Settings.Global.putInt(cr, Settings.Global.ADB_ENABLED, 1)
-                Settings.Global.putLong(cr, "adb_allowed_connection_time", 0L)
-
-                if (Settings.Global.getInt(cr, "adb_wifi_enabled", 0) != 1) {
+                if (!AdbSettings.enableWirelessAdb(context)) {
                     return@launch
                 }
 
