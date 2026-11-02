@@ -177,7 +177,8 @@ class ShizukuUserServiceManager : UserServiceManager() {
     fun claimUserServiceLaunch(token: String, hostPid: Int): Boolean {
         if (accessPaused) return false
         val record = activeTokens[token] ?: return false
-        if (!record.starting && (record.service == null || !record.service.pingBinder())) {
+        val service = record.service
+        if (!record.starting && (service == null || !service.pingBinder())) {
             activeTokens.remove(token)
             return false
         }

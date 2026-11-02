@@ -54,7 +54,7 @@ class Shell(private val mainHandler: Handler? = null) : Rish() {
 
             RishConfig.init(binder, ShizukuApiConstants.BINDER_DESCRIPTOR, 30000)
             Shizuku.onBinderReceived(binder, packageName)
-            Shizuku.addBinderReceivedListenerSticky {
+            Shizuku.addBinderReceivedListenerSticky(Shizuku.OnBinderReceivedListener {
                 val version = Shizuku.getVersion()
                 if (version < 12) {
                     System.err.println("Rish requires server 12 (running " + version + ")")
@@ -62,7 +62,7 @@ class Shell(private val mainHandler: Handler? = null) : Rish() {
                     System.exit(1)
                 }
                 Shell(handler).start(args)
-            }
+            })
         }
     }
 }

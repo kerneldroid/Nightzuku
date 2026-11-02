@@ -1206,7 +1206,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                     Service.LOGGER.i("service " + name + " is not started, wait 1s.")
                     Thread.sleep(1000)
                 } catch (e: InterruptedException) {
-                    Service.LOGGER.w(e.message, e)
+                    Service.LOGGER.w(e.message ?: "interrupted", e)
                 }
             }
         }
