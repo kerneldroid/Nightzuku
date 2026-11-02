@@ -254,6 +254,12 @@ object ServiceStarter {
                 Log.e(TAG, String.format("provider is dead %s %d", name, userId))
 
                 if (retry) {
+                    try {
+                        ActivityManagerApis.removeContentProviderExternal(name, null)
+                    } catch (tr: Throwable) {
+                        Log.w(TAG, "removeContentProviderExternal", tr)
+                    }
+                    provider = null
                     ActivityManagerApis.forceStopPackageNoThrow(MANAGER_PACKAGE, userId)
                     Log.e(TAG, String.format("kill %s in user %d and try again", MANAGER_PACKAGE, userId))
                     Thread.sleep(1000)

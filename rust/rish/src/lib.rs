@@ -40,7 +40,7 @@ fn register_natives(env: &mut JNIEnv, class_name: &str, methods: &[NativeMethod]
 #[unsafe(no_mangle)]
 pub extern "system" fn JNI_OnLoad(vm: JavaVM, _reserved: *mut c_void) -> jint {
     init_logging();
-    pts::initialize_mutexes();
+    pts::initialize_sync_primitives();
 
     let Ok(mut env) = vm.get_env() else {
         error!("Unable to obtain the JNI environment.");

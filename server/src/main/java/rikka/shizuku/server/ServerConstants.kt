@@ -24,4 +24,5 @@ object ServerConstants {
     const val BINDER_TRANSACTION_getAccessTimerRemaining = 10011
     const val BINDER_TRANSACTION_forceStopApp = 10012
     const val BINDER_TRANSACTION_getAppControlInfo = 10013
+    const val BINDER_TRANSACTION_requestBinderForClient = 10014
 }

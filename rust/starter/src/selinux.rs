@@ -160,23 +160,24 @@ pub fn init() {
 
     let symbol = resolve(handle, c"getcon");
     if !symbol.is_null() {
-        table.getcon = unsafe { std::mem::transmute(symbol) };
+        table.getcon = unsafe { std::mem::transmute::<*mut c_void, GetconFn>(symbol) };
     }
     let symbol = resolve(handle, c"setcon");
     if !symbol.is_null() {
-        table.setcon = unsafe { std::mem::transmute(symbol) };
+        table.setcon = unsafe { std::mem::transmute::<*mut c_void, SetconFn>(symbol) };
     }
     let symbol = resolve(handle, c"setfilecon");
     if !symbol.is_null() {
-        table.setfilecon = unsafe { std::mem::transmute(symbol) };
+        table.setfilecon = unsafe { std::mem::transmute::<*mut c_void, SetfileconFn>(symbol) };
     }
     let symbol = resolve(handle, c"selinux_check_access");
     if !symbol.is_null() {
-        table.selinux_check_access = unsafe { std::mem::transmute(symbol) };
+        table.selinux_check_access =
+            unsafe { std::mem::transmute::<*mut c_void, CheckAccessFn>(symbol) };
     }
     let symbol = resolve(handle, c"freecon");
     if !symbol.is_null() {
-        table.freecon = unsafe { std::mem::transmute(symbol) };
+        table.freecon = unsafe { std::mem::transmute::<*mut c_void, FreeconFn>(symbol) };
     }
 
     let _ = TABLE.set(table);

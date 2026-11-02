@@ -197,8 +197,10 @@
         <provider
             android:name=".connector.ShizukuConnectorProvider"
             android:authorities="${applicationId}.connector"
+            android:directBootAware="true"
+            android:enabled="true"
             android:exported="true"
-            android:permission="kerneldroid.nightzuku.permission.API" />
+            tools:ignore="ExportedContentProvider" />
     </application>
 
 </manifest>

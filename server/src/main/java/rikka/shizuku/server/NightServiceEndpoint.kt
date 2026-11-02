@@ -14,6 +14,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kerneldroid.nightzuku.api.NightProtocol
 import moe.shizuku.server.IShizukuApplication
+import moe.shizuku.server.IShizukuServiceConnection
 import rikka.hidden.compat.PackageManagerApis
 import rikka.shizuku.ShizukuApiConstants
 import rikka.shizuku.server.util.Logger
@@ -216,6 +217,42 @@ class NightServiceEndpoint(
                 reply.writeBundle(diagnostics)
                 return true
             }
+            NightProtocol.TRANSACTION_ADD_USER_SERVICE -> {
+                data.enforceInterface(NightProtocol.DESCRIPTOR)
+                val connBinder = data.readStrongBinder()
+                val conn = IShizukuServiceConnection.Stub.asInterface(connBinder)
+                val options = data.readBundle(NightServiceEndpoint::class.java.classLoader) ?: Bundle()
+                val res = service.addUserService(conn, options)
+                reply!!.writeNoException()
+                reply.writeInt(res)
+                return true
+            }
+            NightProtocol.TRANSACTION_REMOVE_USER_SERVICE -> {
+                data.enforceInterface(NightProtocol.DESCRIPTOR)
+                val connBinder = data.readStrongBinder()
+                val conn = IShizukuServiceConnection.Stub.asInterface(connBinder)
+                val options = data.readBundle(NightServiceEndpoint::class.java.classLoader) ?: Bundle()
+                val res = service.removeUserService(conn, options)
+                reply!!.writeNoException()
+                reply.writeInt(res)
+                return true
+            }
+            NightProtocol.TRANSACTION_NEW_PROCESS -> {
+                data.enforceInterface(NightProtocol.DESCRIPTOR)
+                val cmd = data.createStringArray()
+                if (cmd.isNullOrEmpty()) {
+                    throw IllegalArgumentException("Command array must not be empty")
+                }
+                val env = data.createStringArray()
+                val dir = data.readString()
+                val proc = service.newProcess(cmd, env, dir)
+                reply!!.writeNoException()
+                reply.writeStrongBinder(proc.asBinder())
+                return true
+            }
+        }
+        if (service.onTransactRish(code, data, reply, flags)) {
+            return true
         }
         return super.onTransact(code, data, reply, flags)
     }

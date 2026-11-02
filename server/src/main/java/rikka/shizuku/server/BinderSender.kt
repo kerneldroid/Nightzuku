@@ -145,6 +145,22 @@ object BinderSender {
         }
     }
 
+    @JvmStatic
+    fun dispatchTask(task: Runnable) {
+        dispatchExecutor.execute {
+            try {
+                task.run()
+            } catch (t: Throwable) {
+                logger.w(t, "Background binder dispatch task failed")
+            }
+        }
+    }
+
+    @JvmStatic
+    fun dispatchToUid(uid: Int, pid: Int = -1) {
+        dispatchAsync(uid, pid)
+    }
+
     private fun dispatchAsync(uid: Int, pid: Int) {
         dispatchExecutor.execute {
             try {

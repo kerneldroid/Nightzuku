@@ -1,15 +1,35 @@
+// Portions of the dual-stream stdout/stderr drain synchronization are adapted from
+// https://github.com/d4rken-org/porter-api (eu.darken.porter / porsh, Apache-2.0 / MIT).
+
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use jni::JNIEnv;
 use jni::objects::JClass;
 use jni::sys::{jbyte, jint, jlong};
 use log::{debug, info};
 
-use crate::pts;
+use crate::pts::{self, AttyFlags};
 
-extern "C" fn on_window_change(_signal: libc::c_int) {
-    pts::winch_mutex().unlock();
+fn install_sigwinch_handler() {
+    unsafe {
+        let mut winch_mask = std::mem::MaybeUninit::<libc::sigset_t>::zeroed();
+        libc::sigemptyset(winch_mask.as_mut_ptr());
+        libc::sigaddset(winch_mask.as_mut_ptr(), libc::SIGWINCH);
+        libc::pthread_sigmask(libc::SIG_UNBLOCK, winch_mask.as_ptr(), std::ptr::null_mut());
+
+        let mut sa = std::mem::MaybeUninit::<libc::sigaction>::zeroed();
+        let sa_ptr = sa.as_mut_ptr();
+        (*sa_ptr).sa_sigaction = pts::on_sigwinch as extern "C" fn(libc::c_int) as usize;
+        libc::sigemptyset(&raw mut (*sa_ptr).sa_mask);
+        (*sa_ptr).sa_flags = libc::SA_RESTART;
+        libc::sigaction(libc::SIGWINCH, sa.as_ptr(), std::ptr::null_mut());
+    }
 }
 
 pub(crate) extern "system" fn native_prepare(_env: JNIEnv, _class: JClass) -> jbyte {
+    pts::initialize_sync_primitives();
+
     let mut atty: jbyte = 0;
 
     if unsafe { libc::isatty(libc::STDIN_FILENO) } != 0 {
@@ -24,24 +44,19 @@ pub(crate) extern "system" fn native_prepare(_env: JNIEnv, _class: JClass) -> jb
         atty |= pts::ATTY_ERR;
     }
 
+    let flags = AttyFlags::from_bits(atty);
     debug!(
         "istty stdin {} stdout {} stderr {}",
-        jint::from(atty & pts::ATTY_IN != 0),
-        jint::from(atty & pts::ATTY_OUT != 0),
-        jint::from(atty & pts::ATTY_ERR != 0)
+        jint::from(flags.has_in()),
+        jint::from(flags.has_out()),
+        jint::from(flags.has_err())
     );
 
-    if atty & pts::ATTY_OUT != 0 {
-        let mut winch = std::mem::MaybeUninit::<libc::sigset_t>::zeroed();
-
-        unsafe {
-            libc::sigemptyset(winch.as_mut_ptr());
-            libc::sigaddset(winch.as_mut_ptr(), libc::SIGWINCH);
-            libc::pthread_sigmask(libc::SIG_BLOCK, winch.as_ptr(), std::ptr::null_mut());
-        }
+    if flags.has_out() {
+        install_sigwinch_handler();
     }
 
-    atty
+    flags.bits()
 }
 
 pub(crate) extern "system" fn native_start(
@@ -52,55 +67,72 @@ pub(crate) extern "system" fn native_start(
     stdout_pipe: jint,
     stderr_pipe: jint,
 ) -> jint {
-    let in_tty = tty & pts::ATTY_IN != 0;
-    let out_tty = tty & pts::ATTY_OUT != 0;
-    let err_tty = tty & pts::ATTY_ERR != 0;
+    let flags = AttyFlags::from_bits(tty);
 
-    let tty_fd = if in_tty {
+    let tty_fd = if flags.has_in() {
         libc::STDIN_FILENO
-    } else if out_tty {
+    } else if flags.has_out() {
         libc::STDOUT_FILENO
-    } else if err_tty {
+    } else if flags.has_err() {
         libc::STDERR_FILENO
     } else {
         -1
     };
 
-    let previous = if tty == pts::ATTY_ALL {
+    let previous = if flags.is_all() {
         pts::make_tty_raw(tty_fd)
     } else {
         None
     };
 
-    pts::process_exit_mutex().lock();
+    pts::process_exit_gate().reset();
 
-    pts::transfer_async(libc::STDIN_FILENO, stdin_pipe, None, true, true);
-    pts::transfer_async(
-        stdout_pipe,
-        libc::STDOUT_FILENO,
-        Some(Box::new(move || {
+    let pending = Arc::new(AtomicUsize::new(if flags.has_err() { 1 } else { 2 }));
+    let pending_out = Arc::clone(&pending);
+
+    let finish_stream = move |pending_ref: &AtomicUsize, prev_tty: Option<libc::termios>| {
+        if pending_ref.fetch_sub(1, Ordering::AcqRel) == 1 {
             info!("remote exit");
 
-            if let Some(previous) = previous {
+            if let Some(previous) = prev_tty {
                 pts::restore_fd(tty_fd, &previous);
             }
 
-            pts::process_exit_mutex().unlock();
+            pts::process_exit_gate().notify_exit();
+        }
+    };
+
+    pts::transfer_async(libc::STDIN_FILENO, stdin_pipe, None, false, true, false);
+    pts::transfer_async(
+        stdout_pipe,
+        libc::STDOUT_FILENO,
+        Some(Box::new(move |_failed| {
+            finish_stream(&pending_out, previous);
         })),
         true,
-        true,
+        false,
+        false,
     );
 
-    if !err_tty {
-        pts::transfer_async(stderr_pipe, libc::STDERR_FILENO, None, true, true);
+    if !flags.has_err() {
+        let pending_err = Arc::clone(&pending);
+        pts::transfer_async(
+            stderr_pipe,
+            libc::STDERR_FILENO,
+            Some(Box::new(move |_failed| {
+                finish_stream(&pending_err, previous);
+            })),
+            true,
+            false,
+            false,
+        );
+    } else if stderr_pipe >= 0 {
+        unsafe { libc::close(stderr_pipe) };
     }
 
-    unsafe {
-        libc::signal(
-            libc::SIGWINCH,
-            on_window_change as extern "C" fn(libc::c_int) as libc::sighandler_t,
-        )
-    };
+    if flags.has_out() {
+        install_sigwinch_handler();
+    }
 
     tty_fd
 }
@@ -110,14 +142,10 @@ pub(crate) extern "system" fn native_wait_for_window_size_change(
     _class: JClass,
     fd: jint,
 ) -> jlong {
-    pts::winch_mutex().lock();
-
+    pts::wait_for_sigwinch();
     pts::get_window_size(fd)
 }
 
 pub(crate) extern "system" fn native_wait_for_process_exit(_env: JNIEnv, _class: JClass) {
-    let mutex = pts::process_exit_mutex();
-
-    mutex.lock();
-    mutex.unlock();
+    pts::process_exit_gate().wait();
 }

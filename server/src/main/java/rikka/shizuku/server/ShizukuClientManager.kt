@@ -1,5 +1,6 @@
 package rikka.shizuku.server
 
+import android.os.IBinder
 import java.util.concurrent.ConcurrentHashMap
 import moe.shizuku.server.IShizukuApplication
 
@@ -9,6 +10,7 @@ class ShizukuClientManager(
 
     private val attachedRecords = ArrayList<ClientRecord>()
     private val legacyBinders = ConcurrentHashMap<Pair<Int, Int>, IShizukuApplication>()
+    private val legacyDeaths = ConcurrentHashMap<Pair<Int, Int>, IBinder.DeathRecipient>()
     private val oneTimeGrantedUids = ConcurrentHashMap.newKeySet<Int>()
 
     @Volatile
@@ -22,13 +24,27 @@ class ShizukuClientManager(
 
     fun registerLegacyApplication(uid: Int, pid: Int, application: IShizukuApplication) {
         val key = uid to pid
+        val oldApp = legacyBinders.remove(key)
+        val oldDeath = legacyDeaths.remove(key)
+        if (oldApp != null && oldDeath != null) {
+            try {
+                oldApp.asBinder().unlinkToDeath(oldDeath, 0)
+            } catch (_: Throwable) {
+            }
+        }
+
+        val death = IBinder.DeathRecipient {
+            if (legacyBinders.remove(key, application)) {
+                legacyDeaths.remove(key)
+            }
+        }
         legacyBinders[key] = application
+        legacyDeaths[key] = death
         try {
-            application.asBinder().linkToDeath({
-                legacyBinders.remove(key, application)
-            }, 0)
+            application.asBinder().linkToDeath(death, 0)
         } catch (_: Throwable) {
             legacyBinders.remove(key, application)
+            legacyDeaths.remove(key, death)
         }
     }
 
@@ -48,8 +64,20 @@ class ShizukuClientManager(
         return oneTimeGrantedUids.contains(uid)
     }
 
+    override fun onClientRemoved(clientRecord: ClientRecord) {
+        notifyProcessDied(clientRecord.uid, clientRecord.pid)
+    }
+
     fun notifyProcessDied(uid: Int, pid: Int) {
-        legacyBinders.remove(uid to pid)
+        val key = uid to pid
+        val oldApp = legacyBinders.remove(key)
+        val oldDeath = legacyDeaths.remove(key)
+        if (oldApp != null && oldDeath != null) {
+            try {
+                oldApp.asBinder().unlinkToDeath(oldDeath, 0)
+            } catch (_: Throwable) {
+            }
+        }
         var removedRecord: ClientRecord? = null
         synchronized(this) {
             val iterator = attachedRecords.iterator()
@@ -93,15 +121,6 @@ class ShizukuClientManager(
             }
         }
 
-        val binder = client?.asBinder()
-        if (binder != null) {
-            try {
-                binder.linkToDeath({
-                    notifyProcessDied(uid, pid)
-                }, 0)
-            } catch (_: Throwable) {
-            }
-        }
         return record
     }
 }

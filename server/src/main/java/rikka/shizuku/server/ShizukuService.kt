@@ -25,21 +25,23 @@ import kerneldroid.nightzuku.api.NightProtocol
 import kerneldroid.nightzuku.util.PackageSignatureVerifier
 import moe.shizuku.api.BinderContainer
 import moe.shizuku.common.util.BuildUtils
-import rikka.shizuku.server.util.OsUtils
+import moe.shizuku.server.IRemoteProcess
 import moe.shizuku.server.IShizukuApplication
+import moe.shizuku.server.IShizukuServiceConnection
 import rikka.hidden.compat.ActivityManagerApis
 import rikka.hidden.compat.DeviceIdleControllerApis
 import rikka.hidden.compat.PackageManagerApis
+import rikka.parcelablelist.ParcelableListSlice
+import rikka.rish.RishConfig
 import rikka.shizuku.ShizukuApiConstants
 import rikka.shizuku.common.util.InstalledPackagesCompat
 import rikka.shizuku.nightdog.NightDog
-import rikka.shizuku.server.util.IContentProviderUtils
 import rikka.shizuku.server.util.Android17Compat
 import rikka.shizuku.server.util.HandlerUtil
+import rikka.shizuku.server.util.IContentProviderUtils
+import rikka.shizuku.server.util.OsUtils
 import rikka.shizuku.server.util.UserHandleCompat
 import rikka.shizuku.server.util.UsersCompat
-import rikka.parcelablelist.ParcelableListSlice
-import rikka.rish.RishConfig
 
 class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, ShizukuConfigManager>() {
 
@@ -104,7 +106,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
 
         startPackageReconciler()
 
-        mainHandler.post {
+        BinderSender.dispatchTask {
             sendBinderToManager()
             sendBinderToClient()
         }
@@ -120,6 +122,102 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
 
     override fun onCreateConfigManager(): ShizukuConfigManager {
         return ShizukuConfigManager()
+    }
+
+    override fun newProcess(cmd: Array<String>, env: Array<String>?, dir: String?): IRemoteProcess {
+        val callingUid = Binder.getCallingUid()
+        val callingPid = Binder.getCallingPid()
+        enforceCallingPermission("newProcess")
+        TransactGuard.enforceCapability(
+            configManager,
+            callingUid,
+            checkCallerManagerPermission("newProcess", callingUid, callingPid),
+            NightProtocol.CAP_SHELL_EXEC,
+            "newProcess"
+        )
+        return super.newProcess(cmd, env, dir)
+    }
+
+    override fun getSystemProperty(name: String, defaultValue: String?): String {
+        val callingUid = Binder.getCallingUid()
+        val callingPid = Binder.getCallingPid()
+        enforceCallingPermission("getSystemProperty")
+        TransactGuard.enforceCapability(
+            configManager,
+            callingUid,
+            checkCallerManagerPermission("getSystemProperty", callingUid, callingPid),
+            NightProtocol.CAP_SYSTEM_PROPS,
+            "getSystemProperty"
+        )
+        return super.getSystemProperty(name, defaultValue)
+    }
+
+    override fun setSystemProperty(name: String, value: String) {
+        val callingUid = Binder.getCallingUid()
+        val callingPid = Binder.getCallingPid()
+        enforceCallingPermission("setSystemProperty")
+        TransactGuard.enforceCapability(
+            configManager,
+            callingUid,
+            checkCallerManagerPermission("setSystemProperty", callingUid, callingPid),
+            NightProtocol.CAP_SYSTEM_PROPS,
+            "setSystemProperty"
+        )
+        super.setSystemProperty(name, value)
+    }
+
+    override fun addUserService(conn: IShizukuServiceConnection?, options: Bundle): Int {
+        val callingUid = Binder.getCallingUid()
+        val callingPid = Binder.getCallingPid()
+        enforceCallingPermission("addUserService")
+        TransactGuard.enforceCapability(
+            configManager,
+            callingUid,
+            checkCallerManagerPermission("addUserService", callingUid, callingPid),
+            NightProtocol.CAP_USER_SERVICE,
+            "addUserService"
+        )
+        return super.addUserService(conn, options)
+    }
+
+    override fun removeUserService(conn: IShizukuServiceConnection?, options: Bundle): Int {
+        val callingUid = Binder.getCallingUid()
+        val callingPid = Binder.getCallingPid()
+        enforceCallingPermission("removeUserService")
+        TransactGuard.enforceCapability(
+            configManager,
+            callingUid,
+            checkCallerManagerPermission("removeUserService", callingUid, callingPid),
+            NightProtocol.CAP_USER_SERVICE,
+            "removeUserService"
+        )
+        return super.removeUserService(conn, options)
+    }
+
+    override fun checkSelfPermission(): Boolean {
+        val callingUid = Binder.getCallingUid()
+        val callingPid = Binder.getCallingPid()
+        if (callingUid == OsUtils.getUid() || callingPid == OsUtils.getPid()) {
+            return true
+        }
+        if (checkCallerManagerPermission("checkSelfPermission", callingUid, callingPid)) {
+            return true
+        }
+        if (configManager.isAccessPaused()) {
+            return false
+        }
+        val clientRecord = clientManager.findClient(callingUid, callingPid)
+        if (clientRecord != null) {
+            return clientRecord.allowed
+        }
+        if (checkCallingPermission() == PackageManager.PERMISSION_GRANTED) {
+            val packages = PackageManagerApis.getPackagesForUidNoThrow(callingUid)
+            if (packages.any { configManager.verifyClientIdentity(callingUid, it) }) {
+                configManager.recordConnection(callingUid)
+                return true
+            }
+        }
+        return false
     }
 
     /**
@@ -307,6 +405,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         }
         if (clientRecord != null && clientRecord.allowed) {
             configManager.recordConnection(callingUid)
+            return true
         }
         return false
     }
@@ -1110,6 +1209,20 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             replyParcel.writeNoException()
             replyParcel.writeBundle(bundle)
             return true
+        } else if (code == ServerConstants.BINDER_TRANSACTION_requestBinderForClient) {
+            val replyParcel = reply!!
+            val callingUid = Binder.getCallingUid()
+            val callingPid = Binder.getCallingPid()
+            data.enforceInterface(ShizukuApiConstants.BINDER_DESCRIPTOR)
+            val targetUid = data.readInt()
+            val targetPid = data.readInt()
+            if (!checkCallerManagerPermission("requestBinderForClient", callingUid, callingPid) && callingUid != targetUid) {
+                replyParcel.writeException(SecurityException("Permission denied"))
+                return true
+            }
+            BinderSender.dispatchToUid(targetUid, targetPid)
+            replyParcel.writeNoException()
+            return true
         }
         return super.onTransact(code, data, reply, flags)
     }
@@ -1140,8 +1253,10 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                                 }
                                 if (name == Context.ACTIVITY_SERVICE || name == "package" || name == Context.USER_SERVICE) {
                                     reconcileManagerAndClients()
-                                    sendBinderToManager()
-                                    sendBinderToClient()
+                                    BinderSender.dispatchTask {
+                                        sendBinderToManager()
+                                        sendBinderToClient()
+                                    }
                                 }
                             }
                         }
@@ -1308,6 +1423,12 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                     Service.LOGGER.e("provider is dead %s %d", name, userId)
 
                     if (retry) {
+                        try {
+                            ActivityManagerApis.removeContentProviderExternal(name, token)
+                        } catch (tr: Throwable) {
+                            Service.LOGGER.w(tr, "removeContentProviderExternal")
+                        }
+                        provider = null
                         ActivityManagerApis.forceStopPackageNoThrow(packageName, userId)
                         Service.LOGGER.e("kill %s in user %d and try again", packageName, userId)
                         Thread.sleep(1000)

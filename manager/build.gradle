@@ -112,7 +112,7 @@ def collapseReleaseResourceNames = task('collapseReleaseResourceNames').doLast {
     }
 }
 
-ext.rustPackages = ['starter', 'adb-pairing']
+ext.rustPackages = ['starter', 'adb_pairing']
 ext.rustExecutables = ['shizuku': 'libshizuku.so']
 apply from: rootProject.file('gradle/rust-native.gradle')
 

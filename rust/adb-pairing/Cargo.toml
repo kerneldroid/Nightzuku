@@ -1,7 +1,8 @@
 [package]
-name = "adb-pairing"
+name = "adb_pairing"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
@@ -11,15 +12,15 @@ crate-type = ["cdylib"]
 path = "src/lib.rs"
 
 [dependencies]
-aes-gcm = { version = "0.10", features = ["zeroize"] }
-curve25519-dalek = "4"
+aes-gcm = "0.10"
+curve25519-dalek = { version = "4", features = ["digest"] }
 hkdf = "0.12"
 jni = "0.21"
 log = "0.4"
 rand = "0.8"
 sha2 = "0.10"
-subtle = "2"
-zeroize = "1"
+subtle = "2.6"
+zeroize = "1.8"
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.14"

@@ -2,11 +2,16 @@ package moe.shizuku.manager.connector
 
 import android.content.ContentProvider
 import android.content.ContentValues
+import android.content.pm.PackageManager
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
 import android.os.Binder
+import android.os.Bundle
 import android.os.Process
+import kerneldroid.nightzuku.api.NightProtocol
+import moe.shizuku.manager.Manifest
+import moe.shizuku.manager.ShizukuManagerProvider
 import moe.shizuku.manager.module.ModuleSettings
 import moe.shizuku.manager.starter.Starter
 
@@ -17,6 +22,16 @@ class ShizukuConnectorProvider : ContentProvider() {
             moe.shizuku.manager.ShizukuSettings.initialize(it)
         }
         return true
+    }
+
+    override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
+        if (method == NightProtocol.METHOD_REQUEST_BINDER ||
+            method == NightProtocol.LEGACY_METHOD_REQUEST_BINDER
+        ) {
+            val ctx = context ?: return null
+            return ShizukuManagerProvider.handleClientBinderRequest(ctx, method, extras)
+        }
+        return super.call(method, arg, extras)
     }
 
     override fun query(
@@ -33,6 +48,9 @@ class ShizukuConnectorProvider : ContentProvider() {
         val ctx = context ?: return null
         val callingUid = Binder.getCallingUid()
         if (callingUid != Process.myUid() && callingUid != 0 && callingUid != 2000) {
+            if (ctx.checkCallingOrSelfPermission(Manifest.permission.API) != PackageManager.PERMISSION_GRANTED) {
+                return null
+            }
             val callerPkg = callingPackage
             val uidPackages = runCatching {
                 ctx.packageManager.getPackagesForUid(callingUid)?.toList().orEmpty()

@@ -3,7 +3,7 @@
 version = 4
 
 [[package]]
-name = "adb-pairing"
+name = "adb_pairing"
 version = "0.1.0"
 dependencies = [
  "aes-gcm",
@@ -51,7 +51,6 @@ dependencies = [
  "ctr",
  "ghash",
  "subtle",
- "zeroize",
 ]
 
 [[package]]
@@ -165,6 +164,7 @@ dependencies = [
  "cfg-if",
  "cpufeatures",
  "curve25519-dalek-derive",
+ "digest",
  "fiat-crypto",
  "rustc_version",
  "subtle",

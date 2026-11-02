@@ -1,7 +1,6 @@
 package rikka.shizuku.server
 
 import android.content.pm.PackageInfo
-import android.os.Process
 import android.util.ArrayMap
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -11,11 +10,17 @@ import rikka.shizuku.server.util.Android17Compat
 import rikka.shizuku.server.util.UserHandleCompat
 import rikka.shizuku.server.util.UsersCompat
 
+/**
+ * Nightzuku implementation of [UserServiceManager].
+ *
+ * Portions of the record reuse verification (`canReuseUserServiceRecord`) and `/proc/<pid>/stat`
+ * host process identity tracking (`super.claimUserServiceLaunch` / `HostProcess`) are adapted from
+ * [d4rken-org/porter-api](https://github.com/d4rken-org/porter-api) (`eu.darken.porter`).
+ */
 class ShizukuUserServiceManager : UserServiceManager() {
 
     private val apkChangedListeners: MutableMap<UserServiceRecord, ApkChangedListener> = ArrayMap()
     private val activeTokens = ConcurrentHashMap<String, UserServiceRecord>()
-    private val claimedHostPids = ConcurrentHashMap<String, Int>()
     private val recordBaselines = ConcurrentHashMap<UserServiceRecord, PackageSignatureVerifier.Baseline>()
     private val recordUids = ConcurrentHashMap<UserServiceRecord, Int>()
 
@@ -50,8 +55,8 @@ class ShizukuUserServiceManager : UserServiceManager() {
      * Removes only the [UserServiceRecord] instances belonging to [uid], avoiding collateral
      * termination of the same package's UserServices running in other Android users.
      */
-    fun removeUserServicesForUid(uid: Int): Boolean {
-        var matchedAny = false
+    override fun removeUserServicesForUid(uid: Int): Boolean {
+        var matchedAny = super.removeUserServicesForUid(uid)
         for ((record, recordUid) in ArrayList(recordUids.entries)) {
             if (recordUid == uid) {
                 matchedAny = true
@@ -62,6 +67,26 @@ class ShizukuUserServiceManager : UserServiceManager() {
             }
         }
         return matchedAny
+    }
+
+    override fun canReuseUserServiceRecord(record: UserServiceRecord, packageInfo: PackageInfo): Boolean {
+        if (accessPaused || record.pendingDestroy || record.isRemoved) return false
+        val baseline = recordBaselines[record] ?: return true
+        val ai = packageInfo.applicationInfo ?: return false
+        val userId = UserHandleCompat.getUserId(ai.uid)
+        val fullPi = if (packageInfo.signatures != null ||
+            (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P && packageInfo.signingInfo != null)
+        ) {
+            packageInfo
+        } else {
+            Android17Compat.getPackageInfo(
+                packageInfo.packageName,
+                PackageSignatureVerifier.signatureLookupFlags(),
+                userId
+            ) ?: packageInfo
+        }
+        val snapshot = PackageSignatureVerifier.extractSnapshot(fullPi, userId)
+        return baseline.matches(snapshot)
     }
 
     /**
@@ -172,10 +197,11 @@ class ShizukuUserServiceManager : UserServiceManager() {
     /**
      * Validates that [token] belongs to a currently starting or active [UserServiceRecord]
      * and that its host package still matches its pinned cryptographic identity before the
-     * privileged starter loads the target package's code.
+     * privileged starter loads the target package's code. Also records [rikka.shizuku.server.util.HostProcess]
+     * identity (`pid`, `startTime`, `uid`) via [super.claimUserServiceLaunch] to prevent PID-reuse kills.
      */
-    fun claimUserServiceLaunch(token: String, hostPid: Int): Boolean {
-        if (accessPaused) return false
+    override fun claimUserServiceLaunch(token: String?, hostPid: Int, expectedUid: Int): Boolean {
+        if (token == null || accessPaused) return false
         val record = activeTokens[token] ?: return false
         val service = record.service
         if (!record.starting && (service == null || !service.pingBinder())) {
@@ -205,10 +231,7 @@ class ShizukuUserServiceManager : UserServiceManager() {
                 return false
             }
         }
-        if (hostPid > 0) {
-            claimedHostPids[token] = hostPid
-        }
-        return true
+        return super.claimUserServiceLaunch(token, hostPid, expectedUid)
     }
 
     override fun onUserServiceRecordCreated(record: UserServiceRecord, packageInfo: PackageInfo) {
@@ -228,7 +251,7 @@ class ShizukuUserServiceManager : UserServiceManager() {
 
         val userId = UserHandleCompat.getUserId(ai.uid)
         val fullPi = if (packageInfo.signatures != null ||
-            ( android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P && packageInfo.signingInfo != null )
+            (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P && packageInfo.signingInfo != null)
         ) {
             packageInfo
         } else {
@@ -298,13 +321,6 @@ class ShizukuUserServiceManager : UserServiceManager() {
         activeTokens.remove(record.token)
         recordBaselines.remove(record)
         recordUids.remove(record)
-        val pid = claimedHostPids.remove(record.token)
-        if (pid != null && pid > 1 && pid != Process.myPid()) {
-            try {
-                Process.killProcess(pid)
-            } catch (_: Throwable) {
-            }
-        }
         val listener = apkChangedListeners.remove(record)
         if (listener != null) {
             ApkChangedObservers.stop(listener)
