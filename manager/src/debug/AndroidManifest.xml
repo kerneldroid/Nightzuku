@@ -30,5 +30,11 @@
         <activity
             android:name=".starter.StarterActivity"
             android:exported="true" />
+        <activity
+            android:name=".shell.ShellTutorialActivity"
+            android:exported="true" />
+        <activity
+            android:name=".adb.AdbPairingTutorialActivity"
+            android:exported="true" />
     </application>
 </manifest>

@@ -6,6 +6,7 @@
 package moe.shizuku.manager.shell
 
 import android.content.ClipData
+import android.content.Intent
 import android.content.ClipboardManager
 import android.net.Uri
 import android.os.Bundle
@@ -110,6 +111,16 @@ class ShellTutorialActivity : AppActivity() {
         Toast.makeText(this, getString(R.string.toast_copied_to_clipboard, command), Toast.LENGTH_SHORT).show()
     }
 
+    private fun openTerminalOrCopy(command: String) {
+        copyCommandToClipboard(command)
+        val intent = packageManager.getLaunchIntentForPackage("com.termux")?.apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        if (intent == null || runCatching { startActivity(intent) }.isFailure) {
+            Toast.makeText(this, R.string.guide_rish_terminal_missing, Toast.LENGTH_LONG).show()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -204,306 +215,24 @@ class ShellTutorialActivity : AppActivity() {
                 }
             } else {
                 ShizukuExpressiveTheme {
-                    ShizukuLazyScaffold(
-                        title = stringResource(R.string.home_terminal_title),
+                    ShellGuideScreen(
+                        shName = shName,
+                        dexName = dexName,
                         onNavigateUp = { finish() },
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        item {
-                            Surface(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = MaterialTheme.shapes.extraExtraLarge,
-                                color = MaterialTheme.colorScheme.primaryContainer
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(20.dp),
-                                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                                ) {
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(14.dp),
-                                        verticalAlignment = Alignment.Top
-                                    ) {
-                                        Surface(
-                                            modifier = Modifier.size(44.dp),
-                                            shape = CircleShape,
-                                            color = MaterialTheme.colorScheme.primary
-                                        ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                ShizukuIcon(
-                                                    icon = R.drawable.ic_terminal_24,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.onPrimary,
-                                                    modifier = Modifier.size(24.dp)
-                                                )
-                                            }
-                                        }
-                                        Column(
-                                            modifier = Modifier.weight(1f),
-                                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            Text(
-                                                text = stringResource(R.string.home_terminal_title),
-                                                style = MaterialTheme.typography.titleLarge,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                                            )
-                                            Text(
-                                                text = HtmlText(R.string.rish_description, shName),
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                                            )
-                                        }
-                                    }
-
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        ExpressivePillBadge(text = shName)
-                                        ExpressivePillBadge(text = dexName)
-                                    }
-
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                    ) {
-                                        Button(
-                                            onClick = { openDocumentsTree.launch(null) },
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .height(48.dp),
-                                            shape = MaterialTheme.shapes.extraLargeIncreased
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Rounded.FolderOpen,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                            Spacer(Modifier.width(8.dp))
-                                            Text(
-                                                text = stringResource(R.string.terminal_export_files),
-                                                style = MaterialTheme.typography.titleSmall,
-                                                fontWeight = FontWeight.SemiBold
-                                            )
-                                        }
-                                        FilledTonalButton(
-                                            onClick = {
-                                                CustomTabsHelper.launchUrlOrCopy(this@ShellTutorialActivity, Helps.RISH.get())
-                                            },
-                                            modifier = Modifier.height(48.dp),
-                                            shape = MaterialTheme.shapes.extraLargeIncreased
-                                        ) {
-                                            ShizukuIcon(
-                                                icon = R.drawable.ic_help_outline_24dp,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                            Spacer(Modifier.width(8.dp))
-                                            Text(
-                                                text = stringResource(R.string.home_adb_button_view_help),
-                                                style = MaterialTheme.typography.labelLarge
-                                            )
-                                        }
-                                    }
-                                }
-                            }
+                        onExportFiles = { openDocumentsTree.launch(null) },
+                        onCopyCommand = { copyCommandToClipboard(it) },
+                        onCopySetup = {
+                            copyCommandToClipboard("export RISH_APPLICATION_ID=\"com.termux\"\nsh $shName")
+                        },
+                        onOpenTerminal = {
+                            openTerminalOrCopy("export RISH_APPLICATION_ID=\"com.termux\"\nsh $shName")
+                        },
+                        onViewHelp = {
+                            CustomTabsHelper.launchUrlOrCopy(this@ShellTutorialActivity, Helps.RISH.get())
                         }
-
-                        item {
-                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                SettingsSectionHeader(title = stringResource(R.string.home_wireless_adb_view_guide_button))
-                                Column(
-                                    verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)
-                                ) {
-                                    ExpressiveTutorialStepCard(
-                                        index = 0,
-                                        count = 3,
-                                        stepNumber = 1,
-                                        badgeLabel = stringResource(R.string.terminal_step_export_title),
-                                        icon = Icons.Rounded.FolderOpen,
-                                        title = HtmlText(R.string.terminal_tutorial_1, shName, dexName),
-                                        body = stringResource(R.string.terminal_tutorial_1_description),
-                                        action = {
-                                            FilledTonalButton(
-                                                onClick = { openDocumentsTree.launch(null) },
-                                                shape = MaterialTheme.shapes.largeIncreased
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Rounded.FolderOpen,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                                Spacer(Modifier.width(8.dp))
-                                                Text(stringResource(R.string.terminal_export_files))
-                                            }
-                                        }
-                                    )
-                                    ExpressiveTutorialStepCard(
-                                        index = 1,
-                                        count = 3,
-                                        stepNumber = 2,
-                                        badgeLabel = stringResource(R.string.terminal_step_configure_title),
-                                        icon = Icons.Rounded.Code,
-                                        title = HtmlText(R.string.terminal_tutorial_2, shName),
-                                        body = HtmlText(
-                                            R.string.terminal_tutorial_2_description,
-                                            "Termux",
-                                            "PKG",
-                                            "com.termux",
-                                            "com.termux"
-                                        ),
-                                        codeSnippet = "RISH_APPLICATION_ID=\"com.termux\"",
-                                        onCopyCode = { copyCommandToClipboard("RISH_APPLICATION_ID=\"com.termux\"") }
-                                    )
-                                    ExpressiveTutorialStepCard(
-                                        index = 2,
-                                        count = 3,
-                                        stepNumber = 3,
-                                        badgeLabel = stringResource(R.string.terminal_step_launch_title),
-                                        icon = Icons.Rounded.Terminal,
-                                        title = HtmlText(R.string.terminal_tutorial_3, "sh $shName"),
-                                        body = HtmlText(R.string.terminal_tutorial_3_description, shName, "PATH"),
-                                        codeSnippet = "sh $shName",
-                                        onCopyCode = { copyCommandToClipboard("sh $shName") }
-                                    )
-                                }
-                            }
-                        }
-                    }
+                    )
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun ExpressivePillBadge(text: String) {
-    Surface(
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.primary,
-        contentColor = MaterialTheme.colorScheme.onPrimary
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelMedium,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
-        )
-    }
-}
-
-@Composable
-private fun ExpressiveTutorialStepCard(
-    index: Int,
-    count: Int,
-    stepNumber: Int,
-    badgeLabel: String,
-    icon: ImageVector,
-    title: String,
-    body: String? = null,
-    codeSnippet: String? = null,
-    onCopyCode: (() -> Unit)? = null,
-    action: (@Composable () -> Unit)? = null
-) {
-    val itemShapes = ListItemDefaults.segmentedShapes(index = index, count = count)
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = itemShapes.shape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Surface(
-                    modifier = Modifier.size(32.dp),
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.secondaryContainer
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = stepNumber.toString(),
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                    }
-                }
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = badgeLabel,
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-
-            if (!body.isNullOrBlank()) {
-                Text(
-                    text = body,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            if (!codeSnippet.isNullOrBlank()) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = codeSnippet,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(1f)
-                        )
-                        if (onCopyCode != null) {
-                            IconButton(onClick = onCopyCode) {
-                                Icon(
-                                    imageVector = Icons.Rounded.ContentCopy,
-                                    contentDescription = stringResource(R.string.terminal_copy_command),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            action?.invoke()
         }
     }
 }
