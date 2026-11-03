@@ -16,6 +16,8 @@ import moe.shizuku.manager.module.discovery.RateLimitTracker
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.net.URL
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
@@ -50,11 +52,12 @@ class ModuleInstaller private constructor() {
         try {
             cleanupOldZips(context)
             val effectiveMode = preferredMode ?: ModuleSettings.getInstallMode()
+            val githubPat = TokenStore.getToken(context)?.trim()?.takeIf { it.isNotEmpty() }
 
             if (effectiveMode == ModuleSettings.InstallMode.RELEASE || preferredMode == null) {
                 val directUrl = updateResult?.downloadUrl?.takeIf { it.isNotBlank() }
                 if (directUrl != null) {
-                    val zipUri = downloadDirectZip(context, module.id, directUrl)
+                    val zipUri = downloadDirectZip(context, module.id, directUrl, githubPat)
                     if (zipUri != null) {
                         val updated = AdbModuleManager.install(context, zipUri)
                         return@withContext Result.success(updated)
@@ -106,19 +109,26 @@ class ModuleInstaller private constructor() {
         )
     }
 
-    private fun downloadDirectZip(context: Context, moduleId: String, downloadUrl: String): Uri? {
+    private fun downloadDirectZip(
+        context: Context,
+        moduleId: String,
+        downloadUrl: String,
+        githubPat: String? = TokenStore.getToken(context)?.trim()?.takeIf { it.isNotEmpty() }
+    ): Uri? {
         val cacheDir = File(context.cacheDir, "module_zips").apply { mkdirs() }
         val zipFile = File(cacheDir, "$moduleId-update.zip")
         return try {
-            val request = Request.Builder()
-                .url(downloadUrl)
-                .header("Accept", "application/octet-stream")
-                .build()
+            val request = buildDownloadRequest(downloadUrl, githubPat)
             client.newCall(request).execute().use { resp ->
+                rateLimit.update(resp.headers)
                 if (!resp.isSuccessful) return null
+                val contentLength = resp.body?.contentLength() ?: -1L
+                require(contentLength <= MAX_DOWNLOAD_ZIP_BYTES) {
+                    "Archive Content-Length ($contentLength bytes) exceeds limit ($MAX_DOWNLOAD_ZIP_BYTES bytes)."
+                }
                 resp.body?.byteStream()?.use { input ->
                     zipFile.outputStream().use { output ->
-                        input.copyTo(output)
+                        AdbModuleManager.copyStreamBounded(input, output, MAX_DOWNLOAD_ZIP_BYTES)
                     }
                 }
                 if (zipFile.length() > 0) Uri.fromFile(zipFile) else null
@@ -188,7 +198,8 @@ class ModuleInstaller private constructor() {
                     appendLine("installMode=${installMode.value}")
                 }
             )
-            sourceProp.setReadable(true, false)
+            sourceProp.setReadable(false, false)
+            sourceProp.setReadable(true, true)
         }
     }
 
@@ -331,14 +342,18 @@ class ModuleInstaller private constructor() {
                     val req = if (archiveUrl.contains("api.github.com")) {
                         buildApiRequest(archiveUrl, githubPat)
                     } else {
-                        Request.Builder().url(archiveUrl).build()
+                        buildDownloadRequest(archiveUrl, githubPat)
                     }
                     client.newCall(req).execute().use { resp ->
                         rateLimit.update(resp.headers)
                         if (resp.isSuccessful) {
+                            val contentLength = resp.body?.contentLength() ?: -1L
+                            require(contentLength <= MAX_DOWNLOAD_ZIP_BYTES) {
+                                "Archive Content-Length ($contentLength bytes) exceeds limit ($MAX_DOWNLOAD_ZIP_BYTES bytes)."
+                            }
                             resp.body?.byteStream()?.use { input ->
                                 rawArchiveFile.outputStream().use { output ->
-                                    input.copyTo(output)
+                                    AdbModuleManager.copyStreamBounded(input, output, MAX_DOWNLOAD_ZIP_BYTES)
                                 }
                             }
                             if (rawArchiveFile.length() > 0) {
@@ -348,6 +363,7 @@ class ModuleInstaller private constructor() {
                     }
                     if (downloaded) break
                 } catch (e: Exception) {
+                    rawArchiveFile.delete()
                     Log.w(TAG, "Archive download attempt failed: $archiveUrl", e)
                 }
             }
@@ -355,6 +371,7 @@ class ModuleInstaller private constructor() {
             if (!downloaded) return null
 
             var hasModuleProp = false
+            var totalExtractedBytes = 0L
             val addedEntries = HashSet<String>()
 
             ZipFile(rawArchiveFile).use { archiveZip ->
@@ -378,7 +395,7 @@ class ModuleInstaller private constructor() {
                         }
 
                         if (moduleRelativePath.isBlank()) continue
-                        val lower = moduleRelativePath.lowercase()
+                        val lower = moduleRelativePath.lowercase(Locale.US)
                         if (lower.startsWith(".git/") || lower.startsWith(".github/")) continue
                         if (!addedEntries.add(moduleRelativePath)) continue
 
@@ -386,10 +403,11 @@ class ModuleInstaller private constructor() {
                             hasModuleProp = true
                         }
 
+                        val remainingBudget = (MAX_DOWNLOAD_ZIP_BYTES - totalExtractedBytes).coerceAtLeast(0L)
                         val newEntry = ZipEntry(moduleRelativePath)
                         outZip.putNextEntry(newEntry)
                         archiveZip.getInputStream(entry).use { input ->
-                            input.copyTo(outZip)
+                            totalExtractedBytes += AdbModuleManager.copyStreamBounded(input, outZip, remainingBudget)
                         }
                         outZip.closeEntry()
                     }
@@ -450,21 +468,24 @@ class ModuleInstaller private constructor() {
         val zipFile = File(cacheDir, "$moduleId-release.zip")
 
         return try {
-            val downloadRequest = Request.Builder()
-                .url(downloadUrl)
-                .header("Accept", "application/octet-stream")
-                .build()
+            val downloadRequest = buildDownloadRequest(downloadUrl, githubPat)
             val downloadResponse = client.newCall(downloadRequest).execute()
 
             downloadResponse.use { dlResp ->
+                rateLimit.update(dlResp.headers)
                 if (!dlResp.isSuccessful) {
                     Log.w(TAG, "ZIP download failed: ${dlResp.code}")
                     return null
                 }
 
+                val contentLength = dlResp.body?.contentLength() ?: -1L
+                require(contentLength <= MAX_DOWNLOAD_ZIP_BYTES) {
+                    "Release asset Content-Length ($contentLength bytes) exceeds limit ($MAX_DOWNLOAD_ZIP_BYTES bytes)."
+                }
+
                 dlResp.body?.byteStream()?.use { input ->
                     zipFile.outputStream().use { output ->
-                        input.copyTo(output)
+                        AdbModuleManager.copyStreamBounded(input, output, MAX_DOWNLOAD_ZIP_BYTES)
                     }
                 }
 
@@ -483,11 +504,35 @@ class ModuleInstaller private constructor() {
             .header("Accept", "application/vnd.github+json")
             .header("X-GitHub-Api-Version", "2022-11-28")
 
-        if (!githubPat.isNullOrBlank()) {
+        if (!githubPat.isNullOrBlank() && isGitHubHost(url)) {
             builder.header("Authorization", "Bearer ${githubPat.trim()}")
         }
 
         return builder.build()
+    }
+
+    private fun buildDownloadRequest(url: String, githubPat: String?): Request {
+        val builder = Request.Builder()
+            .url(url)
+            .header("Accept", "application/octet-stream")
+
+        if (!githubPat.isNullOrBlank() && isGitHubHost(url)) {
+            builder.header("Authorization", "Bearer ${githubPat.trim()}")
+        }
+
+        return builder.build()
+    }
+
+    private fun isGitHubHost(url: String): Boolean {
+        return try {
+            val host = URL(url).host.lowercase(Locale.US)
+            host == "github.com" ||
+                host.endsWith(".github.com") ||
+                host == "raw.githubusercontent.com" ||
+                host.endsWith(".githubusercontent.com")
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun cleanupOldZips(context: Context) {
@@ -505,6 +550,7 @@ class ModuleInstaller private constructor() {
 
     companion object {
         private const val TAG = "ModuleInstaller"
+        internal const val MAX_DOWNLOAD_ZIP_BYTES = 200L * 1024L * 1024L
 
         @Volatile
         private var instance: ModuleInstaller? = null

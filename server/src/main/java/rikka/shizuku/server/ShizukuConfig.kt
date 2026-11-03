@@ -37,7 +37,18 @@ class ShizukuConfig {
         @SerializedName("lastConnectedAt")
         var lastConnectedAt: Long = 0L
 
-        override fun isAllowed(): Boolean = (flags and ConfigManager.FLAG_ALLOWED) != 0
+        /**
+         * Optional epoch timestamp (ms) when a timed access grant expires.
+         * `0L` means no active expiration timer is persisted for this entry.
+         */
+        @SerializedName("expiresAt")
+        var expiresAt: Long = 0L
+
+        fun isExpired(nowMs: Long = System.currentTimeMillis()): Boolean =
+            expiresAt in 1..nowMs
+
+        override fun isAllowed(): Boolean =
+            (flags and ConfigManager.FLAG_ALLOWED) != 0 && !isExpired()
 
         override fun isDenied(): Boolean = (flags and ConfigManager.FLAG_DENIED) != 0
     }

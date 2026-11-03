@@ -23,6 +23,7 @@
 NIGHTZUKU_REQUIRED_PKG="kerneldroid.nightzuku"
 NIGHTZUKU_REQUIRED_DESCRIPTOR="kerneldroid.nightzuku.INightService"
 NIGHTZUKU_REQUIRED_AUTHORITY="kerneldroid.nightzuku.nightzuku"
+NIGHTZUKU_ATTESTATION_PREFIX="nightzuku-host-attestation-v2:"
 
 _nightzuku_abort() {
     echo "================================================================" >&2
@@ -40,16 +41,42 @@ _nightzuku_abort() {
     exit 78
 }
 
+_nightzuku_sha256_hex() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        printf '%s' "$1" | sha256sum 2>/dev/null | awk '{print $1}' | tr 'A-F' 'a-f'
+    elif command -v openssl >/dev/null 2>&1; then
+        printf '%s' "$1" | openssl dgst -sha256 2>/dev/null | awk '{print $NF}' | tr 'A-F' 'a-f'
+    elif command -v toybox >/dev/null 2>&1; then
+        printf '%s' "$1" | toybox sha256sum 2>/dev/null | awk '{print $1}' | tr 'A-F' 'a-f'
+    else
+        echo ""
+    fi
+}
+
+_nightzuku_hmac_sha256_hex() {
+    _hmac_key="$1"
+    _hmac_msg="$2"
+    if command -v openssl >/dev/null 2>&1; then
+        printf '%s' "$_hmac_msg" | openssl dgst -sha256 -hmac "$_hmac_key" 2>/dev/null | awk '{print $NF}' | tr 'A-F' 'a-f'
+    else
+        echo ""
+    fi
+}
+
 require_nightzuku_host() {
     _expected_sha256="$1"
     _min_api="${2:-2}"
 
     # 1. Load generated attestation file if present in $MODDIR
     if [ -n "$MODDIR" ] && [ -f "$MODDIR/.nightzuku_env" ]; then
-        # Verify that the runtime environment was not stripped vs the attestation file
         _file_token=$(grep '^NIGHTZUKU_SESSION_TOKEN=' "$MODDIR/.nightzuku_env" 2>/dev/null | cut -d= -f2-)
+        _file_digest=$(grep '^NIGHTZUKU_ATTESTATION_SHA256=' "$MODDIR/.nightzuku_env" 2>/dev/null | cut -d= -f2-)
+        _file_mod_id=$(grep '^NIGHTZUKU_MODULE_ID=' "$MODDIR/.nightzuku_env" 2>/dev/null | cut -d= -f2-)
         if [ -n "$_file_token" ] && [ -z "$NIGHTZUKU_SESSION_TOKEN" ]; then
             _nightzuku_abort "Runtime environment stripped by third-party fork (missing NIGHTZUKU_SESSION_TOKEN)."
+        fi
+        if [ "$_file_token" != "$NIGHTZUKU_SESSION_TOKEN" ]; then
+            _nightzuku_abort "Session token mismatch against attestation file."
         fi
     else
         _nightzuku_abort "Missing Nightzuku host attestation file (.nightzuku_env)."
@@ -58,7 +85,7 @@ require_nightzuku_host() {
     # 2. Verify canonical module path ownership & runtime environment contract
     case "$MODDIR" in
         *"/$NIGHTZUKU_REQUIRED_PKG/"*) ;;
-        *) _nightzuku_abort "Module is not installed inside $NIGHTZUKU_REQUIRED_PKG storage." ;;
+        *) _nightzuku_abort "Module is not running inside $NIGHTZUKU_REQUIRED_PKG storage ($MODDIR)." ;;
     esac
 
     if [ "$NIGHTZUKU_HOST" != "1" ] || [ "$NIGHTZUKU_HOST_PKG" != "$NIGHTZUKU_REQUIRED_PKG" ]; then
@@ -69,7 +96,7 @@ require_nightzuku_host() {
         _nightzuku_abort "Missing native Nightzuku dual-wire descriptor ($NIGHTZUKU_BINDER_DESCRIPTOR)."
     fi
 
-    if [ -z "$NIGHTZUKU_SESSION_TOKEN" ] || [ "${#NIGHTZUKU_SESSION_TOKEN}" -lt 64 ]; then
+    if [ -z "$NIGHTZUKU_SESSION_TOKEN" ] || [ "${#NIGHTZUKU_SESSION_TOKEN}" -ne 64 ]; then
         _nightzuku_abort "Missing or invalid HMAC-SHA256 session attestation token."
     fi
 
@@ -78,7 +105,28 @@ require_nightzuku_host() {
         _nightzuku_abort "Nightzuku Modules API v$_min_api required (current: v$NIGHTZUKU_MODULES_API)."
     fi
 
-    # 4. Verify live package installation in Android PackageManager
+    # 4. Cryptographically verify runtime attestation token & digest against signer & payload
+    _norm_signer=$(printf '%s' "$NIGHTZUKU_SIGNER_SHA256" | tr 'A-F' 'a-f' | tr -d ': ')
+    _mod_id="${SHIZUKU_MODULE_ID:-$_file_mod_id}"
+    _env_payload="$NIGHTZUKU_REQUIRED_PKG:${NIGHTZUKU_MODULES_API:-2}:$NIGHTZUKU_REQUIRED_DESCRIPTOR:$_norm_signer:$_mod_id:runtime-env"
+
+    _calc_digest=$(_nightzuku_sha256_hex "${NIGHTZUKU_ATTESTATION_PREFIX}${_norm_signer}:${_env_payload}")
+    if [ -n "$_calc_digest" ] && [ -n "${NIGHTZUKU_ATTESTATION_SHA256:-$_file_digest}" ]; then
+        _actual_digest=$(printf '%s' "${NIGHTZUKU_ATTESTATION_SHA256:-$_file_digest}" | tr 'A-F' 'a-f')
+        if [ "$_calc_digest" != "$_actual_digest" ]; then
+            _nightzuku_abort "Cryptographic SHA-256 attestation digest verification failed."
+        fi
+    fi
+
+    _calc_hmac=$(_nightzuku_hmac_sha256_hex "${NIGHTZUKU_ATTESTATION_PREFIX}${_norm_signer}" "$_env_payload")
+    if [ -n "$_calc_hmac" ]; then
+        _actual_hmac=$(printf '%s' "$NIGHTZUKU_SESSION_TOKEN" | tr 'A-F' 'a-f')
+        if [ "$_calc_hmac" != "$_actual_hmac" ]; then
+            _nightzuku_abort "Cryptographic HMAC-SHA256 session token verification failed."
+        fi
+    fi
+
+    # 5. Verify live package installation in Android PackageManager
     if command -v pm >/dev/null 2>&1; then
         _pm_path=$(pm path "$NIGHTZUKU_REQUIRED_PKG" 2>/dev/null | head -n 1)
         if [ -z "$_pm_path" ]; then
@@ -86,16 +134,25 @@ require_nightzuku_host() {
         fi
     fi
 
-    # 5. Live IPC challenge against kerneldroid.nightzuku.nightzuku provider
+    # 6. Live challenge-response IPC verification against kerneldroid.nightzuku.nightzuku provider
     if command -v content >/dev/null 2>&1; then
-        _ipc_out=$(content call --uri "content://$NIGHTZUKU_REQUIRED_AUTHORITY" --method verifyNightzukuHost --arg "guard-probe" 2>/dev/null || true)
+        _nonce="guard-$$-$(date +%s 2>/dev/null || echo 1)"
+        _ipc_out=$(content call --uri "content://$NIGHTZUKU_REQUIRED_AUTHORITY" --method verifyNightzukuHost --arg "$_nonce" --extra "moduleId:s:$_mod_id" 2>/dev/null || true)
         case "$_ipc_out" in
-            *"genuine=true"*|*"binderDescriptor=$NIGHTZUKU_REQUIRED_DESCRIPTOR"*) ;;
-            "")
-                # Some restricted SELinux contexts block `content call` from shell; fall back to token match
-                if [ "$_file_token" != "$NIGHTZUKU_SESSION_TOKEN" ]; then
-                    _nightzuku_abort "Session token mismatch against attestation file."
+            *"genuine=true"*|*"binderDescriptor=$NIGHTZUKU_REQUIRED_DESCRIPTOR"*)
+                _ipc_payload="$NIGHTZUKU_REQUIRED_PKG:${NIGHTZUKU_MODULES_API:-2}:$NIGHTZUKU_REQUIRED_DESCRIPTOR:$_norm_signer:$_mod_id:$_nonce"
+                _expected_ipc_digest=$(_nightzuku_sha256_hex "${NIGHTZUKU_ATTESTATION_PREFIX}${_norm_signer}:${_ipc_payload}")
+                if [ -n "$_expected_ipc_digest" ]; then
+                    case "$_ipc_out" in
+                        *"attestationSha256=$_expected_ipc_digest"*) ;;
+                        *"attestationSha256="*)
+                            _nightzuku_abort "Live IPC challenge cryptographic digest mismatch."
+                            ;;
+                    esac
                 fi
+                ;;
+            "")
+                # Restricted SELinux context blocked `content call` from shell; verified via digest/HMAC above
                 ;;
             *)
                 _nightzuku_abort "Live IPC verification against $NIGHTZUKU_REQUIRED_AUTHORITY failed."
@@ -103,12 +160,11 @@ require_nightzuku_host() {
         esac
     fi
 
-    # 6. Optional cryptographic APK signer SHA-256 pinning
+    # 7. Optional cryptographic APK signer SHA-256 pinning
     if [ -n "$_expected_sha256" ]; then
-        _norm_expected=$(echo "$_expected_sha256" | tr 'A-F' 'a-f' | tr -d ': ')
-        _norm_actual=$(echo "$NIGHTZUKU_SIGNER_SHA256" | tr 'A-F' 'a-f' | tr -d ': ')
-        if [ "$_norm_actual" != "$_norm_expected" ]; then
-            _nightzuku_abort "APK signature mismatch (expected $_norm_expected, got ${_norm_actual:-none})."
+        _norm_expected=$(printf '%s' "$_expected_sha256" | tr 'A-F' 'a-f' | tr -d ': ')
+        if [ "$_norm_signer" != "$_norm_expected" ]; then
+            _nightzuku_abort "APK signature mismatch (expected $_norm_expected, got ${_norm_signer:-none})."
         fi
     fi
 

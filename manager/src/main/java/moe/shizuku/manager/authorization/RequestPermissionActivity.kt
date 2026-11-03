@@ -204,15 +204,27 @@ class RequestPermissionActivity : AppActivity() {
                             WearText(stringResource(R.string.app_name))
                         },
                         text = {
-                            WearText(
-                                text = htmlToPlainText(
-                                    getString(
-                                        R.string.permission_warning_template,
-                                        current.displayLabel,
-                                        getString(R.string.permission_group_description)
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                WearText(
+                                    text = htmlToPlainText(
+                                        getString(
+                                            R.string.permission_warning_template,
+                                            current.displayLabel,
+                                            getString(R.string.permission_group_description)
+                                        )
                                     )
                                 )
-                            )
+                                WearFilledTonalButton(
+                                    onClick = {
+                                        if (dispatchDecision(current, allowed = true, onetime = true)) {
+                                            finish()
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    WearText(stringResource(R.string.grant_dialog_button_allow_onetime))
+                                }
+                            }
                         },
                         confirmButton = {
                             WearButton(

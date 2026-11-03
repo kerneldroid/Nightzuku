@@ -206,7 +206,7 @@ class SettingsActivity : AppActivity() {
             val localeOptions = remember(languageTag) {
                 buildLocaleOptions(languageTag)
             }
-            val languageSummary = localeOptions.firstOrNull { it.tag == languageTag }?.summary
+            val languageSummary = localeOptions.firstOrNull { it.tag == languageTag }?.title
                 ?: stringResource(R.string.follow_system)
             val nightValues = resources.getIntArray(R.array.night_mode_value).toList()
             val nightLabels = stringArrayResource(R.array.night_mode).toList()
@@ -255,6 +255,8 @@ class SettingsActivity : AppActivity() {
                                             packageManager.setComponentEnabled(componentName, enabled)
                                             startOnBoot = packageManager.isComponentEnabled(componentName)
                                         },
+                                        languageSummary = languageSummary,
+                                        onLanguageClick = { showLanguageDialog = true },
                                         nightModeSummary = nightSummary,
                                         onNightModeClick = { showNightDialog = true },
                                         blackNightTheme = blackNightTheme,
@@ -288,19 +290,7 @@ class SettingsActivity : AppActivity() {
                                             backgroundCheckEnabled = enabled
                                             ModuleUpdateScheduler.syncSchedule(this@SettingsActivity)
                                         },
-                                        onGitHubTokenClick = { secondarySubscreen = SecondarySubscreen.TOKEN_SETTINGS },
-                                        showNightDialog = false,
-                                        nightLabels = nightLabels,
-                                        nightValues = nightValues,
-                                        currentNightMode = nightMode,
-                                        onNightModeSelect = { value ->
-                                            prefs.edit().putInt(NIGHT_MODE, value).apply()
-                                            nightMode = value
-                                            AppCompatDelegate.setDefaultNightMode(value)
-                                            showNightDialog = false
-                                            recreate()
-                                        },
-                                        onNightDialogDismiss = { showNightDialog = false }
+                                        onGitHubTokenClick = { secondarySubscreen = SecondarySubscreen.TOKEN_SETTINGS }
                                     )
                                 }
                             }
@@ -359,6 +349,7 @@ class SettingsActivity : AppActivity() {
                                         },
                                         moduleAccessMode = moduleAccessMode,
                                         onModuleAccessModeClick = { showModuleModeDialog = true },
+                                        onCustomPermissionsClick = { showCustomPermissionsDialog = true },
                                         allowBackgroundActions = allowBackgroundActions,
                                         onAllowBackgroundActionsChange = { enabled ->
                                             ModuleSettings.setAllowBackgroundActions(enabled)

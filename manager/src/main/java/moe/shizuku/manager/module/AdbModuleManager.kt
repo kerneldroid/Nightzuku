@@ -42,19 +42,27 @@ object AdbModuleManager {
 
     fun modulesRoot(context: Context): File {
         val filesDir = context.filesDir
+        // Enforce strict owner-only DAC sandbox permissions (0700) on private app directories.
+        // Module execution for UID 2000 (u:r:shell:s0) is staged in /data/local/tmp/kerneldroid.nightzuku/adb_modules.
         filesDir.parentFile?.apply {
-            setReadable(true, false)
-            setExecutable(true, false)
+            setReadable(false, false)
+            setReadable(true, true)
+            setExecutable(false, false)
+            setExecutable(true, true)
         }
         filesDir.apply {
             mkdirs()
-            setReadable(true, false)
-            setExecutable(true, false)
+            setReadable(false, false)
+            setReadable(true, true)
+            setExecutable(false, false)
+            setExecutable(true, true)
         }
         return File(filesDir, MODULES_DIR).apply {
             mkdirs()
-            setReadable(true, false)
-            setExecutable(true, false)
+            setReadable(false, false)
+            setReadable(true, true)
+            setExecutable(false, false)
+            setExecutable(true, true)
         }
     }
 
@@ -247,6 +255,16 @@ object AdbModuleManager {
                         val installed = readModule(target) ?: error("Installed module is unreadable.")
                         // Write initial Nightzuku host attestation file into module directory
                         ModuleRuntimeUtils.buildModuleEnvironment(context, installed)
+                        // If Shizuku is running, also stage the module into /data/local/tmp/kerneldroid.nightzuku/adb_modules
+                        runCatching {
+                            val binder = Shizuku.getBinder()?.takeIf { it.pingBinder() }
+                            if (binder != null) {
+                                ModuleRuntimeUtils.syncModuleToShellRuntime(
+                                    IShizukuService.Stub.asInterface(binder),
+                                    installed
+                                )
+                            }
+                        }
                         backup.deleteRecursively()
                         installed
                     } catch (t: Throwable) {
@@ -277,6 +295,10 @@ object AdbModuleManager {
         ModuleSettings.setModuleTrusted(module.id, false)
         ModuleSettings.setModuleUpdateIgnored(module.id, false)
         module.directory.deleteRecursively()
+        val service = runCatching {
+            Shizuku.getBinder()?.takeIf { it.pingBinder() }?.let { IShizukuService.Stub.asInterface(it) }
+        }.getOrNull()
+        ModuleRuntimeUtils.deleteShellModuleRuntime(service, module.id)
     }
 
     suspend fun runAction(module: AdbModule): ModuleActionResult = withContext(Dispatchers.IO) {
@@ -328,12 +350,13 @@ object AdbModuleManager {
         val binder = Shizuku.getBinder() ?: error("Shizuku service is not running.")
         val service = IShizukuService.Stub.asInterface(binder)
         val ctx = runCatching { application.applicationContext }.getOrNull()
-        val env = ModuleRuntimeUtils.buildModuleEnvironment(ctx, module, module.directory)
-        val wrappedScript = "cd \"\$MODDIR\" 2>/dev/null || true\n$scriptContent"
+        val env = ModuleRuntimeUtils.buildModuleEnvironment(ctx, module, module.directory, useShellRuntimeDir = true)
+        val shellDir = ModuleRuntimeUtils.syncModuleToShellRuntime(service, module)
+        val wrappedScript = "cd \"\$MODDIR\" || exit 1\n$scriptContent"
         val remote = service.newProcess(
             arrayOf("sh", "-c", wrappedScript),
             env,
-            "/data/local/tmp"
+            shellDir.absolutePath
         )
 
         runCatching { ParcelFileDescriptor.AutoCloseOutputStream(remote.getOutputStream()).close() }
@@ -374,6 +397,7 @@ object AdbModuleManager {
             runCatching { stderrPfd.close() }
             stderrThread.join(250)
         }
+        runCatching { ModuleRuntimeUtils.syncBackFromShellRuntime(service, module) }
         val result = ModuleActionResult(
             exitCode = exitCode,
             stdout = stdout,
@@ -447,9 +471,11 @@ object AdbModuleManager {
 
     private fun markScriptsExecutable(directory: File) {
         directory.walkTopDown().forEach { file ->
-            file.setReadable(true, false)
+            file.setReadable(false, false)
+            file.setReadable(true, true)
             if (file.isDirectory || file.extension.equals("sh", ignoreCase = true)) {
-                file.setExecutable(true, false)
+                file.setExecutable(false, false)
+                file.setExecutable(true, true)
             }
         }
     }

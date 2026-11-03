@@ -42,8 +42,13 @@ class NightServiceEndpoint(
         var process: Process? = null
 
         val cancelled = AtomicBoolean(false)
+        val clientDied = AtomicBoolean(false)
+        val notified = AtomicBoolean(false)
 
-        fun terminate() {
+        fun terminate(fromClientDeath: Boolean = false) {
+            if (fromClientDeath) {
+                clientDied.set(true)
+            }
             if (!cancelled.compareAndSet(false, true)) return
             val targetPid = pid
             if (targetPid > 0) {
@@ -186,7 +191,7 @@ class NightServiceEndpoint(
                     service.checkCallerManagerPermission("getSystemProperty", callingUid, callingPid),
                     NightProtocol.CAP_SYSTEM_PROPS,
                     "getSystemProperty",
-                    service.clientManager.isOneTimeGranted(callingUid)
+                    service.isTemporaryGrantActive(callingUid)
                 )
                 val value = try {
                     SystemProperties.get(name, defaultValue)
@@ -210,7 +215,7 @@ class NightServiceEndpoint(
                     service.checkCallerManagerPermission("setSystemProperty", callingUid, callingPid),
                     NightProtocol.CAP_SYSTEM_PROPS,
                     "setSystemProperty",
-                    service.clientManager.isOneTimeGranted(callingUid)
+                    service.isTemporaryGrantActive(callingUid)
                 )
                 try {
                     SystemProperties.set(name, value)
@@ -238,7 +243,11 @@ class NightServiceEndpoint(
                 service.enforceManagerPermission("getUidCapabilities")
                 val targetUid = data.readInt()
                 val entry = service.configManager.find(targetUid)
-                val caps = TransactGuard.effectiveCapabilities(entry, service.configManager.isAccessPaused())
+                val caps = TransactGuard.effectiveCapabilities(
+                    entry,
+                    service.configManager.isAccessPaused(),
+                    service.isTemporaryGrantActive(targetUid)
+                )
                 reply!!.writeNoException()
                 reply.writeInt(caps)
                 return true
@@ -339,7 +348,7 @@ class NightServiceEndpoint(
         for ((callId, handle) in ArrayList(activeExecCalls.entries)) {
             if (handle.callingPid == pid) {
                 activeExecCalls.remove(callId, handle)
-                handle.terminate()
+                handle.terminate(fromClientDeath = true)
             }
         }
     }
@@ -413,7 +422,7 @@ class NightServiceEndpoint(
                 val caps = TransactGuard.effectiveCapabilities(
                     service.configManager.find(callingUid),
                     service.configManager.isAccessPaused(),
-                    service.clientManager.isOneTimeGranted(callingUid)
+                    service.isTemporaryGrantActive(callingUid)
                 )
                 notifyPermissionChanged(callingUid, callingPid, allowed, rationale, caps)
             }
@@ -423,7 +432,7 @@ class NightServiceEndpoint(
                 val caps = TransactGuard.effectiveCapabilities(
                     service.configManager.find(callingUid),
                     service.configManager.isAccessPaused(),
-                    service.clientManager.isOneTimeGranted(callingUid)
+                    service.isTemporaryGrantActive(callingUid)
                 )
                 notifyRequestPermissionResult(callingUid, callingPid, requestCode, allowed, caps)
             }
@@ -441,7 +450,7 @@ class NightServiceEndpoint(
         val capabilities = if (isManager) {
             NightProtocol.MASK_CAPABILITIES
         } else {
-            TransactGuard.effectiveCapabilities(entry, paused, service.clientManager.isOneTimeGranted(callingUid))
+            TransactGuard.effectiveCapabilities(entry, paused, service.isTemporaryGrantActive(callingUid))
         }
 
         reply.writeNoException()
@@ -465,7 +474,7 @@ class NightServiceEndpoint(
             service.checkCallerManagerPermission("transactRemote", callingUid, callingPid),
             NightProtocol.CAP_BINDER_PROXY,
             "transactRemote",
-            service.clientManager.isOneTimeGranted(callingUid)
+            service.isTemporaryGrantActive(callingUid)
         )
 
         val targetBinder = data.readStrongBinder()
@@ -503,7 +512,7 @@ class NightServiceEndpoint(
         val caps = if (isManager) {
             NightProtocol.MASK_CAPABILITIES
         } else {
-            TransactGuard.effectiveCapabilities(entry, paused, service.clientManager.isOneTimeGranted(callingUid))
+            TransactGuard.effectiveCapabilities(entry, paused, service.isTemporaryGrantActive(callingUid))
         }
 
         reply.writeNoException()
@@ -679,7 +688,7 @@ class NightServiceEndpoint(
             service.checkCallerManagerPermission("execFast", callingUid, callingPid),
             NightProtocol.CAP_SHELL_EXEC,
             "execFast",
-            service.clientManager.isOneTimeGranted(callingUid)
+            service.isTemporaryGrantActive(callingUid)
         )
 
         val cmd = data.createStringArray()
@@ -716,7 +725,7 @@ class NightServiceEndpoint(
                 service.checkCallerManagerPermission("execAsync", callingUid, callingPid),
                 NightProtocol.CAP_SHELL_EXEC,
                 "execAsync",
-                service.clientManager.isOneTimeGranted(callingUid)
+                service.isTemporaryGrantActive(callingUid)
             )
             if (cmd.isNullOrEmpty()) {
                 throw IllegalArgumentException("Command array must not be empty")
@@ -733,13 +742,15 @@ class NightServiceEndpoint(
         execPool.execute {
             try {
                 val out = executeCommandBounded(cmd, env, dir, timeoutMs, handle)
-                if (!handle.cancelled.get()) {
-                    notifyExecResult(callingPid, callId, out.exitCode, out.timedOut, out.stdout, out.stderr)
+                if (!handle.clientDied.get() && handle.notified.compareAndSet(false, true)) {
+                    val exitCode = if (handle.cancelled.get() && out.exitCode == 0) 137 else out.exitCode
+                    notifyExecResult(callingPid, callId, exitCode, out.timedOut, out.stdout, out.stderr)
                 }
             } catch (t: Throwable) {
-                if (!handle.cancelled.get()) {
+                if (!handle.clientDied.get() && handle.notified.compareAndSet(false, true)) {
+                    val exitCode = if (handle.cancelled.get()) 137 else -1
                     val errBytes = (t.message ?: "execAsync failed").toByteArray(StandardCharsets.UTF_8)
-                    notifyExecResult(callingPid, callId, -1, false, ByteArray(0), errBytes)
+                    notifyExecResult(callingPid, callId, exitCode, false, ByteArray(0), errBytes)
                 }
             } finally {
                 activeExecCalls.remove(callId, handle)
@@ -755,7 +766,11 @@ class NightServiceEndpoint(
             throw SecurityException("Cannot cancel execAsync callId=$callId owned by uid=${handle.callingUid}")
         }
         activeExecCalls.remove(callId, handle)
-        handle.terminate()
+        handle.terminate(fromClientDeath = false)
+        if (handle.notified.compareAndSet(false, true)) {
+            val errBytes = "Command execution cancelled".toByteArray(StandardCharsets.UTF_8)
+            notifyExecResult(handle.callingPid, callId, 137, false, ByteArray(0), errBytes)
+        }
     }
 
     private class BoundedBuffer(private val maxBytes: Int) {

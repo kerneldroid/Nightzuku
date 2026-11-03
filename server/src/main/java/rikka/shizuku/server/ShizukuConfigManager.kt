@@ -39,6 +39,7 @@ class ShizukuConfigManager : ConfigManager() {
             changed = true
         }
         val configPackages = config.packages!!
+        val nowMs = System.currentTimeMillis()
 
         for (entry in ArrayList(configPackages)) {
             var entryPackages = entry.packages
@@ -96,7 +97,22 @@ class ShizukuConfigManager : ConfigManager() {
                     ConfigManager.LOGGER.w("remove config for uid %d since signing certificate changed", entry.uid)
                     configPackages.remove(entry)
                     changed = true
+                    continue
                 }
+            }
+
+            // Revoke expired timed grants that survived a server restart or reboot
+            if (entry.isExpired(nowMs)) {
+                ConfigManager.LOGGER.i("revoking expired timed grant for uid %d on startup", entry.uid)
+                entry.flags = entry.flags and ConfigManager.MASK_PERMISSION.inv()
+                entry.expiresAt = 0L
+                val userId = UserHandleCompat.getUserId(entry.uid)
+                for (pkg in retainedPackages) {
+                    runCatching {
+                        Android17Compat.revokeRuntimePermission(pkg, ServerConstants.PERMISSION, userId)
+                    }
+                }
+                changed = true
             }
         }
 
@@ -193,6 +209,16 @@ class ShizukuConfigManager : ConfigManager() {
      */
     fun verifyClientIdentity(uid: Int, packageName: String): Boolean {
         val entry = find(uid) ?: return false
+        if (entry.isExpired()) {
+            synchronized(this) {
+                if (findLocked(uid) === entry) {
+                    entry.flags = entry.flags and ConfigManager.MASK_PERMISSION.inv()
+                    entry.expiresAt = 0L
+                    persistNowLocked()
+                }
+            }
+            return false
+        }
         val recordedPackages = synchronized(this) { entry.packages?.toList().orEmpty() }
         val currentUidPackages = PackageManagerApis.getPackagesForUidNoThrow(uid)
         if (currentUidPackages.none { it in recordedPackages }) {
@@ -253,6 +279,42 @@ class ShizukuConfigManager : ConfigManager() {
     }
 
     @Synchronized
+    fun setAccessExpiry(uid: Int, packages: MutableList<String>?, expiresAtEpochMs: Long) {
+        var entry = findLocked(uid)
+        if (entry == null) {
+            if (expiresAtEpochMs <= 0L) return
+            entry = ShizukuConfig.PackageEntry(uid, 0)
+            config.packages!!.add(entry)
+        }
+        if (packages != null) {
+            val entryPackages = entry.packages ?: ArrayList<String>().also { entry.packages = it }
+            for (packageName in packages) {
+                if (!entryPackages.contains(packageName)) {
+                    entryPackages.add(packageName)
+                }
+            }
+            if (entry.signers.isNullOrEmpty()) {
+                entry.signers = resolveSignersForUid(uid, packages)?.toMutableList()
+            }
+        }
+        if (entry.expiresAt != expiresAtEpochMs) {
+            entry.expiresAt = expiresAtEpochMs
+            persistNowLocked()
+        }
+    }
+
+    @Synchronized
+    fun entriesWithActiveExpiry(): List<Pair<Int, Long>> {
+        val result = ArrayList<Pair<Int, Long>>()
+        for (entry in config.packages.orEmpty()) {
+            if (entry.expiresAt > 0L) {
+                result.add(entry.uid to entry.expiresAt)
+            }
+        }
+        return result
+    }
+
+    @Synchronized
     fun allowedUids(): List<Int> {
         val list = ArrayList<Int>()
         for (entry in config.packages.orEmpty()) {
@@ -301,11 +363,14 @@ class ShizukuConfigManager : ConfigManager() {
             config.packages!!.add(entry)
         } else {
             val newValue = (found.flags and mask.inv()) or (mask and values)
-            if (newValue == found.flags && packages == null) {
+            if (newValue == found.flags && packages == null && (mask and ConfigManager.MASK_PERMISSION) == 0) {
                 return
             }
             found.flags = newValue
             entry = found
+        }
+        if ((mask and ConfigManager.MASK_PERMISSION) != 0) {
+            entry.expiresAt = 0L
         }
         if (packages != null) {
             val entryPackages = entry.packages!!

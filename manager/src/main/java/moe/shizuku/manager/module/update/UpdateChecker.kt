@@ -10,6 +10,7 @@ import moe.shizuku.manager.module.ModuleRuntimeUtils
 import moe.shizuku.manager.module.discovery.RateLimitTracker
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 class UpdateChecker private constructor() {
@@ -263,22 +264,35 @@ class UpdateChecker private constructor() {
     }
 
     private fun buildRequest(url: String, githubPat: String?): Request {
-        val builder = Request.Builder()
-            .url(url)
-            .header("Accept", "application/vnd.github+json")
-            .header("X-GitHub-Api-Version", "2022-11-28")
-
-        if (!githubPat.isNullOrBlank() && isGitHubDomain(url)) {
-            builder.header("Authorization", "Bearer $githubPat")
+        val builder = Request.Builder().url(url)
+        if (isGitHubApiDomain(url)) {
+            builder.header("Accept", "application/vnd.github+json")
+                .header("X-GitHub-Api-Version", "2022-11-28")
         }
-
+        if (!githubPat.isNullOrBlank() && isGitHubDomain(url)) {
+            builder.header("Authorization", "Bearer ${githubPat.trim()}")
+        }
         return builder.build()
+    }
+
+    private fun isGitHubApiDomain(url: String): Boolean {
+        return try {
+            val host = java.net.URL(url).host.lowercase(Locale.US)
+            host == "api.github.com" || host.endsWith(".api.github.com")
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun isGitHubDomain(url: String): Boolean {
         return try {
-            val host = java.net.URL(url).host.lowercase()
-            host == "api.github.com" || host.endsWith(".api.github.com")
+            val host = java.net.URL(url).host.lowercase(Locale.US)
+            host == "api.github.com" ||
+                host.endsWith(".api.github.com") ||
+                host == "raw.githubusercontent.com" ||
+                host.endsWith(".githubusercontent.com") ||
+                host == "github.com" ||
+                host.endsWith(".github.com")
         } catch (_: Exception) {
             false
         }

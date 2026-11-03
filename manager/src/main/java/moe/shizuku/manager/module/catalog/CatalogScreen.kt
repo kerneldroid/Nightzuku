@@ -70,9 +70,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -119,6 +116,8 @@ import moe.shizuku.manager.ui.compose.ShizukuIcon
 import moe.shizuku.manager.ui.compose.ShizukuLazyScaffold
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.InputStreamReader
+import java.nio.charset.StandardCharsets
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
@@ -342,11 +341,11 @@ fun CatalogScreen(onNavigateUp: () -> Unit) {
         if (showDangerDialog) {
             AlertDialog(
                 onDismissRequest = { showDangerDialog = false; pendingDangerModule = null },
-                title = { Text("Potentially unsafe module") },
+                title = { Text(stringResource(R.string.modules_catalog_danger_title)) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
-                            text = "This module has unusually large content that may cause issues:",
+                            text = stringResource(R.string.modules_catalog_danger_message),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -363,7 +362,10 @@ fun CatalogScreen(onNavigateUp: () -> Unit) {
                                 )
                             }
                         }
-                        Text("Do you want to continue anyway?", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            stringResource(R.string.modules_catalog_danger_prompt),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
                     }
                 },
                 confirmButton = {
@@ -371,10 +373,12 @@ fun CatalogScreen(onNavigateUp: () -> Unit) {
                         showDangerDialog = false
                         detailModule = pendingDangerModule
                         pendingDangerModule = null
-                    }) { Text("Continue") }
+                    }) { Text(stringResource(R.string.modules_catalog_danger_continue)) }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showDangerDialog = false; pendingDangerModule = null }) { Text("Go back") }
+                    TextButton(onClick = { showDangerDialog = false; pendingDangerModule = null }) {
+                        Text(stringResource(R.string.modules_catalog_danger_go_back))
+                    }
                 }
             )
         }
@@ -556,7 +560,7 @@ private fun ModuleDetailScreen(
         isLoadingReadme = true
         val owner = module.repoFullName.substringBefore('/')
         val repo = module.repoFullName.substringAfter('/')
-        val subPath = module.subPath?.trim('/')?.let { "$it/" } ?: ""
+        val subPath = module.subPath?.trim('/')?.let { if (it.isNotEmpty()) "$it/" else "" } ?: ""
 
         withContext(Dispatchers.IO) {
             coroutineScope {
@@ -580,19 +584,31 @@ private fun ModuleDetailScreen(
                 }
 
                 val readmeDeferred = async {
-                    val candidates = listOf(
-                        "https://raw.githubusercontent.com/$owner/$repo/main/README.md",
-                        "https://raw.githubusercontent.com/$owner/$repo/master/README.md",
-                        "https://raw.githubusercontent.com/$owner/$repo/main/${subPath}README.md",
-                        "https://raw.githubusercontent.com/$owner/$repo/master/${subPath}README.md"
-                    )
+                    val candidates = buildList {
+                        if (subPath.isNotEmpty()) {
+                            add("https://raw.githubusercontent.com/$owner/$repo/main/${subPath}README.md")
+                            add("https://raw.githubusercontent.com/$owner/$repo/master/${subPath}README.md")
+                        }
+                        add("https://raw.githubusercontent.com/$owner/$repo/main/README.md")
+                        add("https://raw.githubusercontent.com/$owner/$repo/master/README.md")
+                    }
                     for (url in candidates) {
                         try {
                             val req = Request.Builder().url(url).build()
                             sharedCatalogHttpClient.newCall(req).execute().use { resp ->
                                 if (resp.isSuccessful) {
-                                    val body = resp.body?.string()?.take(MAX_README_CHARS)
-                                    if (!body.isNullOrBlank()) return@async body
+                                    val stream = resp.body?.byteStream() ?: return@use
+                                    val body = InputStreamReader(stream, StandardCharsets.UTF_8).use { reader ->
+                                        val sb = StringBuilder()
+                                        val buf = CharArray(4096)
+                                        while (sb.length < MAX_README_CHARS) {
+                                            val read = reader.read(buf, 0, minOf(buf.size, MAX_README_CHARS - sb.length))
+                                            if (read <= 0) break
+                                            sb.append(buf, 0, read)
+                                        }
+                                        sb.toString()
+                                    }
+                                    if (body.isNotBlank()) return@async body
                                 }
                             }
                         } catch (_: Exception) {
@@ -615,7 +631,7 @@ private fun ModuleDetailScreen(
                 title = { Text(module.moduleName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
                     }
                 },
                 actions = {
@@ -819,7 +835,7 @@ private fun ModuleDetailScreen(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
-                                    "README not available",
+                                    stringResource(R.string.modules_catalog_readme_unavailable),
                                     modifier = Modifier.padding(16.dp),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant

@@ -38,6 +38,7 @@ import androidx.tv.material3.MaterialTheme as TvMaterialTheme
 import androidx.tv.material3.Surface as TvSurface
 import androidx.tv.material3.SurfaceDefaults as TvSurfaceDefaults
 import androidx.tv.material3.Text as TvText
+import kerneldroid.nightzuku.util.LabelSanitizer
 import moe.shizuku.manager.R
 import moe.shizuku.manager.authorization.AuthorizationManager
 import moe.shizuku.manager.ui.compose.ShizukuIcon
@@ -161,7 +162,12 @@ private fun TvAppCard(
     }
     val userId = UserHandleCompat.getUserId(uid)
     val title = remember(packageName, userId) {
-        val label = applicationInfo.loadLabel(pm).toString()
+        val rawLabel = try {
+            applicationInfo.loadLabel(pm)
+        } catch (_: Exception) {
+            packageName
+        }
+        val label = LabelSanitizer.sanitize(rawLabel, packageName)
         if (userId != UserHandleCompat.myUserId()) {
             val userInfo = ShizukuSystemApis.getUserInfo(userId)
             "$label - ${userInfo.name} ($userId)"

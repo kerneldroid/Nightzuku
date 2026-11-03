@@ -17,6 +17,8 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.VpnKey
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,6 +28,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.material3.Button as WearButton
@@ -134,6 +138,7 @@ fun WearTokenSettingsScreen(
     if (showTokenDialog) {
         var tokenInput by remember { mutableStateOf(githubToken) }
         var showPat by remember { mutableStateOf(false) }
+        val showWarning = tokenInput.isNotBlank() && !TokenStore.isValidTokenFormat(tokenInput)
 
         WearAlertDialog(
             visible = true,
@@ -142,11 +147,12 @@ fun WearTokenSettingsScreen(
             confirmButton = {
                 WearButton(
                     onClick = {
-                        githubToken = tokenInput
-                        if (tokenInput.isBlank()) {
+                        val trimmed = tokenInput.trim()
+                        githubToken = trimmed
+                        if (trimmed.isBlank()) {
                             TokenStore.clearToken(context)
                         } else {
-                            TokenStore.setToken(context, tokenInput)
+                            TokenStore.setToken(context, trimmed)
                         }
                         showTokenDialog = false
                     },
@@ -164,17 +170,25 @@ fun WearTokenSettingsScreen(
                         color = WearMaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(Modifier.height(8.dp))
-                    WearText(
-                        text = if (tokenInput.isNotBlank()) {
-                            if (showPat) tokenInput else tokenInput.take(8) + "..."
-                        } else {
-                            stringResource(R.string.modules_catalog_token_hint)
-                        },
-                        style = WearMaterialTheme.typography.bodyMedium,
+                    OutlinedTextField(
+                        value = tokenInput,
+                        onValueChange = { tokenInput = it },
+                        label = { Text(stringResource(R.string.modules_catalog_token_hint)) },
+                        singleLine = true,
+                        visualTransformation = if (showPat) VisualTransformation.None else PasswordVisualTransformation(),
+                        isError = showWarning,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 4.dp)
                     )
+                    if (showWarning) {
+                        WearText(
+                            text = stringResource(R.string.modules_catalog_token_format_warning),
+                            style = WearMaterialTheme.typography.labelSmall,
+                            color = WearMaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)

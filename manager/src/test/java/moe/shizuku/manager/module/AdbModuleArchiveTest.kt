@@ -115,21 +115,31 @@ class AdbModuleArchiveTest {
     }
 
     @Test
-    fun `attestation tokens are deterministic per module and challenge and written to the env file`() {
+    fun `attestation tokens and digests are deterministic per signer, module, and challenge and written to env file`() {
         val modDir = tempFolder.newFolder("mod_test")
+        val signer = "a1b2c3d4e5f60123456789abcdefa1b2c3d4e5f60123456789abcdef01234567"
 
-        val token = ModuleRuntimeUtils.computeAttestationToken("mod_test", "nonce-123")
+        val token = ModuleRuntimeUtils.computeAttestationToken("mod_test", "nonce-123", signer)
+        val digest = ModuleRuntimeUtils.computeAttestationDigest("mod_test", "nonce-123", signer)
         assertEquals(64, token.length)
+        assertEquals(64, digest.length)
         assertTrue(token.matches(Regex("[0-9a-f]{64}")))
-        assertEquals(token, ModuleRuntimeUtils.computeAttestationToken("mod_test", "nonce-123"))
-        assertFalse(token == ModuleRuntimeUtils.computeAttestationToken("mod_test", "nonce-456"))
-        assertFalse(token == ModuleRuntimeUtils.computeAttestationToken("other_mod", "nonce-123"))
+        assertTrue(digest.matches(Regex("[0-9a-f]{64}")))
+        assertEquals(token, ModuleRuntimeUtils.computeAttestationToken("mod_test", "nonce-123", "A1:B2:${signer.substring(4)}"))
+        assertFalse(token == ModuleRuntimeUtils.computeAttestationToken("mod_test", "nonce-456", signer))
+        assertFalse(token == ModuleRuntimeUtils.computeAttestationToken("other_mod", "nonce-123", signer))
 
-        val envFile = ModuleRuntimeUtils.writeModuleAttestationFile(modDir, "mod_test", "signer", token)
+        val envFile = ModuleRuntimeUtils.writeModuleAttestationFile(modDir, "mod_test", signer, token, digest)
         assertTrue(envFile?.isFile == true)
         val envContent = envFile!!.readText()
         assertTrue(envContent.contains("NIGHTZUKU_HOST_PKG=kerneldroid.nightzuku"))
         assertTrue(envContent.contains("NIGHTZUKU_BINDER_DESCRIPTOR=kerneldroid.nightzuku.INightService"))
         assertTrue(envContent.contains("NIGHTZUKU_SESSION_TOKEN=$token"))
+        assertTrue(envContent.contains("NIGHTZUKU_ATTESTATION_SHA256=$digest"))
+
+        assertEquals(
+            "/data/local/tmp/kerneldroid.nightzuku/adb_modules/mod_test",
+            ModuleRuntimeUtils.shellModuleDirectory("mod_test").path.replace('\\', '/')
+        )
     }
 }

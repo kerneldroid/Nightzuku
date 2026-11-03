@@ -42,6 +42,7 @@ fun TvSettingsScreen(
     onUseSystemColorChange: (Boolean) -> Unit,
     moduleAccessMode: ModuleSettings.AccessMode,
     onModuleAccessModeClick: () -> Unit,
+    onCustomPermissionsClick: () -> Unit,
     allowBackgroundActions: Boolean,
     onAllowBackgroundActionsChange: (Boolean) -> Unit,
     backgroundCheckEnabled: Boolean,
@@ -139,6 +140,15 @@ fun TvSettingsScreen(
                     summary = stringResource(moduleAccessMode.labelRes),
                     onClick = onModuleAccessModeClick
                 )
+            }
+            if (moduleAccessMode == ModuleSettings.AccessMode.CUSTOM) {
+                item {
+                    TvSettingsClickRow(
+                        title = stringResource(R.string.modules_custom_permissions),
+                        summary = stringResource(R.string.modules_custom_permissions_summary),
+                        onClick = onCustomPermissionsClick
+                    )
+                }
             }
             item {
                 TvSettingsToggleRow(

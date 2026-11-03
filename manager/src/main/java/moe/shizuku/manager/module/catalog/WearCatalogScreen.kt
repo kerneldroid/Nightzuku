@@ -13,8 +13,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.FilterList
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -28,6 +33,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
@@ -135,7 +142,10 @@ fun WearCatalogScreen(
                 installResult = Pair(module.moduleName, true)
                 onModuleInstalled()
             }.onFailure {
-                installResult = Pair(it.message ?: "Install failed", false)
+                installResult = Pair(
+                    context.getString(R.string.modules_catalog_install_failed, it.message ?: it.javaClass.simpleName),
+                    false
+                )
             }
         }
     }
@@ -367,6 +377,7 @@ fun WearCatalogScreen(
 
         if (showTokenDialog) {
             var tokenInput by remember { mutableStateOf(token) }
+            var showPat by remember { mutableStateOf(false) }
             val showWarning = tokenInput.isNotBlank() && !TokenStore.isValidTokenFormat(tokenInput)
             WearAlertDialog(
                 visible = true,
@@ -378,8 +389,9 @@ fun WearCatalogScreen(
                 confirmButton = {
                     WearButton(
                         onClick = {
-                            TokenStore.setToken(context, tokenInput)
-                            token = tokenInput
+                            val trimmed = tokenInput.trim()
+                            TokenStore.setToken(context, trimmed)
+                            token = trimmed
                             showTokenDialog = false
                             scope.launch {
                                 isLoading = true
@@ -405,9 +417,13 @@ fun WearCatalogScreen(
                             color = WearMaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(8.dp))
-                        WearText(
-                            text = if (tokenInput.isNotBlank()) tokenInput.take(8) + "..." else stringResource(R.string.modules_catalog_token_hint),
-                            style = WearMaterialTheme.typography.bodyMedium,
+                        OutlinedTextField(
+                            value = tokenInput,
+                            onValueChange = { tokenInput = it },
+                            label = { Text(stringResource(R.string.modules_catalog_token_hint)) },
+                            singleLine = true,
+                            visualTransformation = if (showPat) VisualTransformation.None else PasswordVisualTransformation(),
+                            isError = showWarning,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 4.dp)
@@ -420,12 +436,31 @@ fun WearCatalogScreen(
                                 modifier = Modifier.padding(top = 4.dp)
                             )
                         }
-                        WearButton(
-                            onClick = { tokenInput = "" },
+                        Row(
                             modifier = Modifier.fillMaxWidth(),
-                            colors = WearButtonDefaults.buttonColors()
+                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
                         ) {
-                            WearText(stringResource(R.string.update_settings_github_pat_clear))
+                            WearIconButton(
+                                onClick = { showPat = !showPat },
+                                modifier = Modifier.size(WearIconButtonDefaults.DefaultButtonSize)
+                            ) {
+                                WearIcon(
+                                    imageVector = if (showPat) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                                    contentDescription = stringResource(
+                                        if (showPat) R.string.update_settings_github_pat_hide
+                                        else R.string.update_settings_github_pat_show
+                                    )
+                                )
+                            }
+                            WearIconButton(
+                                onClick = { tokenInput = "" },
+                                modifier = Modifier.size(WearIconButtonDefaults.DefaultButtonSize)
+                            ) {
+                                WearIcon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = stringResource(R.string.update_settings_github_pat_clear)
+                                )
+                            }
                         }
                     }
                 }
@@ -436,12 +471,12 @@ fun WearCatalogScreen(
             WearAlertDialog(
                 visible = true,
                 onDismissRequest = { showDangerDialog = false },
-                title = { WearText("Potentially unsafe module") },
+                title = { WearText(stringResource(R.string.modules_catalog_danger_title)) },
                 confirmButton = {},
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         WearText(
-                            text = dangerReason ?: "Large content detected",
+                            text = dangerReason ?: stringResource(R.string.modules_catalog_danger_message),
                             style = WearMaterialTheme.typography.bodySmall,
                             color = WearMaterialTheme.colorScheme.error
                         )
@@ -450,14 +485,14 @@ fun WearCatalogScreen(
                             modifier = Modifier.fillMaxWidth(),
                             colors = WearButtonDefaults.buttonColors()
                         ) {
-                            WearText("Continue anyway")
+                            WearText(stringResource(R.string.modules_catalog_danger_continue))
                         }
                         WearButton(
                             onClick = { showDangerDialog = false },
                             modifier = Modifier.fillMaxWidth(),
                             colors = WearButtonDefaults.filledTonalButtonColors()
                         ) {
-                            WearText("Go back")
+                            WearText(stringResource(R.string.modules_catalog_danger_go_back))
                         }
                     }
                 }

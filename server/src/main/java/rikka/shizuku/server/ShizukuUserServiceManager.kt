@@ -51,6 +51,20 @@ class ShizukuUserServiceManager : UserServiceManager() {
         }
     }
 
+    override fun ensureCallingPackageForUserService(packageName: String, appId: Int, userId: Int): PackageInfo {
+        val packageInfo = Android17Compat.getPackageInfo(
+            packageName,
+            PackageSignatureVerifier.signatureLookupFlags(),
+            userId
+        ) ?: return super.ensureCallingPackageForUserService(packageName, appId, userId)
+        val ai = packageInfo.applicationInfo
+            ?: throw SecurityException("unable to find package $packageName")
+        if (UserHandleCompat.getAppId(ai.uid) != appId) {
+            throw SecurityException("package $packageName is not owned by $appId")
+        }
+        return packageInfo
+    }
+
     /**
      * Removes only the [UserServiceRecord] instances belonging to [uid], avoiding collateral
      * termination of the same package's UserServices running in other Android users.

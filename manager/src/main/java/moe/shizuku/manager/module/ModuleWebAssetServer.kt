@@ -401,6 +401,14 @@ class ModuleWebAssetServer(
                 }
             }
 
+            export function verifyHost(challenge = '') {
+                const bridge = rawBridge();
+                if (!bridge || typeof bridge.verifyHost !== 'function') {
+                    throw new Error('Nightzuku host attestation bridge is not exposed for this module');
+                }
+                return JSON.parse(bridge.verifyHost(String(challenge ?? '')));
+            }
+
             export async function exec(command) {
                 const bridge = rawBridge();
                 if (!bridge || typeof bridge.exec !== 'function') {
@@ -412,6 +420,32 @@ class ModuleWebAssetServer(
                     ...parsed,
                     ok: parsed.exitCode === 0 && !parsed.blocked && !parsed.timedOut && !parsed.rateLimited
                 };
+            }
+
+            export async function execWithOptions(command, options = {}) {
+                const bridge = rawBridge();
+                if (!bridge || typeof bridge.execWithOptions !== 'function') {
+                    throw new Error('Nightzuku shell bridge is not exposed for this module');
+                }
+                const optionsJson = typeof options === 'string' ? options : JSON.stringify(options ?? {});
+                const raw = bridge.execWithOptions(String(command ?? ''), optionsJson);
+                const parsed = JSON.parse(raw);
+                return {
+                    ...parsed,
+                    ok: parsed.exitCode === 0 && !parsed.blocked && !parsed.timedOut && !parsed.rateLimited
+                };
+            }
+
+            export async function download(url, relativeWebPath) {
+                const bridge = rawBridge();
+                if (!bridge || typeof bridge.download !== 'function') {
+                    throw new Error('Nightzuku download bridge is not exposed for this module');
+                }
+                const parsed = JSON.parse(bridge.download(String(url ?? ''), String(relativeWebPath ?? '')));
+                if (!parsed.ok) {
+                    throw new Error(parsed.error || 'Download failed');
+                }
+                return parsed;
             }
 
             export async function readText(relativePath) {
@@ -454,7 +488,10 @@ class ModuleWebAssetServer(
                 isBridgeAvailable,
                 getModuleInfo,
                 getRuntimeInfo,
+                verifyHost,
                 exec,
+                execWithOptions,
+                download,
                 readText,
                 writeText,
                 listFiles

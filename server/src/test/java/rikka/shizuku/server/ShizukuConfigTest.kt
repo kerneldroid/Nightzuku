@@ -77,6 +77,7 @@ class ShizukuConfigTest {
                     packages = mutableListOf("com.example.client")
                     signers = mutableListOf("1122334455667788")
                     lastConnectedAt = 999_888_777L
+                    expiresAt = 1_800_000_000_000L
                 }
             )
         ).apply {
@@ -94,5 +95,22 @@ class ShizukuConfigTest {
         assertEquals(10555, restored.packages!![0].uid)
         assertEquals(listOf("1122334455667788"), restored.packages!![0].signers)
         assertEquals(999_888_777L, restored.packages!![0].lastConnectedAt)
+        assertEquals(1_800_000_000_000L, restored.packages!![0].expiresAt)
+    }
+
+    @Test
+    fun `PackageEntry expiresAt denies access once expiration timestamp is reached`() {
+        val entry = ShizukuConfig.PackageEntry(10777, ConfigManager.FLAG_ALLOWED).apply {
+            expiresAt = 5_000L
+        }
+        assertFalse(entry.isExpired(nowMs = 4_999L))
+        assertTrue(entry.isExpired(nowMs = 5_000L))
+        assertTrue(entry.isExpired(nowMs = 6_000L))
+
+        entry.expiresAt = System.currentTimeMillis() - 1_000L
+        assertFalse("Expired entry must not report isAllowed() == true", entry.isAllowed())
+
+        entry.expiresAt = System.currentTimeMillis() + 60_000L
+        assertTrue("Active non-expired entry must report isAllowed() == true", entry.isAllowed())
     }
 }

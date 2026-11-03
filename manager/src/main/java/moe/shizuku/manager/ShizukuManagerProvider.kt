@@ -108,6 +108,7 @@ class ShizukuManagerProvider : NightProvider() {
             val challenge = arg?.take(256).orEmpty()
             val moduleId = extras?.getString("moduleId").orEmpty()
             val token = ModuleRuntimeUtils.computeAttestationToken(moduleId, challenge, signer)
+            val digest = ModuleRuntimeUtils.computeAttestationDigest(moduleId, challenge, signer)
             return Bundle().apply {
                 putBoolean("genuine", true)
                 putString("hostPackage", ModuleRuntimeUtils.HOST_PACKAGE_ID)
@@ -115,8 +116,11 @@ class ShizukuManagerProvider : NightProvider() {
                 putInt("hostVersionCode", BuildConfig.VERSION_CODE)
                 putInt("modulesApiVersion", ModuleRuntimeUtils.HOST_API_VERSION)
                 putString("binderDescriptor", NightProtocol.DESCRIPTOR)
+                putString("moduleId", moduleId)
+                putString("challenge", challenge)
                 putString("signerSha256", signer)
                 putString("attestationToken", token)
+                putString("attestationSha256", digest)
             }
         }
 

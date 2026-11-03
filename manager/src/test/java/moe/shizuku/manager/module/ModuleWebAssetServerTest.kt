@@ -4,6 +4,7 @@ import java.nio.file.Files
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -33,6 +34,30 @@ class ModuleWebAssetServerTest {
         assertEquals("application/json", ModuleWebAssetServer.resolveMimeType("config.json"))
         assertEquals("text/css", ModuleWebAssetServer.resolveMimeType("styles.css"))
         assertEquals("image/svg+xml", ModuleWebAssetServer.resolveMimeType("icon.svg"))
+    }
+
+    @Test
+    fun serveVirtualAsset_servesBuiltinBridgeEsModuleWithAllMethods() {
+        val server = ModuleWebAssetServer(moduleId = "bridge_mod", webRoot = null, webNetworkAllowed = false)
+        val resp = server.serveVirtualAsset("/__nightzuku__/bridge.js", "GET")
+        assertEquals(200, resp.statusCode)
+        assertEquals("text/javascript", resp.mimeType)
+        val script = resp.data.bufferedReader(Charsets.UTF_8).use { it.readText() }
+        assertNotNull(script)
+        for (fnName in listOf(
+            "isBridgeAvailable",
+            "getModuleInfo",
+            "getRuntimeInfo",
+            "verifyHost",
+            "exec",
+            "execWithOptions",
+            "download",
+            "readText",
+            "writeText",
+            "listFiles"
+        )) {
+            assertTrue("Missing export $fnName in built-in bridge", script.contains("export ") && script.contains(fnName))
+        }
     }
 
     @Test

@@ -6,6 +6,7 @@ import kerneldroid.nightzuku.api.NightProtocol
 import moe.shizuku.manager.BuildConfig
 import moe.shizuku.manager.application
 import moe.shizuku.server.IShizukuService
+import org.json.JSONArray
 import org.json.JSONObject
 import rikka.shizuku.Shizuku
 import java.io.BufferedInputStream
@@ -24,6 +25,7 @@ class ModuleJsBridge(
     fun getModuleInfo(): String {
         val ctx = runCatching { application.applicationContext }.getOrNull()
         val signer = ModuleRuntimeUtils.getManagerSignerSha256(ctx)
+        val shellModDir = ModuleRuntimeUtils.shellModuleDirectory(module.id).absolutePath
         return JSONObject().apply {
             put("ok", true)
             put("id", module.id)
@@ -35,7 +37,8 @@ class ModuleJsBridge(
             put("webRoot", module.webRoot?.absolutePath ?: "")
             put("webOrigin", ModuleWebAssetServer.originForModule(module.id))
             put("virtualBridgeUrl", "${ModuleWebAssetServer.originForModule(module.id)}${ModuleWebAssetServer.VIRTUAL_BRIDGE_PATH}")
-            put("moduleDir", module.directory.absolutePath)
+            put("moduleDir", shellModDir)
+            put("appModuleDir", module.directory.absolutePath)
             put("accessMode", ModuleSettings.getAccessMode().value)
             put("trusted", ModuleSettings.isModuleTrusted(module.id))
             put("background", ModuleSettings.canRunBackground(module))
@@ -64,6 +67,11 @@ class ModuleJsBridge(
         }.toString()
     }
 
+    @JavascriptInterface
+    fun getRuntimeInfo(): String {
+        return getModuleInfo()
+    }
+
     /**
      * Cryptographic host attestation for WebUI modules to verify they are running inside
      * genuine Nightzuku (`kerneldroid.nightzuku`) rather than an incompatible fork.
@@ -74,6 +82,7 @@ class ModuleJsBridge(
         val ctx = runCatching { application.applicationContext }.getOrNull()
         val signer = ModuleRuntimeUtils.getManagerSignerSha256(ctx)
         val token = ModuleRuntimeUtils.computeAttestationToken(module.id, cleanChallenge, signer)
+        val digest = ModuleRuntimeUtils.computeAttestationDigest(module.id, cleanChallenge, signer)
         return JSONObject().apply {
             put("ok", true)
             put("genuineNightzuku", true)
@@ -87,6 +96,7 @@ class ModuleJsBridge(
             put("challenge", cleanChallenge)
             put("signerSha256", signer)
             put("attestationToken", token)
+            put("attestationSha256", digest)
         }.toString()
     }
 
@@ -105,12 +115,138 @@ class ModuleJsBridge(
     }
 
     @JavascriptInterface
+    fun readText(relativePath: String): String {
+        val result = JSONObject()
+        return try {
+            ensureModuleUsableForFileBridge()
+            val clean = ModuleRuntimeUtils.cleanRelativePath(relativePath)
+            val file = resolveReadableModuleFile(clean)
+            require(file.isFile && file.canRead()) { "File not found: $clean" }
+            require(file.length() <= MAX_TEXT_FILE_BYTES) {
+                "File exceeds maximum readable size (${MAX_TEXT_FILE_BYTES / 1024} KB)."
+            }
+            val content = file.readText(Charsets.UTF_8)
+            result.apply {
+                put("ok", true)
+                put("path", clean)
+                put("content", content)
+                put("size", file.length())
+            }.toString()
+        } catch (e: Exception) {
+            result.apply {
+                put("ok", false)
+                put("path", relativePath)
+                put("error", e.message ?: "Failed to read file.")
+            }.toString()
+        }
+    }
+
+    @JavascriptInterface
+    fun writeText(relativePath: String, content: String): String {
+        val result = JSONObject()
+        return try {
+            ensureModuleUsableForFileBridge()
+            val clean = ModuleRuntimeUtils.cleanRelativePath(relativePath)
+            require(!isProtectedModuleFile(clean)) { "Cannot overwrite protected module file: $clean" }
+            val bytes = content.toByteArray(Charsets.UTF_8)
+            require(bytes.size <= MAX_TEXT_FILE_BYTES) {
+                "Content exceeds maximum writable size (${MAX_TEXT_FILE_BYTES / 1024} KB)."
+            }
+            val target = File(module.directory, clean)
+            ModuleRuntimeUtils.ensureInside(module.directory, target)
+            require(!target.isDirectory) { "Destination is a directory: $clean" }
+            val parent = target.parentFile ?: error("Destination has no parent directory.")
+            parent.mkdirs()
+            val tmp = File.createTempFile(".write-", ".tmp", parent)
+            try {
+                tmp.writeBytes(bytes)
+                if (target.exists()) target.delete()
+                check(tmp.renameTo(target)) { "Unable to save file: $clean" }
+            } finally {
+                if (tmp.exists()) tmp.delete()
+            }
+            syncModuleToShellIfRunning()
+            result.apply {
+                put("ok", true)
+                put("path", clean)
+                put("bytesWritten", bytes.size)
+            }.toString()
+        } catch (e: Exception) {
+            result.apply {
+                put("ok", false)
+                put("path", relativePath)
+                put("error", e.message ?: "Failed to write file.")
+            }.toString()
+        }
+    }
+
+    @JavascriptInterface
+    fun listFiles(relativePath: String?): String {
+        val result = JSONObject()
+        val rawPath = relativePath?.trim().orEmpty()
+        return try {
+            ensureModuleUsableForFileBridge()
+            val clean = if (rawPath.isEmpty() || rawPath == "." || rawPath == "/") {
+                ""
+            } else {
+                ModuleRuntimeUtils.cleanRelativePath(rawPath)
+            }
+            val targetDir = if (clean.isEmpty()) {
+                module.directory
+            } else {
+                File(module.directory, clean).also { ModuleRuntimeUtils.ensureInside(module.directory, it) }
+            }
+            require(targetDir.isDirectory) { "Directory not found: ${clean.ifEmpty { "." }}" }
+
+            val rootPath = module.directory.canonicalFile.toPath()
+            val entriesArray = JSONArray()
+            val children = targetDir.listFiles()
+                ?.filter { child ->
+                    child.name != ModuleRuntimeUtils.ATTESTATION_FILE_NAME &&
+                        child.name != ".source.prop" &&
+                        !child.name.startsWith(".write-") &&
+                        !child.name.startsWith(".sync-")
+                }
+                ?.sortedWith(compareBy<File> { !it.isDirectory }.thenBy { it.name.lowercase() })
+                .orEmpty()
+
+            for (child in children) {
+                val rel = rootPath.relativize(child.canonicalFile.toPath()).toString().replace('\\', '/')
+                entriesArray.put(
+                    JSONObject().apply {
+                        put("name", child.name)
+                        put("path", rel)
+                        put("type", if (child.isDirectory) "dir" else "file")
+                        put("isDirectory", child.isDirectory)
+                        put("isFile", child.isFile)
+                        put("size", if (child.isFile) child.length() else 0L)
+                        put("lastModified", child.lastModified())
+                    }
+                )
+            }
+
+            result.apply {
+                put("ok", true)
+                put("path", clean)
+                put("entries", entriesArray)
+            }.toString()
+        } catch (e: Exception) {
+            result.apply {
+                put("ok", false)
+                put("path", rawPath)
+                put("error", e.message ?: "Failed to list files.")
+            }.toString()
+        }
+    }
+
+    @JavascriptInterface
     fun download(url: String, relativeWebPath: String): String {
         val result = JSONObject()
         return try {
             ensureModuleUsableForWebFiles()
             val outFile = resolveWebFile(relativeWebPath)
             val bytes = downloadHttpsToFile(url, outFile)
+            syncModuleToShellIfRunning()
             result.apply {
                 put("ok", true)
                 put("url", url)
@@ -163,14 +299,22 @@ class ModuleJsBridge(
             val targetDir = resolveModuleDirectory(options.cwd)
             val service = IShizukuService.Stub.asInterface(binder)
             val ctx = runCatching { application.applicationContext }.getOrNull()
-            val env = ModuleRuntimeUtils.buildModuleEnvironment(ctx, module, targetDir, options.extraEnv)
+            val env = ModuleRuntimeUtils.buildModuleEnvironment(
+                ctx,
+                module,
+                targetDir,
+                options.extraEnv,
+                useShellRuntimeDir = true
+            )
+            val shellDir = ModuleRuntimeUtils.syncModuleToShellRuntime(service, module)
+            val shellCwd = ModuleRuntimeUtils.resolveShellCwd(module, targetDir)
             // Pass the target working directory via environment variable ($SHIZUKU_MODULE_CWD)
-            // rather than interpolating it into double-quoted shell syntax.
-            val wrappedCommand = "cd \"\$SHIZUKU_MODULE_CWD\" 2>/dev/null || true\n$command"
+            // inside the SELinux-accessible /data/local/tmp/kerneldroid.nightzuku/adb_modules/<id> workspace.
+            val wrappedCommand = "cd \"\$SHIZUKU_MODULE_CWD\" 2>/dev/null || cd \"\$MODDIR\" 2>/dev/null || true\n$command"
             val remote = service.newProcess(
                 arrayOf("sh", "-c", wrappedCommand),
                 env,
-                "/data/local/tmp"
+                shellCwd.ifBlank { shellDir.absolutePath }
             )
 
             val stdoutPfd = remote.getInputStream()
@@ -218,6 +362,7 @@ class ModuleJsBridge(
                 runCatching { stderrPfd.close() }
                 stderrThread.join(250)
             }
+            runCatching { ModuleRuntimeUtils.syncBackFromShellRuntime(service, module) }
 
             result.apply {
                 put("ok", finished && exitCode == 0)
@@ -270,6 +415,57 @@ class ModuleJsBridge(
         ModuleRuntimeUtils.ensureInside(module.directory, directory)
         require(directory.isDirectory) { "cwd is not a directory: $relativePath" }
         return directory
+    }
+
+    private fun ensureModuleUsableForFileBridge() {
+        require(module.enabled) { "Module is disabled." }
+        require(module.declaresShellBridge || ModuleSettings.isModuleTrusted(module.id)) {
+            "Permission denied: module.prop must declare usesShellBridge=true."
+        }
+        require(ModuleSettings.canExposeWebBridge(module)) {
+            "Permission denied: WebUI bridge is blocked by module access policy."
+        }
+    }
+
+    private fun resolveReadableModuleFile(cleanRelativePath: String): File {
+        val candidate = File(module.directory, cleanRelativePath)
+        ModuleRuntimeUtils.ensureInside(module.directory, candidate)
+        if (candidate.isFile) return candidate
+        val webRoot = module.webRoot
+        if (webRoot != null) {
+            val webCandidate = File(webRoot, cleanRelativePath)
+            ModuleRuntimeUtils.ensureInside(webRoot, webCandidate)
+            if (webCandidate.isFile) return webCandidate
+        }
+        return candidate
+    }
+
+    private fun isProtectedModuleFile(cleanRelativePath: String): Boolean {
+        val lower = cleanRelativePath.lowercase()
+        if (lower == "module.prop" ||
+            lower == ".source.prop" ||
+            lower == ModuleRuntimeUtils.ATTESTATION_FILE_NAME.lowercase() ||
+            lower == "disable"
+        ) {
+            return true
+        }
+        if (!ModuleSettings.isModuleTrusted(module.id)) {
+            if (lower == "index.html" || lower == "index.htm" ||
+                lower.endsWith("/index.html") || lower.endsWith("/index.htm") ||
+                lower.endsWith("nightzuku-guard.js") || lower.endsWith("nightzuku-guard.sh")
+            ) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun syncModuleToShellIfRunning() {
+        runCatching {
+            val binder = Shizuku.getBinder()?.takeIf { it.pingBinder() } ?: return
+            val service = IShizukuService.Stub.asInterface(binder)
+            ModuleRuntimeUtils.syncModuleToShellRuntime(service, module)
+        }
     }
 
     private fun ensureModuleUsableForWebFiles() {
@@ -383,6 +579,7 @@ class ModuleJsBridge(
         private const val MAX_STDIN_CHARS = 64 * 1024
         private const val MAX_EXTRA_ENV_COUNT = 32
         private const val MAX_ENV_VALUE_CHARS = 4096
+        private const val MAX_TEXT_FILE_BYTES = 2 * 1024 * 1024
         private const val MAX_DOWNLOAD_BYTES = 20L * 1024L * 1024L
         private const val NETWORK_TIMEOUT_MS = 15_000
         private const val MAX_REDIRECTS = 5

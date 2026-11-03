@@ -476,4 +476,12 @@ With %1$s, in any terminal app, you can connect to and interact with the shell r
     <string name="stub_notice_title">Hey, friend — please read!</string>
     <string name="stub_notice_message"><![CDATA[Nightzuku can work with clients that use the Shizuku API, BUT it cannot activate the stub that makes other apps see the Shizuku package ID. Please install the regular Shizuku app (any version); you do not need to activate it — it can stay an empty shell. I do not ship that stub on principle: licensing concerns and no desire to build and maintain it.]]></string>
     <string name="stub_notice_confirm">Got it</string>
+    <string name="modules_catalog_danger_title">Potentially unsafe module</string>
+    <string name="modules_catalog_danger_message">This module has unusually large content that may cause issues:</string>
+    <string name="modules_catalog_danger_prompt">Do you want to continue anyway?</string>
+    <string name="modules_catalog_danger_continue">Continue</string>
+    <string name="modules_catalog_danger_go_back">Go back</string>
+    <string name="modules_catalog_readme_unavailable">README not available</string>
+    <string name="modules_webview_error_title">WebView Error</string>
+    <string name="modules_webview_error_message">WebView is not supported or crashed during initialization on this Wear OS device.\n\n%1$s</string>
 </resources>

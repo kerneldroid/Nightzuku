@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.RestartAlt
@@ -30,6 +31,8 @@ import moe.shizuku.manager.ui.compose.WearScreenTitle
 fun WearSettingsScreen(
     startOnBoot: Boolean,
     onStartOnBootChange: (Boolean) -> Unit,
+    languageSummary: String,
+    onLanguageClick: () -> Unit,
     nightModeSummary: String,
     onNightModeClick: () -> Unit,
     blackNightTheme: Boolean,
@@ -44,16 +47,10 @@ fun WearSettingsScreen(
     onAllowBackgroundActionsChange: (Boolean) -> Unit,
     backgroundCheckEnabled: Boolean,
     onBackgroundCheckEnabledChange: (Boolean) -> Unit,
-    onGitHubTokenClick: () -> Unit,
-
-    showNightDialog: Boolean,
-    nightLabels: List<String>,
-    nightValues: List<Int>,
-    currentNightMode: Int,
-    onNightModeSelect: (Int) -> Unit,
-    onNightDialogDismiss: () -> Unit
+    onGitHubTokenClick: () -> Unit
 ) {
     val startOnBootTitle = stringResource(R.string.settings_start_on_boot)
+    val languageTitle = stringResource(R.string.settings_language)
     val nightModeTitle = stringResource(rikka.core.R.string.dark_theme)
     val blackThemeTitle = stringResource(R.string.settings_black_night_theme)
     val systemColorTitle = stringResource(R.string.settings_use_system_color)
@@ -87,6 +84,18 @@ fun WearSettingsScreen(
                     transformation = SurfaceTransformation(transformationSpec),
                     label = { WearText(startOnBootTitle) },
                     icon = { WearIcon(Icons.Rounded.RestartAlt, contentDescription = null) }
+                )
+            }
+
+            item {
+                WearTitleCard(
+                    onClick = onLanguageClick,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                    title = { WearText(languageTitle) },
+                    subtitle = { WearText(languageSummary) }
                 )
             }
 

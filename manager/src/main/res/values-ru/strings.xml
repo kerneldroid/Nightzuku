@@ -470,4 +470,13 @@
     <string name="stub_notice_title">Эй, дружище, прочти!</string>
     <string name="stub_notice_message"><![CDATA[Nightzuku умеет работать с клиентами, использующими Shizuku API, НО он не умеет активировать stub, чтобы другие приложения видели ID пакета Shizuku. Желательно установить обычный Shizuku любой версии — активировать его не надо, он будет пустышкой. Я не делаю пустышку из принципа: проблема с лицензией и нежелание её создавать и поддерживать.]]></string>
     <string name="stub_notice_confirm">Понятно</string>
+    <string name="translation_contributors">kerneldroid</string>
+    <string name="modules_catalog_danger_title">Потенциально небезопасный модуль</string>
+    <string name="modules_catalog_danger_message">Этот модуль содержит необычно большой объём данных, что может вызвать сбои:</string>
+    <string name="modules_catalog_danger_prompt">Всё равно продолжить?</string>
+    <string name="modules_catalog_danger_continue">Продолжить</string>
+    <string name="modules_catalog_danger_go_back">Назад</string>
+    <string name="modules_catalog_readme_unavailable">README недоступен</string>
+    <string name="modules_webview_error_title">Ошибка WebView</string>
+    <string name="modules_webview_error_message">WebView не поддерживается или завершился с ошибкой при инициализации на этом устройстве Wear OS.\n\n%1$s</string>
 </resources>

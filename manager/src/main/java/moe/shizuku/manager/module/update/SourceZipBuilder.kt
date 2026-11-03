@@ -2,11 +2,14 @@ package moe.shizuku.manager.module.update
 
 import android.content.Context
 import android.util.Log
+import moe.shizuku.manager.module.AdbModuleManager
 import moe.shizuku.manager.module.discovery.ContentItem
 import moe.shizuku.manager.module.discovery.RateLimitTracker
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -33,6 +36,7 @@ class SourceZipBuilder private constructor() {
 
         return try {
             val addedEntries = HashSet<String>()
+            var totalBytes = 0L
             ZipOutputStream(zipFile.outputStream()).use { zip ->
                 for (file in files) {
                     val fullPath = file.path.replace('\\', '/').trim('/')
@@ -46,7 +50,12 @@ class SourceZipBuilder private constructor() {
                     if (!addedEntries.add(relativePath)) continue
                     val downloadUrl = file.downloadUrl ?: continue
 
-                    val content = downloadFile(downloadUrl, githubPat) ?: continue
+                    val remainingBudget = (ModuleInstaller.MAX_DOWNLOAD_ZIP_BYTES - totalBytes).coerceAtLeast(0L)
+                    require(remainingBudget > 0L) {
+                        "Source ZIP exceeds maximum allowed size (${ModuleInstaller.MAX_DOWNLOAD_ZIP_BYTES} bytes)."
+                    }
+                    val content = downloadFile(downloadUrl, githubPat, remainingBudget) ?: continue
+                    totalBytes += content.size.toLong()
                     val entry = ZipEntry(relativePath)
                     entry.size = content.size.toLong()
                     zip.putNextEntry(entry)
@@ -68,18 +77,20 @@ class SourceZipBuilder private constructor() {
         }
     }
 
-    private fun downloadFile(url: String, githubPat: String?): ByteArray? {
+    private fun downloadFile(url: String, githubPat: String?, maxBytes: Long): ByteArray? {
         return try {
             val builder = Request.Builder()
                 .url(url)
 
-            val host = runCatching { java.net.URL(url).host.lowercase() }.getOrDefault("")
+            val host = runCatching { java.net.URL(url).host.lowercase(Locale.US) }.getOrDefault("")
             if (host == "api.github.com" || host.endsWith(".api.github.com")) {
                 builder.header("Accept", "application/vnd.github.v3.raw")
                 if (!githubPat.isNullOrBlank()) {
                     builder.header("Authorization", "Bearer ${githubPat.trim()}")
                 }
-            } else if (!githubPat.isNullOrBlank() && host == "raw.githubusercontent.com") {
+            } else if (!githubPat.isNullOrBlank() &&
+                (host == "raw.githubusercontent.com" || host.endsWith(".githubusercontent.com") || host == "github.com" || host.endsWith(".github.com"))
+            ) {
                 builder.header("Authorization", "Bearer ${githubPat.trim()}")
             }
 
@@ -94,7 +105,17 @@ class SourceZipBuilder private constructor() {
                     return null
                 }
 
-                resp.body?.bytes()
+                val contentLength = resp.body?.contentLength() ?: -1L
+                require(contentLength <= maxBytes) {
+                    "Source file Content-Length ($contentLength bytes) exceeds remaining budget ($maxBytes bytes)."
+                }
+
+                val stream = resp.body?.byteStream() ?: return null
+                stream.use { input ->
+                    val out = ByteArrayOutputStream()
+                    AdbModuleManager.copyStreamBounded(input, out, maxBytes)
+                    out.toByteArray()
+                }
             }
         } catch (e: Exception) {
             Log.w(TAG, "Download error for $url", e)
@@ -103,7 +124,7 @@ class SourceZipBuilder private constructor() {
     }
 
     private fun isModuleFile(relativePath: String): Boolean {
-        val cleanName = relativePath.replace('\\', '/').trim('/').lowercase()
+        val cleanName = relativePath.replace('\\', '/').trim('/').lowercase(Locale.US)
         if (cleanName.isBlank()) return false
         if (cleanName.startsWith(".git/") || cleanName.startsWith(".github/")) return false
         val fileName = cleanName.substringAfterLast('/')
