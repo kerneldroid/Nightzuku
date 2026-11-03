@@ -9,7 +9,7 @@ idea.module {
 subprojects {
     // API modules ship under kerneldroid.nightzuku; keep the group consistent so
     // @RestrictTo(LIBRARY_GROUP_PREFIX) constants are not reported by lint.
-    group = "kerneldroid.nightzuku"
+    group = "io.github.kerneldroid"
 
     plugins.withId("com.android.base") {
         android {
