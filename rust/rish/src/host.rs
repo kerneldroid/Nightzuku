@@ -6,7 +6,7 @@ use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
 use std::ptr;
 
 use jni::JNIEnv;
-use jni::objects::{JByteArray, JClass};
+use jni::objects::{JByteArray, JClass, JObjectArray, JString};
 use jni::sys::{jbyte, jint, jintArray, jlong};
 use log::{debug, error, warn};
 
@@ -30,6 +30,41 @@ fn decode_vector(env: &JNIEnv, block: &JByteArray, count: jint) -> Option<Vec<CS
     Some(result)
 }
 
+fn decode_string_array<'local>(
+    env: &mut JNIEnv<'local>,
+    array: &JObjectArray<'local>,
+) -> Option<Vec<CString>> {
+    if array.as_raw().is_null() {
+        return None;
+    }
+    let len = env.get_array_length(array).ok()?;
+    let mut result = Vec::with_capacity(len.max(0) as usize);
+    for idx in 0..len {
+        let elem = env.get_object_array_element(array, idx).ok()?;
+        if elem.as_raw().is_null() {
+            return None;
+        }
+        let jstr = JString::from(elem);
+        let text: String = env.get_string(&jstr).ok()?.into();
+        result.push(CString::new(text).ok()?);
+    }
+    Some(result)
+}
+
+fn decode_optional_jstring<'local>(
+    env: &mut JNIEnv<'local>,
+    value: &JString<'local>,
+) -> Option<CString> {
+    if value.as_raw().is_null() {
+        return None;
+    }
+    let text: String = env.get_string(value).ok()?.into();
+    if text.is_empty() {
+        return None;
+    }
+    CString::new(text).ok()
+}
+
 fn fail(env: &mut JNIEnv, message: &str) {
     if let Err(source) = env.throw_new("java/lang/IllegalStateException", message) {
         error!("Unable to throw IllegalStateException: {source}");
@@ -48,6 +83,209 @@ fn int_array(env: &mut JNIEnv, pid: jint, ptmx: jint) -> jintArray {
     }
 
     array.into_raw()
+}
+
+fn int_array_4(
+    env: &mut JNIEnv,
+    pid: jint,
+    stdin_fd: jint,
+    stdout_fd: jint,
+    stderr_fd: jint,
+) -> jintArray {
+    let Ok(array) = env.new_int_array(4) else {
+        error!("Unable to allocate the spawnGroup result array.");
+        return ptr::null_mut();
+    };
+
+    if let Err(source) =
+        env.set_int_array_region(&array, 0, &[pid, stdin_fd, stdout_fd, stderr_fd])
+    {
+        error!("Unable to write the spawnGroup result: {source}");
+        return ptr::null_mut();
+    }
+
+    array.into_raw()
+}
+
+/// Spawns a non-PTY child process in its own session and process group (`setsid`, so `pgid == pid`)
+/// with three `O_CLOEXEC` stdio pipes and an `O_CLOEXEC` exec-status pipe.
+pub(crate) fn spawn_process_group_raw(
+    argv: &[CString],
+    environment: Option<&[CString]>,
+    directory: Option<&CStr>,
+) -> Result<(jint, OwnedFd, OwnedFd, OwnedFd), String> {
+    if argv.is_empty() || argv[0].as_bytes().is_empty() {
+        return Err("Command array must not be empty".into());
+    }
+
+    let mut argv_ptrs: Vec<*const c_char> = argv.iter().map(|arg| arg.as_ptr()).collect();
+    argv_ptrs.push(ptr::null());
+
+    let env_ptrs: Vec<*const c_char> = match environment {
+        Some(vars) => vars
+            .iter()
+            .map(|v| v.as_ptr())
+            .chain(std::iter::once(ptr::null()))
+            .collect(),
+        None => Vec::new(),
+    };
+
+    let stdin_pipe =
+        PipePair::new_cloexec().ok_or_else(|| "Unable to create stdin pipe".to_string())?;
+    let stdout_pipe =
+        PipePair::new_cloexec().ok_or_else(|| "Unable to create stdout pipe".to_string())?;
+    let stderr_pipe =
+        PipePair::new_cloexec().ok_or_else(|| "Unable to create stderr pipe".to_string())?;
+    let exec_err_pipe =
+        PipePair::new_cloexec().ok_or_else(|| "Unable to create exec status pipe".to_string())?;
+
+    let pid: jint = unsafe { libc::fork() };
+    if pid == -1 {
+        let err = std::io::Error::last_os_error();
+        return Err(format!("Unable to fork process group: {err}"));
+    }
+
+    if pid == 0 {
+        // Child process: only async-signal-safe calls below.
+        let report_and_exit = |code: i32| -> ! {
+            let errno_val: i32 = pts::current_errno();
+            let bytes = errno_val.to_ne_bytes();
+            unsafe {
+                let _ = libc::write(
+                    exec_err_pipe.write.as_raw_fd(),
+                    bytes.as_ptr().cast(),
+                    bytes.len(),
+                );
+                libc::_exit(code);
+            }
+        };
+
+        if unsafe { libc::setsid() } < 0 {
+            report_and_exit(126);
+        }
+
+        unsafe {
+            libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+        }
+
+        if let Some(dir) = directory {
+            if unsafe { libc::chdir(dir.as_ptr()) } == -1 {
+                report_and_exit(126);
+            }
+        }
+
+        if unsafe { libc::dup2(stdin_pipe.read.as_raw_fd(), libc::STDIN_FILENO) } == -1 {
+            report_and_exit(126);
+        }
+        if unsafe { libc::dup2(stdout_pipe.write.as_raw_fd(), libc::STDOUT_FILENO) } == -1 {
+            report_and_exit(126);
+        }
+        if unsafe { libc::dup2(stderr_pipe.write.as_raw_fd(), libc::STDERR_FILENO) } == -1 {
+            report_and_exit(126);
+        }
+
+        drop(stdin_pipe);
+        drop(stdout_pipe);
+        drop(stderr_pipe);
+        drop(exec_err_pipe.read);
+
+        if environment.is_some() {
+            unsafe {
+                libc::execvpe(argv_ptrs[0], argv_ptrs.as_ptr(), env_ptrs.as_ptr());
+            }
+        } else {
+            unsafe {
+                libc::execvp(argv_ptrs[0], argv_ptrs.as_ptr());
+            }
+        }
+
+        report_and_exit(127);
+    }
+
+    // Parent process: close child ends and check whether exec succeeded.
+    drop(stdin_pipe.read);
+    drop(stdout_pipe.write);
+    drop(stderr_pipe.write);
+    drop(exec_err_pipe.write);
+
+    let mut err_buf = [0u8; 4];
+    let read_res = pts::retry(|| unsafe {
+        libc::read(
+            exec_err_pipe.read.as_raw_fd(),
+            err_buf.as_mut_ptr().cast(),
+            err_buf.len(),
+        )
+    });
+    drop(exec_err_pipe.read);
+
+    if read_res == 4 {
+        let child_errno = i32::from_ne_bytes(err_buf);
+        let mut status: libc::c_int = 0;
+        let _ = pts::retry(|| unsafe { libc::waitpid(pid, &raw mut status, 0) });
+        let os_err = std::io::Error::from_raw_os_error(child_errno);
+        return Err(format!(
+            "Failed to exec '{}': {os_err} (errno={child_errno})",
+            argv[0].to_string_lossy()
+        ));
+    }
+
+    Ok((
+        pid,
+        stdin_pipe.write,
+        stdout_pipe.read,
+        stderr_pipe.read,
+    ))
+}
+
+pub(crate) extern "system" fn native_spawn_group<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    cmd_array: JObjectArray<'local>,
+    env_array: JObjectArray<'local>,
+    dir_str: JString<'local>,
+) -> jintArray {
+    let Some(argv) = decode_string_array(&mut env, &cmd_array) else {
+        fail(&mut env, "Unable to decode command array");
+        return ptr::null_mut();
+    };
+    if argv.is_empty() {
+        fail(&mut env, "Command array must not be empty");
+        return ptr::null_mut();
+    }
+
+    let environment = if env_array.as_raw().is_null() {
+        None
+    } else {
+        let Some(vars) = decode_string_array(&mut env, &env_array) else {
+            fail(&mut env, "Unable to decode environment array");
+            return ptr::null_mut();
+        };
+        Some(vars)
+    };
+
+    let directory = decode_optional_jstring(&mut env, &dir_str);
+
+    match spawn_process_group_raw(&argv, environment.as_deref(), directory.as_deref()) {
+        Ok((pid, stdin_write, stdout_read, stderr_read)) => {
+            let stdin_fd = stdin_write.into_raw_fd();
+            let stdout_fd = stdout_read.into_raw_fd();
+            let stderr_fd = stderr_read.into_raw_fd();
+            let array = int_array_4(&mut env, pid, stdin_fd, stdout_fd, stderr_fd);
+            if array.is_null() {
+                unsafe {
+                    libc::kill(-pid, libc::SIGKILL);
+                    libc::close(stdin_fd);
+                    libc::close(stdout_fd);
+                    libc::close(stderr_fd);
+                }
+            }
+            array
+        }
+        Err(message) => {
+            fail(&mut env, &message);
+            ptr::null_mut()
+        }
+    }
 }
 
 fn open_dev_null_write() -> Option<OwnedFd> {
@@ -488,5 +726,49 @@ pub(crate) extern "system" fn native_wait_for(_env: JNIEnv, _class: JClass, pid:
             debug!("killed by signal {sig}");
             return 128 + sig;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Read;
+
+    #[test]
+    fn spawn_process_group_sets_pgid_and_kills_background_tree() {
+        let argv = vec![
+            CString::new("/bin/sh").unwrap(),
+            CString::new("-c").unwrap(),
+            CString::new("sleep 30 & echo ready; wait").unwrap(),
+        ];
+        let (pid, stdin_fd, stdout_fd, _stderr_fd) =
+            spawn_process_group_raw(&argv, None, None).expect("spawn_process_group_raw");
+        drop(stdin_fd);
+
+        let pgid = unsafe { libc::getpgid(pid) };
+        assert_eq!(pgid, pid, "setsid must make child pgid equal to pid");
+
+        let mut file = std::fs::File::from(stdout_fd);
+        let mut buf = [0u8; 6];
+        file.read_exact(&mut buf).expect("read ready");
+        assert_eq!(&buf, b"ready\n");
+
+        unsafe {
+            libc::kill(-pid, libc::SIGKILL);
+        }
+        let mut rest = Vec::new();
+        // Because the entire process group (-pid) was killed, the background `sleep 30` closed stdout immediately!
+        file.read_to_end(&mut rest).expect("EOF after group kill");
+
+        let mut status: libc::c_int = 0;
+        let _ = pts::retry(|| unsafe { libc::waitpid(pid, &raw mut status, 0) });
+        assert!(libc::WIFSIGNALED(status));
+    }
+
+    #[test]
+    fn spawn_process_group_reports_exec_failure_immediately() {
+        let argv = vec![CString::new("/nonexistent/binary_that_does_not_exist").unwrap()];
+        let err = spawn_process_group_raw(&argv, None, None).expect_err("must fail on ENOENT");
+        assert!(err.contains("Failed to exec"));
     }
 }

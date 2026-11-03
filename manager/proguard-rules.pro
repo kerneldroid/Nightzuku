@@ -68,3 +68,11 @@
 -keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;
 }
+
+# Keep JNI_OnLoad RegisterNatives targets unconditionally
+-keep class rikka.rish.RishHost {
+    native <methods>;
+}
+-keep class rikka.rish.RishTerminal {
+    native <methods>;
+}

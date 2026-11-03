@@ -111,8 +111,8 @@ class MainActivity : ComponentActivity() {
         if (testsList.isEmpty()) {
             testsList.addAll(
                 listOf(
-                    DiagnosticTest("ping", "Dual-Wire Binder Ping", "Verify NightClient & Legacy Shizuku connectivity"),
-                    DiagnosticTest("night_exec", "NightProtocol Fast Exec", "Execute one-shot command over flat Parcel wire"),
+                    DiagnosticTest("ping", "Dual-Wire Binder Ping", "Verify NightClient session, diagnostics & Legacy Shizuku connectivity"),
+                    DiagnosticTest("night_exec", "NightProtocol Fast & Async Exec", "Execute one-shot and oneway async commands over flat Parcel wire"),
                     DiagnosticTest("latency", "IPC Transaction Speed", "Measure IPC transaction roundtrip delay"),
                     DiagnosticTest("selinux", "SELinux Context Check", "Verify server SELinux confinement domain"),
                     DiagnosticTest("shell", "High-Privilege Shell Spawner", "Spawn process and execute 'id' command"),
@@ -218,15 +218,17 @@ class MainActivity : ComponentActivity() {
                 if (NightClient.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
                     throw IllegalStateException("NightClient permission not granted.")
                 }
-                val res = NightClient.execFast(arrayOf("id"))
-                if (res.exitCode == 0) {
+                val fastRes = NightClient.execFast(arrayOf("id"))
+                val asyncRes = NightClient.execAsync(arrayOf("uname", "-r"))
+                if (fastRes.exitCode == 0 && asyncRes.exitCode == 0) {
                     TestResult(
                         status = TestStatus.GOOD,
-                        summary = "exit=0",
-                        details = "NightClient.execFast('id') succeeded in one flat Parcel roundtrip:\n${res.outputText.trim()}"
+                        summary = "exit=0 (sync+async)",
+                        details = "execFast('id'): ${fastRes.outputText.trim()}\n" +
+                            "execAsync('uname -r'): ${asyncRes.outputText.trim()}"
                     )
                 } else {
-                    throw IllegalStateException("execFast exited with ${res.exitCode}: ${res.errorText}")
+                    throw IllegalStateException("execFast=${fastRes.exitCode}, execAsync=${asyncRes.exitCode}")
                 }
             }
 

@@ -39,29 +39,38 @@ object TransactGuard {
     }
 
     @JvmStatic
+    @JvmOverloads
     fun effectiveCapabilities(
         entry: ShizukuConfig.PackageEntry?,
-        accessPaused: Boolean = false
+        accessPaused: Boolean = false,
+        oneTimeGranted: Boolean = false
     ): Int {
-        if (accessPaused || entry == null || !entry.isAllowed()) return 0
+        if (accessPaused) return 0
+        if (entry == null || !entry.isAllowed()) {
+            if (!oneTimeGranted) return 0
+            val explicitCaps = (entry?.flags ?: 0) and NightProtocol.MASK_CAPABILITIES
+            return if (explicitCaps == 0) NightProtocol.DEFAULT_CAPABILITIES else explicitCaps
+        }
         val explicitCaps = entry.flags and NightProtocol.MASK_CAPABILITIES
         return if (explicitCaps == 0) NightProtocol.DEFAULT_CAPABILITIES else explicitCaps
     }
 
     @JvmStatic
+    @JvmOverloads
     fun enforceCapability(
         configManager: ShizukuConfigManager,
         callingUid: Int,
         isManager: Boolean,
         requiredCapability: Int,
-        operationName: String
+        operationName: String,
+        oneTimeGranted: Boolean = false
     ) {
         if (isManager) return
         if (configManager.isAccessPaused()) {
             throw SecurityException("Permission Denial: client access is globally paused ($operationName, uid=$callingUid)")
         }
         val entry = configManager.find(callingUid)
-        val caps = effectiveCapabilities(entry, accessPaused = false)
+        val caps = effectiveCapabilities(entry, accessPaused = false, oneTimeGranted = oneTimeGranted)
         if ((caps and requiredCapability) == 0) {
             throw SecurityException(
                 "Permission Denial: $operationName requires capability 0x${Integer.toHexString(requiredCapability)} for uid=$callingUid"

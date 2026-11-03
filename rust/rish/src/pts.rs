@@ -170,12 +170,12 @@ fn emit(priority: c_int, buffer: &FixedBuffer) {
 }
 
 #[cfg(target_os = "android")]
-fn current_errno() -> c_int {
+pub fn current_errno() -> c_int {
     unsafe { *libc::__errno() }
 }
 
 #[cfg(not(target_os = "android"))]
-fn current_errno() -> c_int {
+pub fn current_errno() -> c_int {
     std::io::Error::last_os_error()
         .raw_os_error()
         .unwrap_or_default()

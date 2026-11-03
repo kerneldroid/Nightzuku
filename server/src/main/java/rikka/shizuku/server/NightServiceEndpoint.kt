@@ -4,19 +4,25 @@ import android.os.Binder
 import android.os.Bundle
 import android.os.IBinder
 import android.os.Parcel
+import android.os.ParcelFileDescriptor
+import android.os.Parcelable
 import android.os.RemoteException
 import android.os.SystemProperties
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
+import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kerneldroid.nightzuku.api.NightProtocol
 import moe.shizuku.server.IShizukuApplication
 import moe.shizuku.server.IShizukuServiceConnection
 import rikka.hidden.compat.PackageManagerApis
+import rikka.rish.RishHost
 import rikka.shizuku.ShizukuApiConstants
+import rikka.shizuku.server.api.RemoteProcessHolder
 import rikka.shizuku.server.util.Logger
 import rikka.shizuku.server.util.OsUtils
 
@@ -24,9 +30,33 @@ class NightServiceEndpoint(
     private val service: ShizukuService
 ) : Binder() {
 
+    private class ActiveExecHandle(
+        val callId: Long,
+        val callingUid: Int,
+        val callingPid: Int
+    ) {
+        @Volatile
+        var pid: Int = -1
+
+        @Volatile
+        var process: Process? = null
+
+        val cancelled = AtomicBoolean(false)
+
+        fun terminate() {
+            if (!cancelled.compareAndSet(false, true)) return
+            val targetPid = pid
+            if (targetPid > 0) {
+                RemoteProcessHolder.killProcessGroup(targetPid)
+            }
+            process?.destroyForcibly()
+        }
+    }
+
     private val logger = Logger("NightEndpoint")
     private val nightCallbacks = ConcurrentHashMap<Int, IBinder>()
     private val nightCallbackDeaths = ConcurrentHashMap<Int, IBinder.DeathRecipient>()
+    private val activeExecCalls = ConcurrentHashMap<Long, ActiveExecHandle>()
     private val execPool = Executors.newCachedThreadPool { r ->
         Thread(r, "night-exec").apply { isDaemon = true }
     }
@@ -73,6 +103,32 @@ class NightServiceEndpoint(
         }
     }
 
+    fun notifyExecResult(
+        pid: Int,
+        callId: Long,
+        exitCode: Int,
+        timedOut: Boolean,
+        stdout: ByteArray,
+        stderr: ByteArray
+    ): Boolean {
+        val cb = nightCallbacks[pid] ?: return false
+        val data = Parcel.obtain()
+        return try {
+            data.writeInterfaceToken(NightProtocol.CALLBACK_DESCRIPTOR)
+            data.writeLong(callId)
+            data.writeInt(exitCode)
+            data.writeInt(if (timedOut) 1 else 0)
+            data.writeByteArray(stdout)
+            data.writeByteArray(stderr)
+            cb.transact(NightProtocol.CALLBACK_ON_EXEC_RESULT, data, null, IBinder.FLAG_ONEWAY)
+        } catch (t: Throwable) {
+            logger.w(t, "notifyExecResult failed for pid=%d callId=%d", pid, callId)
+            false
+        } finally {
+            data.recycle()
+        }
+    }
+
     @Throws(RemoteException::class)
     override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
         when (code) {
@@ -93,6 +149,16 @@ class NightServiceEndpoint(
             NightProtocol.TRANSACTION_EXEC_FAST -> {
                 data.enforceInterface(NightProtocol.DESCRIPTOR)
                 handleExecFast(data, reply!!)
+                return true
+            }
+            NightProtocol.TRANSACTION_EXEC_ASYNC -> {
+                data.enforceInterface(NightProtocol.DESCRIPTOR)
+                handleExecAsync(data)
+                return true
+            }
+            NightProtocol.TRANSACTION_CANCEL_EXEC -> {
+                data.enforceInterface(NightProtocol.DESCRIPTOR)
+                handleCancelExec(data)
                 return true
             }
             NightProtocol.TRANSACTION_CHECK_PERMISSION -> {
@@ -119,7 +185,8 @@ class NightServiceEndpoint(
                     callingUid,
                     service.checkCallerManagerPermission("getSystemProperty", callingUid, callingPid),
                     NightProtocol.CAP_SYSTEM_PROPS,
-                    "getSystemProperty"
+                    "getSystemProperty",
+                    service.clientManager.isOneTimeGranted(callingUid)
                 )
                 val value = try {
                     SystemProperties.get(name, defaultValue)
@@ -142,7 +209,8 @@ class NightServiceEndpoint(
                     callingUid,
                     service.checkCallerManagerPermission("setSystemProperty", callingUid, callingPid),
                     NightProtocol.CAP_SYSTEM_PROPS,
-                    "setSystemProperty"
+                    "setSystemProperty",
+                    service.clientManager.isOneTimeGranted(callingUid)
                 )
                 try {
                     SystemProperties.set(name, value)
@@ -208,6 +276,7 @@ class NightServiceEndpoint(
                     putInt("uid", OsUtils.getUid())
                     putInt("pid", OsUtils.getPid())
                     putInt("protocolVersion", NightProtocol.PROTOCOL_VERSION)
+                    putInt("minProtocolVersion", NightProtocol.MIN_PROTOCOL_VERSION)
                     putString("seContext", OsUtils.getSELinuxContext())
                     putBoolean("accessPaused", service.configManager.isAccessPaused())
                     putBoolean("nightDogEnabled", service.configManager.getNightDogEnabled())
@@ -221,7 +290,7 @@ class NightServiceEndpoint(
                 data.enforceInterface(NightProtocol.DESCRIPTOR)
                 val connBinder = data.readStrongBinder()
                 val conn = IShizukuServiceConnection.Stub.asInterface(connBinder)
-                val options = data.readBundle(NightServiceEndpoint::class.java.classLoader) ?: Bundle()
+                val options = data.readBundle(Bundle::class.java.classLoader) ?: Bundle()
                 val res = service.addUserService(conn, options)
                 reply!!.writeNoException()
                 reply.writeInt(res)
@@ -231,7 +300,7 @@ class NightServiceEndpoint(
                 data.enforceInterface(NightProtocol.DESCRIPTOR)
                 val connBinder = data.readStrongBinder()
                 val conn = IShizukuServiceConnection.Stub.asInterface(connBinder)
-                val options = data.readBundle(NightServiceEndpoint::class.java.classLoader) ?: Bundle()
+                val options = data.readBundle(Bundle::class.java.classLoader) ?: Bundle()
                 val res = service.removeUserService(conn, options)
                 reply!!.writeNoException()
                 reply.writeInt(res)
@@ -246,8 +315,17 @@ class NightServiceEndpoint(
                 val env = data.createStringArray()
                 val dir = data.readString()
                 val proc = service.newProcess(cmd, env, dir)
+                val exitFd = runCatching { proc.exitFd }.getOrNull()
                 reply!!.writeNoException()
                 reply.writeStrongBinder(proc.asBinder())
+                if (exitFd != null) {
+                    reply.writeInt(1)
+                    exitFd.use {
+                        it.writeToParcel(reply, Parcelable.PARCELABLE_WRITE_RETURN_VALUE)
+                    }
+                } else {
+                    reply.writeInt(0)
+                }
                 return true
             }
         }
@@ -255,6 +333,15 @@ class NightServiceEndpoint(
             return true
         }
         return super.onTransact(code, data, reply, flags)
+    }
+
+    private fun cancelActiveExecCallsForPid(pid: Int) {
+        for ((callId, handle) in ArrayList(activeExecCalls.entries)) {
+            if (handle.callingPid == pid) {
+                activeExecCalls.remove(callId, handle)
+                handle.terminate()
+            }
+        }
     }
 
     private fun unlinkCallback(pid: Int) {
@@ -281,12 +368,28 @@ class NightServiceEndpoint(
             throw SecurityException("Package $packageName does not belong to calling uid $callingUid")
         }
 
+        val handshakeStatus = when {
+            clientProtocolVersion < NightProtocol.MIN_PROTOCOL_VERSION -> NightProtocol.ATTACH_STATUS_CLIENT_TOO_OLD
+            clientProtocolVersion > NightProtocol.PROTOCOL_VERSION -> NightProtocol.ATTACH_STATUS_SERVER_TOO_OLD
+            else -> NightProtocol.ATTACH_STATUS_OK
+        }
+
+        if (handshakeStatus != NightProtocol.ATTACH_STATUS_OK) {
+            unlinkCallback(callingPid)
+            reply.writeNoException()
+            reply.writeInt(handshakeStatus)
+            reply.writeInt(NightProtocol.PROTOCOL_VERSION)
+            reply.writeInt(NightProtocol.MIN_PROTOCOL_VERSION)
+            return
+        }
+
         unlinkCallback(callingPid)
         if (callbackBinder != null) {
             val recipient = IBinder.DeathRecipient {
                 if (nightCallbacks.remove(callingPid, callbackBinder)) {
                     nightCallbackDeaths.remove(callingPid)
                 }
+                cancelActiveExecCallsForPid(callingPid)
                 service.onClientProcessDied(callingUid, callingPid)
             }
             try {
@@ -309,7 +412,8 @@ class NightServiceEndpoint(
                 val rationale = bundle.getBoolean(ShizukuApiConstants.BIND_APPLICATION_SHOULD_SHOW_REQUEST_PERMISSION_RATIONALE, false)
                 val caps = TransactGuard.effectiveCapabilities(
                     service.configManager.find(callingUid),
-                    service.configManager.isAccessPaused()
+                    service.configManager.isAccessPaused(),
+                    service.clientManager.isOneTimeGranted(callingUid)
                 )
                 notifyPermissionChanged(callingUid, callingPid, allowed, rationale, caps)
             }
@@ -318,7 +422,8 @@ class NightServiceEndpoint(
                 val allowed = bundle?.getBoolean(ShizukuApiConstants.REQUEST_PERMISSION_REPLY_ALLOWED, false) ?: false
                 val caps = TransactGuard.effectiveCapabilities(
                     service.configManager.find(callingUid),
-                    service.configManager.isAccessPaused()
+                    service.configManager.isAccessPaused(),
+                    service.clientManager.isOneTimeGranted(callingUid)
                 )
                 notifyRequestPermissionResult(callingUid, callingPid, requestCode, allowed, caps)
             }
@@ -336,12 +441,14 @@ class NightServiceEndpoint(
         val capabilities = if (isManager) {
             NightProtocol.MASK_CAPABILITIES
         } else {
-            TransactGuard.effectiveCapabilities(entry, paused)
+            TransactGuard.effectiveCapabilities(entry, paused, service.clientManager.isOneTimeGranted(callingUid))
         }
 
         reply.writeNoException()
-        reply.writeInt(OsUtils.getUid())
+        reply.writeInt(NightProtocol.ATTACH_STATUS_OK)
         reply.writeInt(NightProtocol.PROTOCOL_VERSION)
+        reply.writeInt(NightProtocol.MIN_PROTOCOL_VERSION)
+        reply.writeInt(OsUtils.getUid())
         reply.writeInt(grantState)
         reply.writeInt(capabilities)
         reply.writeString(OsUtils.getSELinuxContext())
@@ -357,7 +464,8 @@ class NightServiceEndpoint(
             callingUid,
             service.checkCallerManagerPermission("transactRemote", callingUid, callingPid),
             NightProtocol.CAP_BINDER_PROXY,
-            "transactRemote"
+            "transactRemote",
+            service.clientManager.isOneTimeGranted(callingUid)
         )
 
         val targetBinder = data.readStrongBinder()
@@ -395,7 +503,7 @@ class NightServiceEndpoint(
         val caps = if (isManager) {
             NightProtocol.MASK_CAPABILITIES
         } else {
-            TransactGuard.effectiveCapabilities(entry, paused)
+            TransactGuard.effectiveCapabilities(entry, paused, service.clientManager.isOneTimeGranted(callingUid))
         }
 
         reply.writeNoException()
@@ -404,25 +512,96 @@ class NightServiceEndpoint(
         reply.writeInt(caps)
     }
 
-    private fun handleExecFast(data: Parcel, reply: Parcel) {
-        val callingUid = Binder.getCallingUid()
-        val callingPid = Binder.getCallingPid()
-        service.enforceCallingPermission("execFast")
-        TransactGuard.enforceCapability(
-            service.configManager,
-            callingUid,
-            service.checkCallerManagerPermission("execFast", callingUid, callingPid),
-            NightProtocol.CAP_SHELL_EXEC,
-            "execFast"
-        )
+    private data class CommandOutput(
+        val exitCode: Int,
+        val timedOut: Boolean,
+        val stdout: ByteArray,
+        val stderr: ByteArray
+    )
 
-        val cmd = data.createStringArray()
-        if (cmd.isNullOrEmpty()) {
-            throw IllegalArgumentException("Command array must not be empty")
+    private fun executeCommandBounded(
+        cmd: Array<String>,
+        env: Array<String>?,
+        dir: String?,
+        timeoutMs: Long,
+        handle: ActiveExecHandle? = null
+    ): CommandOutput {
+        val stdoutBuffer = BoundedBuffer(NightProtocol.EXEC_FAST_MAX_OUTPUT_BYTES)
+        val stderrBuffer = BoundedBuffer(NightProtocol.EXEC_FAST_MAX_OUTPUT_BYTES)
+
+        val spawned = RishHost.spawnProcessGroupOrNull(cmd, env, dir)
+        if (spawned != null) {
+            val pid = spawned.pid
+            handle?.pid = pid
+            if (handle?.cancelled?.get() == true) {
+                RemoteProcessHolder.killProcessGroup(pid)
+                runCatching { spawned.stdinPfd.close() }
+                runCatching { spawned.stdoutPfd.close() }
+                runCatching { spawned.stderrPfd.close() }
+                runCatching { RishHost.waitForPid(pid) }
+                return CommandOutput(137, false, ByteArray(0), ByteArray(0))
+            }
+
+            runCatching { spawned.stdinPfd.close() }
+
+            val stdoutStream = ParcelFileDescriptor.AutoCloseInputStream(spawned.stdoutPfd)
+            val stderrStream = ParcelFileDescriptor.AutoCloseInputStream(spawned.stderrPfd)
+
+            val stdoutFuture = execPool.submit {
+                drainStreamIntoBuffer(stdoutStream, stdoutBuffer)
+            }
+            val stderrFuture = execPool.submit {
+                drainStreamIntoBuffer(stderrStream, stderrBuffer)
+            }
+            val waitFuture = execPool.submit<Int> {
+                RishHost.waitForPid(pid)
+            }
+
+            var timedOut = false
+            val exitCode = try {
+                waitFuture.get(timeoutMs, TimeUnit.MILLISECONDS)
+            } catch (_: java.util.concurrent.TimeoutException) {
+                timedOut = true
+                RemoteProcessHolder.killProcessGroup(pid)
+                runCatching { stdoutStream.close() }
+                runCatching { stderrStream.close() }
+                runCatching { waitFuture.get(250, TimeUnit.MILLISECONDS) }
+                124
+            } catch (e: InterruptedException) {
+                RemoteProcessHolder.killProcessGroup(pid)
+                runCatching { stdoutStream.close() }
+                runCatching { stderrStream.close() }
+                stdoutFuture.cancel(true)
+                stderrFuture.cancel(true)
+                Thread.currentThread().interrupt()
+                throw IllegalStateException("Interrupted while waiting for process", e)
+            } catch (e: Throwable) {
+                RemoteProcessHolder.killProcessGroup(pid)
+                runCatching { stdoutStream.close() }
+                runCatching { stderrStream.close() }
+                throw IllegalStateException("Process execution failed", e)
+            }
+
+            try {
+                stdoutFuture.get(250, TimeUnit.MILLISECONDS)
+            } catch (_: Throwable) {
+                runCatching { stdoutStream.close() }
+                stdoutFuture.cancel(true)
+            }
+            try {
+                stderrFuture.get(250, TimeUnit.MILLISECONDS)
+            } catch (_: Throwable) {
+                runCatching { stderrStream.close() }
+                stderrFuture.cancel(true)
+            }
+
+            return CommandOutput(
+                exitCode = exitCode,
+                timedOut = timedOut,
+                stdout = stdoutBuffer.toByteArray(),
+                stderr = stderrBuffer.toByteArray()
+            )
         }
-        val env = data.createStringArray()
-        val dir = data.readString()
-        val timeoutMs = data.readLong().coerceIn(100L, 300_000L)
 
         val process = try {
             Runtime.getRuntime().exec(cmd, env, if (!dir.isNullOrEmpty()) File(dir) else null)
@@ -430,13 +609,16 @@ class NightServiceEndpoint(
             throw IllegalStateException("Failed to start process: ${e.message}", e)
         }
 
+        handle?.process = process
+        if (handle?.cancelled?.get() == true) {
+            process.destroyForcibly()
+            return CommandOutput(137, false, ByteArray(0), ByteArray(0))
+        }
+
         try {
             process.outputStream.close()
         } catch (_: Throwable) {
         }
-
-        val stdoutBuffer = BoundedBuffer(NightProtocol.EXEC_FAST_MAX_OUTPUT_BYTES)
-        val stderrBuffer = BoundedBuffer(NightProtocol.EXEC_FAST_MAX_OUTPUT_BYTES)
 
         val stdoutFuture = execPool.submit {
             drainStreamIntoBuffer(process.inputStream, stdoutBuffer)
@@ -479,11 +661,101 @@ class NightServiceEndpoint(
             stderrFuture.cancel(true)
         }
 
+        return CommandOutput(
+            exitCode = exitCode,
+            timedOut = timedOut,
+            stdout = stdoutBuffer.toByteArray(),
+            stderr = stderrBuffer.toByteArray()
+        )
+    }
+
+    private fun handleExecFast(data: Parcel, reply: Parcel) {
+        val callingUid = Binder.getCallingUid()
+        val callingPid = Binder.getCallingPid()
+        service.enforceCallingPermission("execFast")
+        TransactGuard.enforceCapability(
+            service.configManager,
+            callingUid,
+            service.checkCallerManagerPermission("execFast", callingUid, callingPid),
+            NightProtocol.CAP_SHELL_EXEC,
+            "execFast",
+            service.clientManager.isOneTimeGranted(callingUid)
+        )
+
+        val cmd = data.createStringArray()
+        if (cmd.isNullOrEmpty()) {
+            throw IllegalArgumentException("Command array must not be empty")
+        }
+        val env = data.createStringArray()
+        val dir = data.readString()
+        val timeoutMs = data.readLong().coerceIn(100L, 300_000L)
+
+        val out = executeCommandBounded(cmd, env, dir, timeoutMs)
+
         reply.writeNoException()
-        reply.writeInt(exitCode)
-        reply.writeInt(if (timedOut) 1 else 0)
-        reply.writeByteArray(stdoutBuffer.toByteArray())
-        reply.writeByteArray(stderrBuffer.toByteArray())
+        reply.writeInt(out.exitCode)
+        reply.writeInt(if (out.timedOut) 1 else 0)
+        reply.writeByteArray(out.stdout)
+        reply.writeByteArray(out.stderr)
+    }
+
+    private fun handleExecAsync(data: Parcel) {
+        val callingUid = Binder.getCallingUid()
+        val callingPid = Binder.getCallingPid()
+        val callId = data.readLong()
+        val cmd = data.createStringArray()
+        val env = data.createStringArray()
+        val dir = data.readString()
+        val timeoutMs = data.readLong().coerceIn(100L, 300_000L)
+
+        try {
+            service.enforceCallingPermission("execAsync")
+            TransactGuard.enforceCapability(
+                service.configManager,
+                callingUid,
+                service.checkCallerManagerPermission("execAsync", callingUid, callingPid),
+                NightProtocol.CAP_SHELL_EXEC,
+                "execAsync",
+                service.clientManager.isOneTimeGranted(callingUid)
+            )
+            if (cmd.isNullOrEmpty()) {
+                throw IllegalArgumentException("Command array must not be empty")
+            }
+        } catch (t: Throwable) {
+            val errBytes = (t.message ?: "execAsync rejected").toByteArray(StandardCharsets.UTF_8)
+            notifyExecResult(callingPid, callId, -1, false, ByteArray(0), errBytes)
+            return
+        }
+
+        val handle = ActiveExecHandle(callId, callingUid, callingPid)
+        activeExecCalls[callId] = handle
+
+        execPool.execute {
+            try {
+                val out = executeCommandBounded(cmd, env, dir, timeoutMs, handle)
+                if (!handle.cancelled.get()) {
+                    notifyExecResult(callingPid, callId, out.exitCode, out.timedOut, out.stdout, out.stderr)
+                }
+            } catch (t: Throwable) {
+                if (!handle.cancelled.get()) {
+                    val errBytes = (t.message ?: "execAsync failed").toByteArray(StandardCharsets.UTF_8)
+                    notifyExecResult(callingPid, callId, -1, false, ByteArray(0), errBytes)
+                }
+            } finally {
+                activeExecCalls.remove(callId, handle)
+            }
+        }
+    }
+
+    private fun handleCancelExec(data: Parcel) {
+        val callingUid = Binder.getCallingUid()
+        val callId = data.readLong()
+        val handle = activeExecCalls[callId] ?: return
+        if (handle.callingUid != callingUid && !service.checkCallerManagerPermission("cancelExec", callingUid, Binder.getCallingPid())) {
+            throw SecurityException("Cannot cancel execAsync callId=$callId owned by uid=${handle.callingUid}")
+        }
+        activeExecCalls.remove(callId, handle)
+        handle.terminate()
     }
 
     private class BoundedBuffer(private val maxBytes: Int) {

@@ -73,6 +73,14 @@ class TransactGuardTest {
             NightProtocol.CAP_SHELL_EXEC,
             TransactGuard.effectiveCapabilities(shellOnly, accessPaused = false)
         )
+        assertEquals(
+            NightProtocol.DEFAULT_CAPABILITIES,
+            TransactGuard.effectiveCapabilities(null, accessPaused = false, oneTimeGranted = true)
+        )
+        assertEquals(
+            0,
+            TransactGuard.effectiveCapabilities(null, accessPaused = true, oneTimeGranted = true)
+        )
     }
 
     @Test

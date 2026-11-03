@@ -133,7 +133,8 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             callingUid,
             checkCallerManagerPermission("newProcess", callingUid, callingPid),
             NightProtocol.CAP_SHELL_EXEC,
-            "newProcess"
+            "newProcess",
+            clientManager.isOneTimeGranted(callingUid)
         )
         return super.newProcess(cmd, env, dir)
     }
@@ -147,7 +148,8 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             callingUid,
             checkCallerManagerPermission("getSystemProperty", callingUid, callingPid),
             NightProtocol.CAP_SYSTEM_PROPS,
-            "getSystemProperty"
+            "getSystemProperty",
+            clientManager.isOneTimeGranted(callingUid)
         )
         return super.getSystemProperty(name, defaultValue)
     }
@@ -161,9 +163,32 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             callingUid,
             checkCallerManagerPermission("setSystemProperty", callingUid, callingPid),
             NightProtocol.CAP_SYSTEM_PROPS,
-            "setSystemProperty"
+            "setSystemProperty",
+            clientManager.isOneTimeGranted(callingUid)
         )
         super.setSystemProperty(name, value)
+    }
+
+    override fun isCallerAllowedForUserService(callingUid: Int, callingPid: Int): Boolean {
+        if (callingUid == OsUtils.getUid()) {
+            return true
+        }
+        val isManager = checkCallerManagerPermission("addUserService", callingUid, callingPid)
+        if (isManager) {
+            return true
+        }
+        if (configManager.isAccessPaused()) {
+            return false
+        }
+        if (!super.isCallerAllowedForUserService(callingUid, callingPid)) {
+            return false
+        }
+        val caps = TransactGuard.effectiveCapabilities(
+            configManager.find(callingUid),
+            accessPaused = false,
+            oneTimeGranted = clientManager.isOneTimeGranted(callingUid)
+        )
+        return (caps and NightProtocol.CAP_USER_SERVICE) != 0
     }
 
     override fun addUserService(conn: IShizukuServiceConnection?, options: Bundle): Int {
@@ -175,7 +200,8 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             callingUid,
             checkCallerManagerPermission("addUserService", callingUid, callingPid),
             NightProtocol.CAP_USER_SERVICE,
-            "addUserService"
+            "addUserService",
+            clientManager.isOneTimeGranted(callingUid)
         )
         return super.addUserService(conn, options)
     }
@@ -189,7 +215,8 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             callingUid,
             checkCallerManagerPermission("removeUserService", callingUid, callingPid),
             NightProtocol.CAP_USER_SERVICE,
-            "removeUserService"
+            "removeUserService",
+            clientManager.isOneTimeGranted(callingUid)
         )
         return super.removeUserService(conn, options)
     }
