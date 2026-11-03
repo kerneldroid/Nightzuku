@@ -7,7 +7,9 @@ package moe.shizuku.manager.home
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.os.Build
 import android.provider.Settings
+import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -367,6 +369,7 @@ fun HomeAdbCommandDialog(
     }
 }
 
+@RequiresApi(Build.VERSION_CODES.R)
 @Composable
 fun HomeAdbDiscoveryDialog(
     onDismiss: () -> Unit,
@@ -579,6 +582,7 @@ private sealed class PairingStatus {
     data class Error(val throwable: Throwable) : PairingStatus()
 }
 
+@RequiresApi(Build.VERSION_CODES.R)
 @Composable
 fun HomeAdbPairDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current

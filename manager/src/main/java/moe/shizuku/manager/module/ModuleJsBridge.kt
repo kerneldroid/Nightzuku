@@ -198,7 +198,6 @@ class ModuleJsBridge(
             }
             require(targetDir.isDirectory) { "Directory not found: ${clean.ifEmpty { "." }}" }
 
-            val rootPath = module.directory.canonicalFile.toPath()
             val entriesArray = JSONArray()
             val children = targetDir.listFiles()
                 ?.filter { child ->
@@ -211,7 +210,7 @@ class ModuleJsBridge(
                 .orEmpty()
 
             for (child in children) {
-                val rel = rootPath.relativize(child.canonicalFile.toPath()).toString().replace('\\', '/')
+                val rel = ModuleRuntimeUtils.relativePathOrNull(module.directory, child) ?: continue
                 entriesArray.put(
                     JSONObject().apply {
                         put("name", child.name)

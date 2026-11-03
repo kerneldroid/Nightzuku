@@ -1,5 +1,6 @@
 package moe.shizuku.manager.utils
 
+import android.annotation.SuppressLint
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
@@ -16,6 +17,7 @@ import rikka.shizuku.common.util.InstalledPackagesCompat
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
 
+@SuppressLint("BlockedPrivateApi", "PrivateApi", "DiscouragedPrivateApi")
 object ShizukuSystemApis {
 
     private const val PERSISTENT_DEVICE_ID = "default:0"

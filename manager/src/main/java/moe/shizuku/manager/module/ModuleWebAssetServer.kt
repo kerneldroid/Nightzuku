@@ -50,13 +50,7 @@ class ModuleWebAssetServer(
         val root = webRoot
         val relative = if (root != null && indexFile != null) {
             runCatching {
-                val rootPath = root.canonicalFile.toPath()
-                val filePath = indexFile.canonicalFile.toPath()
-                if (filePath.startsWith(rootPath)) {
-                    rootPath.relativize(filePath).toString().replace('\\', '/').trimStart('/')
-                } else {
-                    "index.html"
-                }
+                ModuleRuntimeUtils.relativePathOrNull(root, indexFile)?.trimStart('/') ?: "index.html"
             }.getOrDefault("index.html")
         } else {
             "index.html"

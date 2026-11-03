@@ -34,8 +34,10 @@ import java.text.SimpleDateFormat
 import java.util.*
 import kerneldroid.nightzuku.api.NightBinderWrapper
 import kerneldroid.nightzuku.api.NightClient
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuBinderWrapper
 import rikka.shizuku.ShizukuSystemProperties
@@ -287,10 +289,12 @@ class MainActivity : ComponentActivity() {
                     String::class.java
                 )
                 newProcessMethod.isAccessible = true
-                val process = newProcessMethod.invoke(null, arrayOf("id"), null, null) as Process
-                val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
-                val error = process.errorStream.bufferedReader().use { it.readText() }.trim()
-                val exitCode = process.waitFor()
+                val (output, error, exitCode) = withContext(Dispatchers.IO) {
+                    val process = newProcessMethod.invoke(null, arrayOf("id"), null, null) as Process
+                    val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
+                    val error = process.errorStream.bufferedReader().use { it.readText() }.trim()
+                    Triple(output, error, process.waitFor())
+                }
                 if (exitCode == 0) {
                     val summary = if (output.contains("uid=0")) "root" else if (output.contains("uid=2000")) "shell" else "Success"
                     TestResult(

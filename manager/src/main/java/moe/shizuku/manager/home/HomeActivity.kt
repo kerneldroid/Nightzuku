@@ -213,7 +213,7 @@ abstract class HomeActivity : AppActivity() {
                         )
                     }
 
-                    if (showAdbDiscoveryDialog) {
+                    if (showAdbDiscoveryDialog && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                         HomeAdbDiscoveryDialog(
                             onDismiss = { showAdbDiscoveryDialog = false },
                             onStart = { host, port ->
@@ -229,7 +229,7 @@ abstract class HomeActivity : AppActivity() {
                         )
                     }
 
-                    if (showAdbPairDialog) {
+                    if (showAdbPairDialog && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                         HomeAdbPairDialog(
                             onDismiss = { showAdbPairDialog = false }
                         )

@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.content.pm.UserInfo
 import android.ddm.DdmHandleAppName
 import android.os.Binder
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
@@ -24,7 +25,6 @@ import kerneldroid.nightzuku.api.LegacyParcelCodec
 import kerneldroid.nightzuku.api.NightProtocol
 import kerneldroid.nightzuku.util.PackageSignatureVerifier
 import moe.shizuku.api.BinderContainer
-import moe.shizuku.common.util.BuildUtils
 import moe.shizuku.server.IRemoteProcess
 import moe.shizuku.server.IShizukuApplication
 import moe.shizuku.server.IShizukuServiceConnection
@@ -675,7 +675,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         val pi = Android17Compat.getPackageInfo(ServerConstants.MANAGER_APPLICATION_ID, 0L, userId)
         val userInfo = UsersCompat.getUserInfo(userId)
         val isWorkProfileUser = if (userInfo != null) {
-            if (BuildUtils.atLeast30()) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 "android.os.usertype.profile.MANAGED" == userInfo.userType
             } else {
                 (userInfo.flags and UserInfo.FLAG_MANAGED_PROFILE) != 0

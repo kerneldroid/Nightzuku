@@ -6,6 +6,7 @@ import java.io.File
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -141,5 +142,20 @@ class AdbModuleArchiveTest {
             "/data/local/tmp/kerneldroid.nightzuku/adb_modules/mod_test",
             ModuleRuntimeUtils.shellModuleDirectory("mod_test").path.replace('\\', '/')
         )
+    }
+
+    @Test
+    fun `relativePathOrNull enforces canonical containment without java nio`() {
+        val root = tempFolder.newFolder("root")
+        val nested = File(root, "a/b.txt").apply {
+            parentFile?.mkdirs()
+            writeText("x")
+        }
+        val sibling = tempFolder.newFolder("root-other")
+
+        assertEquals("a/b.txt", ModuleRuntimeUtils.relativePathOrNull(root, nested))
+        assertEquals("", ModuleRuntimeUtils.relativePathOrNull(root, root))
+        assertNull(ModuleRuntimeUtils.relativePathOrNull(root, sibling))
+        assertNull(ModuleRuntimeUtils.relativePathOrNull(root, File(root.parentFile, "root-other/outside.txt")))
     }
 }

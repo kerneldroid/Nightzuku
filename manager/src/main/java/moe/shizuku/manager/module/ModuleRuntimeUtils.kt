@@ -90,11 +90,31 @@ object ModuleRuntimeUtils {
      * Verifies that [child] resolves canonically inside [root].
      */
     fun ensureInside(root: File, child: File) {
-        val rootPath = root.canonicalFile.toPath()
-        val childPath = child.canonicalFile.toPath()
-        require(childPath.startsWith(rootPath)) {
+        require(relativePathOrNull(root, child) != null) {
             "Unsafe module path: ${child.name}"
         }
+    }
+
+    /**
+     * Returns [child]'s path relative to [root] using forward slashes, `""` when both point to
+     * the same canonical file, or `null` when [child] is outside [root].
+     *
+     * Uses canonical [File] paths instead of `java.nio.file.Path` so it keeps working on API 25,
+     * where `java.nio.file` is unavailable.
+     */
+    fun relativePathOrNull(root: File, child: File): String? {
+        val rootDir = root.canonicalFile
+        val childFile = child.canonicalFile
+        val rootPath = rootDir.path
+        val childPath = childFile.path
+        if (childPath == rootPath) {
+            return ""
+        }
+        val prefix = if (rootPath.endsWith(File.separator)) rootPath else rootPath + File.separator
+        if (!childPath.startsWith(prefix)) {
+            return null
+        }
+        return childPath.substring(prefix.length).replace(File.separatorChar, '/')
     }
 
     /**
@@ -232,12 +252,7 @@ object ModuleRuntimeUtils {
      */
     fun resolveShellCwd(module: AdbModule, appCwd: File): String {
         val shellRoot = shellModuleDirectory(module.id)
-        val rootPath = module.directory.canonicalFile.toPath()
-        val cwdPath = appCwd.canonicalFile.toPath()
-        if (!cwdPath.startsWith(rootPath) || cwdPath == rootPath) {
-            return shellRoot.absolutePath
-        }
-        val rel = rootPath.relativize(cwdPath).toString().replace('\\', '/').trim('/')
+        val rel = relativePathOrNull(module.directory, appCwd) ?: return shellRoot.absolutePath
         return if (rel.isEmpty()) shellRoot.absolutePath else File(shellRoot, rel).absolutePath
     }
 
@@ -485,14 +500,11 @@ object ModuleRuntimeUtils {
     }
 
     private fun writeDirectoryAsTar(rootDir: File, out: OutputStream) {
-        val rootPath = rootDir.canonicalFile.toPath()
         var fileCount = 0
         var totalBytes = 0L
 
         rootDir.walkTopDown().forEach { file ->
-            val currentPath = file.canonicalFile.toPath()
-            if (currentPath == rootPath) return@forEach
-            val relPath = rootPath.relativize(currentPath).toString().replace('\\', '/').trim('/')
+            val relPath = relativePathOrNull(rootDir, file) ?: return@forEach
             if (relPath.isEmpty()) return@forEach
             if (relPath == "logs/last_action.log" || relPath == "logs/last_service.log") return@forEach
 

@@ -1,5 +1,6 @@
 package rikka.shizuku.server.util
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.UserInfo
 import android.os.IBinder
@@ -78,6 +79,7 @@ object UsersCompat {
         cachedActivityManager = null
     }
 
+    @SuppressLint("SoonBlockedPrivateApi", "PrivateApi")
     @Synchronized
     @Throws(Exception::class)
     private fun resolveActivityManager(): Any {

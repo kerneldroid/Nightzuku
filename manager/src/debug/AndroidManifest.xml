@@ -35,6 +35,7 @@
             android:exported="true" />
         <activity
             android:name=".adb.AdbPairingTutorialActivity"
-            android:exported="true" />
+            android:exported="true"
+            tools:targetApi="30" />
     </application>
 </manifest>
