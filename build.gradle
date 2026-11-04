@@ -42,7 +42,7 @@ def resolveGitCommitId = {
     return "nogit"
 }
 def gitCommitId = resolveGitCommitId()
-def gitCommitCount = 59
+def gitCommitCount = 60
 def baseVersionName = "${api_version_major}.7.1"
 ext {
     versionCode = gitCommitCount
