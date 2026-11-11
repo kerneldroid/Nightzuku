@@ -13,6 +13,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableIntStateOf
@@ -36,6 +37,7 @@ import moe.shizuku.manager.starter.StarterActivity
 import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
 import moe.shizuku.manager.utils.CustomTabsHelper
 import moe.shizuku.manager.utils.EnvironmentUtils
+import moe.shizuku.manager.utils.SmartLogManager
 import moe.shizuku.manager.utils.UserHandleCompat
 import rikka.core.util.ClipboardUtils
 import rikka.lifecycle.Status
@@ -47,6 +49,7 @@ abstract class HomeActivity : AppActivity() {
     private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
         checkServerStatus()
         appsModel.load()
+        SmartLogManager.syncAll(this)
     }
 
     private val binderDeadListener = Shizuku.OnBinderDeadListener {
@@ -76,9 +79,12 @@ abstract class HomeActivity : AppActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        SmartLogManager.syncAll(this)
+
         setContent {
             val serviceResource by homeModel.serviceStatus.observeAsState()
             val grantedResource by appsModel.grantedCount.observeAsState()
+            val smartLogState by SmartLogManager.uiState.collectAsState()
             val localNetworkPermissionState = remember(permissionRefreshTick.intValue) {
                 buildLocalNetworkPermissionState()
             }
@@ -108,6 +114,7 @@ abstract class HomeActivity : AppActivity() {
             var showAdbPairDialog by remember { mutableStateOf(false) }
             var showStartMethodDialog by remember { mutableStateOf(false) }
             var showStubNotice by remember { mutableStateOf(false) }
+            var showManualSmartLogDialog by remember { mutableStateOf(false) }
 
             LaunchedEffect(Unit) {
                 showStubNotice = ShizukuSettings.consumeStubNotice()
@@ -157,6 +164,10 @@ abstract class HomeActivity : AppActivity() {
                         onOpenAdbPermissionHelp = { CustomTabsHelper.launchUrlOrCopy(this@HomeActivity, Helps.ADB_PERMISSION.get()) },
                         onLearnMore = { CustomTabsHelper.launchUrlOrCopy(this@HomeActivity, Helps.HOME.get()) },
                         onCopyDiagnostics = { copyDiagnostics(it) },
+                        onOpenSmartLogs = {
+                            SmartLogManager.syncAll(this@HomeActivity)
+                            showManualSmartLogDialog = true
+                        },
                         onRequestLocalNetworkPermission = {
                             requestLocalNetworkPermission { permissionRefreshTick.intValue++ }
                         }
@@ -253,6 +264,43 @@ abstract class HomeActivity : AppActivity() {
                             }
                         )
                     }
+
+                    if (smartLogState.shouldShowRecoveryDialog || showManualSmartLogDialog) {
+                        val currentStatus = serviceResource?.data ?: moe.shizuku.manager.model.ServiceStatus()
+                        val currentGranted = grantedResource?.data ?: 0
+                        val fullSmartLog = remember(
+                            currentStatus,
+                            currentGranted,
+                            localNetworkPermissionState,
+                            smartLogState
+                        ) {
+                            buildDiagnostics(
+                                this@HomeActivity,
+                                currentStatus,
+                                currentGranted,
+                                localNetworkPermissionState
+                            )
+                        }
+                        SmartLogRecoveryDialog(
+                            logText = fullSmartLog,
+                            snapshotCount = smartLogState.snapshots.size,
+                            totalErrorEvents = smartLogState.totalErrorEvents,
+                            isMultiError = smartLogState.isMultiError,
+                            onCopy = { copyDiagnostics(fullSmartLog) },
+                            onClear = {
+                                SmartLogManager.clearAllLogs(this@HomeActivity)
+                                showManualSmartLogDialog = false
+                            },
+                            onOpenIssues = {
+                                copyDiagnostics(fullSmartLog)
+                                CustomTabsHelper.launchUrlOrCopy(this@HomeActivity, Helps.GITHUB_ISSUES_URL)
+                            },
+                            onDismiss = {
+                                SmartLogManager.acknowledgeRecoveryDialog()
+                                showManualSmartLogDialog = false
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -273,6 +321,7 @@ abstract class HomeActivity : AppActivity() {
     override fun onResume() {
         super.onResume()
         checkServerStatus()
+        SmartLogManager.syncAll(this)
         permissionRefreshTick.intValue++
     }
 

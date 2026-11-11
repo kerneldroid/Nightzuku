@@ -433,4 +433,15 @@
     <string name="wear_catalog_sort_official">官方</string>
     <string name="wear_catalog_sort_by">排序方式</string>
     <string name="wear_catalog_filter">篩選</string>
+    <!-- Smart Logs -->
+    <string name="smart_log_dialog_title">智慧日誌 (Smart Logs)</string>
+    <string name="smart_log_dialog_message_single">糟糕，發生了一些問題。如果一切正常 — 請關閉；如果出現異常 — 請複製並提交至 Issues / PR。</string>
+    <string name="smart_log_dialog_message_multiple">糟糕，發生了一些問題。偵測到多個錯誤（%1$d），已依分隔符號與快照時間合併為單一智慧日誌。如果一切正常 — 請關閉；如果出現異常 — 請複製並提交至 Issues / PR。</string>
+    <string name="smart_log_window_header">智慧日誌（快照：%1$d）</string>
+    <string name="smart_log_button_copy">複製</string>
+    <string name="smart_log_button_clear">清除</string>
+    <string name="smart_log_button_close">關閉</string>
+    <string name="smart_log_button_open_issues">提交至 Issues / PR</string>
+    <string name="smart_log_home_summary_clean">Smart Logs 已啟用：未偵測到錯誤（點擊檢視快照）</string>
+    <string name="smart_log_home_summary_errors">Smart Logs 已擷取 %1$d 個錯誤快照（共 %2$d 次事件）— 點擊檢視</string>
 </resources>

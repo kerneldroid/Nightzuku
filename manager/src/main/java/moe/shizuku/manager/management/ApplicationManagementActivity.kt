@@ -124,6 +124,7 @@ import moe.shizuku.manager.ui.compose.ShizukuIcon
 import moe.shizuku.manager.ui.compose.ShizukuLazyScaffold
 import moe.shizuku.manager.utils.EnvironmentUtils
 import moe.shizuku.manager.utils.ShizukuSystemApis
+import moe.shizuku.manager.utils.SmartLogManager
 import moe.shizuku.manager.utils.UserHandleCompat
 import rikka.lifecycle.Status
 import rikka.shizuku.Shizuku
@@ -153,8 +154,9 @@ class ApplicationManagementActivity : AppActivity() {
 
         viewModel.packages.observe(this) {
             if (it.status == Status.ERROR) {
-                finish()
                 val tr = it.error
+                SmartLogManager.recordManagerError("APP_MANAGEMENT_PACKAGES", "Failed to load application list from server", tr)
+                finish()
                 Toast.makeText(this, Objects.toString(tr, "unknown"), Toast.LENGTH_SHORT).show()
                 tr.printStackTrace()
             }

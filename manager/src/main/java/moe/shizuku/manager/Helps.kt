@@ -4,6 +4,9 @@ import moe.shizuku.manager.utils.MultiLocaleEntity
 
 object Helps {
 
+    const val GITHUB_REPO_URL = "https://github.com/kerneldroid/Nightzuku"
+    const val GITHUB_ISSUES_URL = "https://github.com/kerneldroid/Nightzuku/issues"
+
     @JvmField
     val ADB = MultiLocaleEntity()
 

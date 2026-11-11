@@ -484,4 +484,15 @@ With %1$s, in any terminal app, you can connect to and interact with the shell r
     <string name="modules_catalog_readme_unavailable">README not available</string>
     <string name="modules_webview_error_title">WebView Error</string>
     <string name="modules_webview_error_message">WebView is not supported or crashed during initialization on this Wear OS device.\n\n%1$s</string>
+    <!-- Smart Logs -->
+    <string name="smart_log_dialog_title">Smart Logs</string>
+    <string name="smart_log_dialog_message_single">Oops, something went wrong. If everything is fine — close this; if something is broken — copy and send to Issues / PR.</string>
+    <string name="smart_log_dialog_message_multiple">Oops, something went wrong. Multiple errors (%1$d) occurred and were merged into a single log separated by divider symbols and snapshot timestamps. If everything is fine — close this; if something is broken — copy and send to Issues / PR.</string>
+    <string name="smart_log_window_header">Smart Log (%1$d snapshot(s))</string>
+    <string name="smart_log_button_copy">Copy</string>
+    <string name="smart_log_button_clear">Clear</string>
+    <string name="smart_log_button_close">Close</string>
+    <string name="smart_log_button_open_issues">Send to Issues / PR</string>
+    <string name="smart_log_home_summary_clean">Smart Logs active: no errors detected (tap to view snapshot)</string>
+    <string name="smart_log_home_summary_errors">Smart Logs captured %1$d error snapshot(s) (%2$d total events) — tap to inspect</string>
 </resources>

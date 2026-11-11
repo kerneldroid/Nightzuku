@@ -18,6 +18,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import moe.shizuku.manager.R
 import moe.shizuku.manager.ShizukuSettings
+import moe.shizuku.manager.utils.SmartLogManager
 import rikka.core.ktx.unsafeLazy
 
 @TargetApi(Build.VERSION_CODES.R)
@@ -171,7 +172,9 @@ class AdbPairingService : Service() {
                     AdbKey(PreferenceAdbKeyStore(ShizukuSettings.getPreferences()), "shizuku")
                 } catch (e: Throwable) {
                     e.printStackTrace()
-                    handleResult(false, AdbKeyException(e))
+                    val keyErr = AdbKeyException(e)
+                    SmartLogManager.recordPairingError("AdbPairingService.keyInit", host, port, keyErr)
+                    handleResult(false, keyErr)
                     return@launch
                 }
 
@@ -180,9 +183,19 @@ class AdbPairingService : Service() {
                         client.start()
                     }
                 }.onFailure {
+                    SmartLogManager.recordPairingError("AdbPairingService.exchange", host, port, it)
                     handleResult(false, it)
-                }.onSuccess {
-                    handleResult(it, null)
+                }.onSuccess { ok ->
+                    if (!ok) {
+                        SmartLogManager.recordPairingError(
+                            "AdbPairingService.handshake",
+                            host,
+                            port,
+                            null,
+                            "AdbPairingClient.start() returned false"
+                        )
+                    }
+                    handleResult(ok, null)
                 }
             } finally {
                 pairingInFlight.set(false)

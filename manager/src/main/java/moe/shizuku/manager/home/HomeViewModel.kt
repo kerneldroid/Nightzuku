@@ -13,6 +13,7 @@ import moe.shizuku.manager.Manifest
 import moe.shizuku.manager.model.ServiceStatus
 import moe.shizuku.manager.utils.Logger.LOGGER
 import moe.shizuku.manager.utils.ShizukuSystemApis
+import moe.shizuku.manager.utils.SmartLogManager
 import rikka.lifecycle.Resource
 import rikka.shizuku.Shizuku
 
@@ -53,6 +54,7 @@ class HomeViewModel : ViewModel() {
             } catch (e: CancellationException) {
 
             } catch (e: Throwable) {
+                SmartLogManager.recordManagerError("HOME_STATUS_RELOAD", "Failed to query service status", e)
                 _serviceStatus.postValue(Resource.error(e, ServiceStatus()))
             }
         }

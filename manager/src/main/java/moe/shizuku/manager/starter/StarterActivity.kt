@@ -73,6 +73,7 @@ import moe.shizuku.manager.ui.compose.HtmlText
 import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
 import moe.shizuku.manager.ui.compose.ShizukuIcon
 import moe.shizuku.manager.ui.compose.ShizukuLazyScaffold
+import moe.shizuku.manager.utils.SmartLogManager
 import rikka.lifecycle.Resource
 import rikka.lifecycle.Status
 import rikka.lifecycle.viewModels
@@ -284,7 +285,12 @@ class StarterActivity : AppActivity() {
     }
 }
 
-private class ViewModel(context: Context, root: Boolean, host: String?, port: Int) : androidx.lifecycle.ViewModel() {
+private class ViewModel(
+    context: Context,
+    private val isRoot: Boolean,
+    private val host: String?,
+    private val port: Int
+) : androidx.lifecycle.ViewModel() {
 
     private val sb = StringBuilder()
     private val outputLock = Any()
@@ -294,7 +300,7 @@ private class ViewModel(context: Context, root: Boolean, host: String?, port: In
 
     init {
         try {
-            if (root) {
+            if (isRoot) {
                 startRoot()
             } else {
                 startAdb(host!!, port)
@@ -332,6 +338,13 @@ private class ViewModel(context: Context, root: Boolean, host: String?, port: In
         if (throwable == null) {
             _output.postValue(Resource.success(snapshot))
         } else {
+            SmartLogManager.recordStarterError(
+                isRoot = isRoot,
+                host = host,
+                port = port,
+                starterOutput = snapshot,
+                throwable = throwable
+            )
             _output.postValue(Resource.error(throwable, snapshot))
         }
     }
@@ -360,6 +373,14 @@ private class ViewModel(context: Context, root: Boolean, host: String?, port: In
             }).submit {
                 if (it.code != 0) {
                     appendLine("\nSend this to developer may help solve the problem.")
+                    val currentLog = synchronized(outputLock) { sb.toString() }
+                    SmartLogManager.recordStarterError(
+                        isRoot = true,
+                        host = null,
+                        port = 0,
+                        starterOutput = currentLog,
+                        throwable = IllegalStateException("shizuku_starter root command exited with code ${it.code}")
+                    )
                 }
             }
         }

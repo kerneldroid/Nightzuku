@@ -161,8 +161,19 @@ private class PairingContext private constructor(private val nativePtr: Long) {
             return if (nativePtr != 0L) PairingContext(nativePtr) else null
         }
 
+        fun drainErrorLog(): String {
+            return try {
+                nativeGetErrorLog().orEmpty()
+            } catch (_: Throwable) {
+                ""
+            }
+        }
+
         @JvmStatic
         private external fun nativeConstructor(isClient: Boolean, password: ByteArray): Long
+
+        @JvmStatic
+        private external fun nativeGetErrorLog(): String?
     }
 }
 
@@ -332,5 +343,10 @@ class AdbPairingClient(
 
         @JvmStatic
         external fun available(): Boolean
+
+        @JvmStatic
+        fun consumeNativeErrorLog(): String {
+            return PairingContext.drainErrorLog()
+        }
     }
 }

@@ -50,6 +50,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,6 +72,7 @@ import moe.shizuku.manager.ui.compose.SettingsItem
 import moe.shizuku.manager.ui.compose.SettingsSectionHeader
 import moe.shizuku.manager.ui.compose.ShizukuIcon
 import moe.shizuku.manager.utils.EnvironmentUtils
+import moe.shizuku.manager.utils.SmartLogManager
 import rikka.lifecycle.Resource
 import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuApiConstants
@@ -113,6 +115,7 @@ internal fun HomeScreen(
     onOpenAdbPermissionHelp: () -> Unit,
     onLearnMore: () -> Unit,
     onCopyDiagnostics: (String) -> Unit,
+    onOpenSmartLogs: () -> Unit = {},
     onRequestLocalNetworkPermission: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -195,6 +198,7 @@ internal fun HomeScreen(
             onOpenAdbPermissionHelp = onOpenAdbPermissionHelp,
             onLearnMore = onLearnMore,
             onCopyDiagnostics = onCopyDiagnostics,
+            onOpenSmartLogs = onOpenSmartLogs,
             onRequestLocalNetworkPermission = onRequestLocalNetworkPermission
         )
     }
@@ -222,6 +226,7 @@ internal fun HomeScreen(
     onOpenAdbPermissionHelp: () -> Unit,
     onLearnMore: () -> Unit,
     onCopyDiagnostics: (String) -> Unit,
+    onOpenSmartLogs: () -> Unit = {},
     onRequestLocalNetworkPermission: () -> Unit
 ) {
     val context = LocalContext.current
@@ -234,8 +239,12 @@ internal fun HomeScreen(
     val scope = rememberCoroutineScope()
     var isRefreshing by remember { mutableStateOf(false) }
     val pullToRefreshState = rememberPullToRefreshState()
-    val diagnostics = remember(status, grantedCount, localNetworkPermissionState) {
+    val smartLogState by SmartLogManager.uiState.collectAsState()
+    val diagnostics = remember(status, grantedCount, localNetworkPermissionState, smartLogState) {
         buildDiagnostics(context, status, grantedCount, localNetworkPermissionState)
+    }
+    val diagnosticsSummary = remember(status, grantedCount, localNetworkPermissionState, smartLogState) {
+        buildDiagnosticsCardSummary(context, status, grantedCount, localNetworkPermissionState, smartLogState)
     }
     val localNetworkMissing = localNetworkPermissionState.required && !localNetworkPermissionState.granted
     val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
@@ -493,11 +502,11 @@ internal fun HomeScreen(
                     HomeRow(
                         index = if (localNetworkMissing) 1 else 0,
                         count = infoCount,
-                        icon = R.drawable.ic_outline_info_24,
+                        icon = if (smartLogState.snapshots.isNotEmpty()) R.drawable.ic_warning_24 else R.drawable.ic_outline_info_24,
                         title = stringResource(R.string.home_diagnostics_title),
-                        summary = diagnostics,
+                        summary = diagnosticsSummary,
                         showChevron = false,
-                        onClick = { onCopyDiagnostics(diagnostics) },
+                        onClick = onOpenSmartLogs,
                         trailing = {
                             IconButton(onClick = { onCopyDiagnostics(diagnostics) }) {
                                 ShizukuIcon(
@@ -984,23 +993,51 @@ internal fun buildDiagnostics(
     grantedCount: Int,
     localNetworkPermissionState: LocalNetworkPermissionState
 ): String {
-    val versionName = context.packageManager.getPackageInfo(context.packageName, 0).versionName
     val localNetwork = if (localNetworkPermissionState.required) {
         "${localNetworkPermissionState.label}: " +
                 if (localNetworkPermissionState.granted) "granted" else "missing"
     } else {
         "not required"
     }
+    return SmartLogManager.buildFullReport(
+        context = context,
+        status = status,
+        grantedCount = grantedCount,
+        localNetworkLabel = localNetwork
+    )
+}
+
+internal fun buildDiagnosticsCardSummary(
+    context: android.content.Context,
+    status: ServiceStatus,
+    grantedCount: Int,
+    localNetworkPermissionState: LocalNetworkPermissionState,
+    smartLogState: SmartLogManager.SmartLogUiState
+): String {
+    val versionName = runCatching {
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName
+    }.getOrDefault(BuildConfig.VERSION_NAME)
+    val localNetwork = if (localNetworkPermissionState.required) {
+        "${localNetworkPermissionState.label}: " +
+                if (localNetworkPermissionState.granted) "granted" else "missing"
+    } else {
+        "not required"
+    }
+    val smartStatusLine = if (smartLogState.snapshots.isNotEmpty()) {
+        context.getString(
+            R.string.smart_log_home_summary_errors,
+            smartLogState.snapshots.size,
+            smartLogState.totalErrorEvents
+        )
+    } else {
+        context.getString(R.string.smart_log_home_summary_clean)
+    }
 
     return buildString {
+        appendLine(smartStatusLine)
         appendLine("App: ${context.getString(R.string.app_name)} $versionName (${BuildConfig.VERSION_CODE})")
         appendLine("Android: ${Build.VERSION.RELEASE} / SDK ${Build.VERSION.SDK_INT} / ${Build.VERSION.CODENAME}")
-        appendLine("Service: ${if (status.isRunning) "running" else "stopped"}")
-        appendLine("Server uid: ${status.uid}")
-        appendLine("Server API: ${status.apiVersion}.${status.patchVersion}")
-        appendLine("SELinux: ${status.seContext ?: "unknown"}")
-        appendLine("ADB permission: ${if (status.permission) "full" else "limited"}")
-        appendLine("Authorized apps: $grantedCount")
-        appendLine("Local network: $localNetwork")
+        appendLine("Service: ${if (status.isRunning) "running (uid ${status.uid})" else "stopped"} • SELinux: ${status.seContext ?: "unknown"}")
+        appendLine("ADB: ${if (status.permission) "full" else "limited"} • Apps: $grantedCount • Net: $localNetwork")
     }.trim()
 }

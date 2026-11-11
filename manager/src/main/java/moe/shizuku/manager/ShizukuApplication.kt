@@ -8,6 +8,7 @@ import com.topjohnwu.superuser.Shell
 import moe.shizuku.manager.ktx.logd
 import moe.shizuku.manager.module.catalog.TokenStore
 import moe.shizuku.manager.nightdog.NightDogClient
+import moe.shizuku.manager.utils.SmartLogManager
 import org.lsposed.hiddenapibypass.HiddenApiBypass
 import rikka.core.util.BuildUtils.atLeast30
 import rikka.material.app.LocaleDelegate
@@ -33,6 +34,7 @@ class ShizukuApplication : Application() {
 
     private fun init(context: Context) {
         ShizukuSettings.initialize(context)
+        SmartLogManager.init(context)
         LocaleDelegate.defaultLocale = ShizukuSettings.getLocale()
         AppCompatDelegate.setDefaultNightMode(ShizukuSettings.getNightMode())
         TokenStore.migrateLegacyToken(context)
