@@ -44,7 +44,7 @@ class SmartLogEngineTest {
     }
 
     @Test
-    fun formatMergedReportSeparatesMultipleSnapshotsWithSymbolsAndTimestamps() {
+    fun formatMergedReportKeepsSnapshotsReadableWithoutBoxArt() {
         val s1 = SmartLogEngine.SmartLogSnapshot(
             id = "snap1",
             timestampMs = 1700000001000L,
@@ -70,11 +70,14 @@ class SmartLogEngineTest {
             qprCompatAudit = "[QPR / Hidden API Live Compatibility Probe]\n  • IPackageManager: OK"
         )
 
-        assertTrue(report.contains("MERGED MULTI-ERROR REPORT (2 SNAPSHOTS)"))
-        assertTrue(report.contains("NEXT SNAPSHOT (2 of 2)"))
-        assertTrue(report.contains("[SNAPSHOT #1/2]"))
-        assertTrue(report.contains("[SNAPSHOT #2/2]"))
+        assertTrue(report.contains("ENVIRONMENT"))
+        assertTrue(report.contains("HIDDEN API COMPAT"))
+        assertTrue(report.contains("SNAPSHOTS (2)"))
+        assertTrue(report.contains("[1/2]"))
+        assertTrue(report.contains("[2/2]"))
         assertTrue(report.contains("shizuku_server terminated with signal 11"))
         assertTrue(report.contains("Manager crashed with IllegalStateException"))
+        assertTrue(!report.contains("╔"))
+        assertTrue(!report.contains("NIGHTZUKU SMART LOG"))
     }
 }

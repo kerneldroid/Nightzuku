@@ -1016,14 +1016,6 @@ fun SmartLogRecoveryDialog(
     } else {
         AlertDialog(
             onDismissRequest = onDismiss,
-            icon = {
-                ShizukuIcon(
-                    icon = R.drawable.ic_warning_24,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(28.dp)
-                )
-            },
             title = {
                 Text(
                     text = stringResource(R.string.smart_log_dialog_title),
@@ -1036,42 +1028,24 @@ fun SmartLogRecoveryDialog(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text(
-                        text = headerMessage,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = MaterialTheme.shapes.large,
                         color = MaterialTheme.colorScheme.surfaceContainerHighest
                     ) {
                         Column(modifier = Modifier.fillMaxWidth()) {
-                            Row(
+                            Text(
+                                text = stringResource(
+                                    R.string.smart_log_window_header,
+                                    snapshotCount.coerceAtLeast(1)
+                                ),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 2.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = stringResource(
-                                        R.string.smart_log_window_header,
-                                        snapshotCount.coerceAtLeast(1)
-                                    ),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                IconButton(onClick = onCopy) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.ContentCopy,
-                                        contentDescription = stringResource(R.string.smart_log_button_copy),
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
+                                    .padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 2.dp),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
 
                             SelectionContainer {
                                 Text(
@@ -1104,18 +1078,30 @@ fun SmartLogRecoveryDialog(
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(Modifier.width(6.dp))
-                            Text(stringResource(R.string.smart_log_button_copy))
-                        }
-                        if (snapshotCount > 0) {
-                            OutlinedButton(onClick = onClear) {
-                                Text(stringResource(R.string.smart_log_button_clear))
-                            }
+                            Text(
+                                text = stringResource(R.string.smart_log_button_copy),
+                                maxLines = 1,
+                                softWrap = false
+                            )
                         }
                         OutlinedButton(
                             onClick = onDismiss,
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text(stringResource(R.string.smart_log_button_close))
+                            Text(
+                                text = stringResource(R.string.smart_log_button_close),
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+                    }
+
+                    if (snapshotCount > 0) {
+                        OutlinedButton(
+                            onClick = onClear,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(stringResource(R.string.smart_log_button_clear))
                         }
                     }
 

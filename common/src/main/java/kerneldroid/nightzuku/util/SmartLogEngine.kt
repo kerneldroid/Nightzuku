@@ -252,51 +252,33 @@ object SmartLogEngine {
             System.currentTimeMillis().toString()
         }
 
-        sb.appendLine("╔══════════════════════════════════════════════════════════════════╗")
-        if (snapshots.size > 1) {
-            sb.appendLine("║ NIGHTZUKU SMART LOG • MERGED MULTI-ERROR REPORT (${snapshots.size} SNAPSHOTS)")
-        } else if (snapshots.size == 1) {
-            sb.appendLine("║ NIGHTZUKU SMART LOG • ERROR SNAPSHOT REPORT")
-        } else {
-            sb.appendLine("║ NIGHTZUKU SMART LOG • SYSTEM & COMPATIBILITY SNAPSHOT")
-        }
-        sb.appendLine("║ Generated: $nowFormatted")
-        sb.appendLine("╚══════════════════════════════════════════════════════════════════╝")
+        sb.appendLine("Generated: $nowFormatted")
         sb.appendLine()
-        sb.appendLine("─── [1. ENVIRONMENT & SERVICE TELEMETRY] ──────────────────────────")
+        sb.appendLine("ENVIRONMENT")
         sb.appendLine(headerDiagnostics.trim())
 
         if (!qprCompatAudit.isNullOrBlank()) {
             sb.appendLine()
-            sb.appendLine("─── [2. QPR / HIDDEN API COMPATIBILITY SNAPSHOT] ──────────────────")
+            sb.appendLine("HIDDEN API COMPAT")
             sb.appendLine(qprCompatAudit.trim())
         }
 
         if (snapshots.isNotEmpty()) {
             sb.appendLine()
-            sb.appendLine("─── [3. CAPTURED ERROR SNAPSHOTS (${snapshots.size})] ───────────────────────────")
+            sb.appendLine("SNAPSHOTS (${snapshots.size})")
             snapshots.forEachIndexed { index, snap ->
-                if (index > 0) {
-                    sb.appendLine()
-                    sb.appendLine("====================================================================")
-                    sb.appendLine("          ▼ NEXT SNAPSHOT (${index + 1} of ${snapshots.size}) • ${snap.formattedTimestamp()} ▼")
-                    sb.appendLine("====================================================================")
-                } else {
-                    sb.appendLine("====================================================================")
-                }
+                if (index > 0) sb.appendLine()
                 val repeatBadge = if (snap.occurrences > 1) " (x${snap.occurrences})" else ""
-                sb.appendLine("[SNAPSHOT #${index + 1}/${snapshots.size}] ⏱ ${snap.formattedTimestamp()}$repeatBadge")
-                sb.appendLine("Source: ${snap.source} | Category: ${snap.category} | Severity: ${snap.severity} | ID: ${snap.id}")
+                sb.appendLine("[${index + 1}/${snapshots.size}] ${snap.formattedTimestamp()}$repeatBadge")
+                sb.appendLine("${snap.source} | ${snap.category} | ${snap.severity} | ${snap.id}")
                 sb.appendLine("Summary: ${snap.summary}")
-                sb.appendLine("--------------------------------------------------------------------")
                 sb.appendLine(snap.details.ifBlank { "(no additional stack/details)" })
-                sb.appendLine("====================================================================")
             }
         }
 
         if (!logcatTail.isNullOrBlank()) {
             sb.appendLine()
-            sb.appendLine("─── [4. RECENT PROCESS LOGCAT TAIL] ───────────────────────────────")
+            sb.appendLine("LOGCAT TAIL")
             sb.appendLine(logcatTail.trim())
         }
 
