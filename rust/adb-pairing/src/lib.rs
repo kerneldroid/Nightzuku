@@ -2,9 +2,11 @@ mod cipher;
 mod spake;
 
 use std::ffi::c_void;
+use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use jni::objects::{JByteArray, JClass, JObject};
-use jni::sys::{JNI_ERR, JNI_FALSE, JNI_TRUE, JNI_VERSION_1_6, jboolean, jbyteArray, jint, jlong};
+use jni::sys::{JNI_ERR, JNI_FALSE, JNI_TRUE, JNI_VERSION_1_6, jboolean, jbyteArray, jint, jlong, jstring};
 use jni::{JNIEnv, JavaVM, NativeMethod};
 use log::error;
 use rand::RngCore;
@@ -14,6 +16,43 @@ use crate::cipher::PairingCipher;
 use crate::spake::{MESSAGE_SIZE, Spake2State, SpakeRole};
 
 const PAIRING_CONTEXT_CLASS: &str = "moe/shizuku/manager/adb/PairingContext";
+const MAX_DIAGNOSTIC_ENTRIES: usize = 32;
+
+static PAIRING_DIAGNOSTICS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+fn current_epoch_ms() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
+}
+
+pub(crate) fn record_pairing_diagnostic(stage: &str, detail: String) {
+    error!("[{stage}] {detail}");
+    let entry = format!(
+        "[RUST-ADB-PAIRING][ts={}][stage={stage}] {detail}",
+        current_epoch_ms()
+    );
+    if let Ok(mut guard) = PAIRING_DIAGNOSTICS.lock() {
+        if guard.len() >= MAX_DIAGNOSTIC_ENTRIES {
+            guard.remove(0);
+        }
+        guard.push(entry);
+    }
+}
+
+pub(crate) fn drain_pairing_diagnostics() -> String {
+    if let Ok(mut guard) = PAIRING_DIAGNOSTICS.lock() {
+        if guard.is_empty() {
+            return String::new();
+        }
+        let joined = guard.join("\n");
+        guard.clear();
+        joined
+    } else {
+        String::new()
+    }
+}
 
 #[derive(Debug)]
 pub(crate) enum PairingError {
@@ -56,6 +95,21 @@ fn init_logging() {
                 .with_tag(LOG_TAG),
         );
     }
+
+    std::panic::set_hook(Box::new(|info| {
+        let location = info
+            .location()
+            .map(|loc| format!("{}:{}:{}", loc.file(), loc.line(), loc.column()))
+            .unwrap_or_else(|| "unknown".to_string());
+        let payload = if let Some(s) = info.payload().downcast_ref::<&str>() {
+            (*s).to_string()
+        } else if let Some(s) = info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "non-string panic".to_string()
+        };
+        record_pairing_diagnostic("rust_panic", format!("panic at {location}: {payload}"));
+    }));
 }
 
 extern "system" fn native_constructor<'local>(
@@ -67,7 +121,10 @@ extern "system" fn native_constructor<'local>(
     let password = match env.convert_byte_array(&password) {
         Ok(value) => value,
         Err(source) => {
-            error!("Unable to read the pairing password: {source}");
+            record_pairing_diagnostic(
+                "nativeConstructor",
+                format!("Unable to read the pairing password byte array: {source}"),
+            );
             return 0;
         }
     };
@@ -91,7 +148,13 @@ extern "system" fn native_constructor<'local>(
             Box::into_raw(context) as jlong
         }
         Err(source) => {
-            error!("Unable to generate the SPAKE2 public key: {source}");
+            record_pairing_diagnostic(
+                "nativeConstructor",
+                format!(
+                    "Unable to generate the SPAKE2 public key (pwd_bytes={}): {source}",
+                    password.len()
+                ),
+            );
             0
         }
     }
@@ -103,14 +166,17 @@ extern "system" fn native_msg<'local>(
     ptr: jlong,
 ) -> jbyteArray {
     let Some(context) = (unsafe { context(ptr) }) else {
-        error!("Unable to read the pairing context.");
+        record_pairing_diagnostic("nativeMsg", "PairingContext pointer is null (0)".to_string());
         return std::ptr::null_mut();
     };
 
     match env.byte_array_from_slice(&context.message) {
         Ok(array) => array.into_raw(),
         Err(source) => {
-            error!("Unable to return the SPAKE2 message: {source}");
+            record_pairing_diagnostic(
+                "nativeMsg",
+                format!("Unable to return the SPAKE2 message to JVM: {source}"),
+            );
             std::ptr::null_mut()
         }
     }
@@ -123,36 +189,54 @@ extern "system" fn native_init_cipher<'local>(
     their_msg: JByteArray<'local>,
 ) -> jboolean {
     let Some(context) = (unsafe { context(ptr) }) else {
-        error!("Unable to read the pairing context.");
+        record_pairing_diagnostic(
+            "nativeInitCipher",
+            "PairingContext pointer is null (0)".to_string(),
+        );
         return JNI_FALSE;
     };
 
     let their_msg = match env.convert_byte_array(&their_msg) {
         Ok(value) => value,
         Err(source) => {
-            error!("Unable to read their public key: {source}");
+            record_pairing_diagnostic(
+                "nativeInitCipher",
+                format!("Unable to read peer SPAKE2 public key byte array: {source}"),
+            );
             return JNI_FALSE;
         }
     };
 
     if their_msg.len() > MESSAGE_SIZE {
-        error!(
-            "their_msg size [{}] greater then max size [{}].",
-            their_msg.len(),
-            MESSAGE_SIZE
+        record_pairing_diagnostic(
+            "nativeInitCipher",
+            format!(
+                "Peer SPAKE2 message size [{}] exceeds max allowed size [{}]",
+                their_msg.len(),
+                MESSAGE_SIZE
+            ),
         );
         return JNI_FALSE;
     }
 
     let Some(state) = context.spake.take() else {
-        error!("The SPAKE2 state is not available.");
+        record_pairing_diagnostic(
+            "nativeInitCipher",
+            "The SPAKE2 state was already consumed or is unavailable".to_string(),
+        );
         return JNI_FALSE;
     };
 
     let key_material = match state.finish(&their_msg) {
         Ok(value) => value,
         Err(source) => {
-            error!("Unable to process their public key: {source}");
+            record_pairing_diagnostic(
+                "nativeInitCipher",
+                format!(
+                    "SPAKE2 point exchange failed (peer_msg_len={}): {source}",
+                    their_msg.len()
+                ),
+            );
             return JNI_FALSE;
         }
     };
@@ -163,7 +247,10 @@ extern "system" fn native_init_cipher<'local>(
             JNI_TRUE
         }
         Err(source) => {
-            error!("Unable to derive the pairing cipher key: {source}");
+            record_pairing_diagnostic(
+                "nativeInitCipher",
+                format!("HKDF / AES-GCM key derivation failed: {source}"),
+            );
             JNI_FALSE
         }
     }
@@ -176,20 +263,29 @@ extern "system" fn native_encrypt<'local>(
     input: JByteArray<'local>,
 ) -> jbyteArray {
     let Some(context) = (unsafe { context(ptr) }) else {
-        error!("Unable to read the pairing context.");
+        record_pairing_diagnostic(
+            "nativeEncrypt",
+            "PairingContext pointer is null (0)".to_string(),
+        );
         return std::ptr::null_mut();
     };
 
     let input = match env.convert_byte_array(&input) {
         Ok(value) => value,
         Err(source) => {
-            error!("Unable to read the plaintext: {source}");
+            record_pairing_diagnostic(
+                "nativeEncrypt",
+                format!("Unable to read plaintext byte array: {source}"),
+            );
             return std::ptr::null_mut();
         }
     };
 
     let Some(cipher) = context.cipher.as_mut() else {
-        error!("The AES-GCM context is not initialized.");
+        record_pairing_diagnostic(
+            "nativeEncrypt",
+            "The AES-GCM cipher context is not initialized".to_string(),
+        );
         return std::ptr::null_mut();
     };
 
@@ -197,12 +293,18 @@ extern "system" fn native_encrypt<'local>(
         Ok(output) => match env.byte_array_from_slice(&output) {
             Ok(array) => array.into_raw(),
             Err(source) => {
-                error!("Unable to return the ciphertext: {source}");
+                record_pairing_diagnostic(
+                    "nativeEncrypt",
+                    format!("Unable to return ciphertext byte array to JVM: {source}"),
+                );
                 std::ptr::null_mut()
             }
         },
-        Err(_) => {
-            error!("Failed to encrypt (in_len={}).", input.len());
+        Err(err) => {
+            record_pairing_diagnostic(
+                "nativeEncrypt",
+                format!("AES-GCM encryption failed (in_len={}): {err}", input.len()),
+            );
             std::ptr::null_mut()
         }
     }
@@ -215,20 +317,29 @@ extern "system" fn native_decrypt<'local>(
     input: JByteArray<'local>,
 ) -> jbyteArray {
     let Some(context) = (unsafe { context(ptr) }) else {
-        error!("Unable to read the pairing context.");
+        record_pairing_diagnostic(
+            "nativeDecrypt",
+            "PairingContext pointer is null (0)".to_string(),
+        );
         return std::ptr::null_mut();
     };
 
     let input = match env.convert_byte_array(&input) {
         Ok(value) => value,
         Err(source) => {
-            error!("Unable to read the ciphertext: {source}");
+            record_pairing_diagnostic(
+                "nativeDecrypt",
+                format!("Unable to read ciphertext byte array: {source}"),
+            );
             return std::ptr::null_mut();
         }
     };
 
     let Some(cipher) = context.cipher.as_mut() else {
-        error!("The AES-GCM context is not initialized.");
+        record_pairing_diagnostic(
+            "nativeDecrypt",
+            "The AES-GCM cipher context is not initialized".to_string(),
+        );
         return std::ptr::null_mut();
     };
 
@@ -236,12 +347,21 @@ extern "system" fn native_decrypt<'local>(
         Ok(output) => match env.byte_array_from_slice(&output) {
             Ok(array) => array.into_raw(),
             Err(source) => {
-                error!("Unable to return the plaintext: {source}");
+                record_pairing_diagnostic(
+                    "nativeDecrypt",
+                    format!("Unable to return plaintext byte array to JVM: {source}"),
+                );
                 std::ptr::null_mut()
             }
         },
-        Err(_) => {
-            error!("Failed to decrypt (in_len={}).", input.len());
+        Err(err) => {
+            record_pairing_diagnostic(
+                "nativeDecrypt",
+                format!(
+                    "AES-GCM peer info decryption failed (in_len={}, reason={err}) — likely invalid pairing code or TLS exporter mismatch",
+                    input.len()
+                ),
+            );
             std::ptr::null_mut()
         }
     }
@@ -252,6 +372,17 @@ extern "system" fn native_destroy<'local>(_env: JNIEnv<'local>, _this: JObject<'
         return;
     }
     drop(unsafe { Box::from_raw(ptr as *mut PairingContext) });
+}
+
+extern "system" fn native_get_error_log<'local>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+) -> jstring {
+    let drained = drain_pairing_diagnostics();
+    match env.new_string(drained) {
+        Ok(s) => s.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -298,6 +429,11 @@ pub extern "system" fn JNI_OnLoad(vm: JavaVM, _reserved: *mut c_void) -> jint {
             sig: "(J)V".into(),
             fn_ptr: native_destroy as *mut c_void,
         },
+        NativeMethod {
+            name: "nativeGetErrorLog".into(),
+            sig: "()Ljava/lang/String;".into(),
+            fn_ptr: native_get_error_log as *mut c_void,
+        },
     ];
 
     if let Err(source) = env.register_native_methods(class, &methods) {
@@ -310,9 +446,9 @@ pub extern "system" fn JNI_OnLoad(vm: JavaVM, _reserved: *mut c_void) -> jint {
 
 #[cfg(test)]
 mod tests {
-    use super::PairingError;
     use super::cipher::PairingCipher;
     use super::spake::{Spake2State, SpakeRole};
+    use super::{PairingError, drain_pairing_diagnostics, record_pairing_diagnostic};
 
     fn vector_random(offset: u8) -> [u8; 64] {
         let mut random = [0_u8; 64];
@@ -434,5 +570,15 @@ mod tests {
             server.decrypt(&encrypted).expect("should decrypt"),
             b"hello"
         );
+    }
+
+    #[test]
+    fn pairing_diagnostics_ring_buffer_drains_cleanly() {
+        let _ = drain_pairing_diagnostics();
+        record_pairing_diagnostic("nativeDecrypt", "AES-GCM authentication failed".to_string());
+        let log = drain_pairing_diagnostics();
+        assert!(log.contains("[RUST-ADB-PAIRING]"));
+        assert!(log.contains("AES-GCM authentication failed"));
+        assert!(drain_pairing_diagnostics().is_empty());
     }
 }
