@@ -352,6 +352,23 @@ fn supervise_server(
     let restart_delay_secs: libc::c_uint = 5;
 
     loop {
+        // The APK path baked into this supervisor can disappear when the manager app is
+        // updated or uninstalled. Restarting app_process against the stale path only
+        // produces ClassNotFoundException/SIGABRT loops, so stop and let a fresh starter
+        // (launched from the new lib dir) take over.
+        if access(path, libc::R_OK) != 0 {
+            logging::loge(&format!(
+                "fatal: apk path is no longer accessible, stopping supervisor: {path}"
+            ));
+            logging::record_smart_snapshot(
+                "STARTER_DEX_MISSING",
+                "ERROR",
+                "Starter stopped: apk path disappeared (app updated or uninstalled)",
+                &format!("dex_path={path}\nerrno={}", misc::errno()),
+            );
+            exit(0);
+        }
+
         let pid = unsafe { libc::fork() };
         if pid == -1 {
             logging::loge("fatal: can't fork shizuku_server");

@@ -482,7 +482,7 @@
     <!-- Smart Logs -->
     <string name="smart_log_dialog_title">Smart Logs — Розумний знімок</string>
     <string name="smart_log_dialog_message_single">Упс, щось пішло не так. Якщо все нормально — закрий, якщо погано — скопіюй і надішли в Issues / PR.</string>
-    <string name="smart_log_dialog_message_multiple">Упс, щось пішло не так. З'являється безліч помилок (%1$d) — їх об'єднано в один лог і розділено символами та часом знімка. Якщо все нормально — закрий, якщо погано — скопіюй і надішли в Issues / PR.</string>
+    <string name="smart_log_dialog_message_multiple">Упс, щось пішло не так. З\'являється безліч помилок (%1$d) — їх об\'єднано в один лог і розділено символами та часом знімка. Якщо все нормально — закрий, якщо погано — скопіюй і надішли в Issues / PR.</string>
     <string name="smart_log_window_header">Розумний лог (знімків: %1$d)</string>
     <string name="smart_log_button_copy">Скопіювати</string>
     <string name="smart_log_button_clear">Очистити</string>

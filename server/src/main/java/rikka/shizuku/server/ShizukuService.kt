@@ -106,11 +106,9 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
 
         restorePersistedAccessTimers()
 
-        ApkChangedObservers.start(ai.sourceDir, object : ApkChangedListener {
-            override fun onApkChanged() {
-                reconcileManagerAndClients()
-            }
-        })
+        // Package changes are handled by startPackageReconciler() every 3s. inotify
+        // (FileObserver) on /data/app is blocked by SELinux for uid 2000 (shell), so
+        // watching the APK directory only produced an AVC denial and no events.
 
         BinderSender.register(this, nightEndpoint)
 
@@ -1406,9 +1404,9 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                             ServerSmartLogCollector.recordServerError(
                                 category = "NIGHTDOG_FATAL_FAULT",
                                 summary = "NightDog watchdog triggered server recovery due to fatal fault: $reason",
-                                extraDetails = "reason=$reason
-boundServices=${NightDog.getBoundServiceNames().joinToString()}
-totalRebinds=${NightDog.getTotalRebinds()}"
+                                extraDetails = "reason=$reason\n" +
+                                    "boundServices=${NightDog.getBoundServiceNames().joinToString()}\n" +
+                                    "totalRebinds=${NightDog.getTotalRebinds()}"
                             )
                         }
                     }

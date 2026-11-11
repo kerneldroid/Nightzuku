@@ -1,14 +1,12 @@
 package rikka.shizuku.server
 
 import android.content.pm.PackageInfo
-import android.util.ArrayMap
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import kerneldroid.nightzuku.util.PackageSignatureVerifier
 import moe.shizuku.starter.ServiceStarter
 import rikka.shizuku.server.util.Android17Compat
 import rikka.shizuku.server.util.UserHandleCompat
-import rikka.shizuku.server.util.UsersCompat
 
 /**
  * Nightzuku implementation of [UserServiceManager].
@@ -19,7 +17,6 @@ import rikka.shizuku.server.util.UsersCompat
  */
 class ShizukuUserServiceManager : UserServiceManager() {
 
-    private val apkChangedListeners: MutableMap<UserServiceRecord, ApkChangedListener> = ArrayMap()
     private val activeTokens = ConcurrentHashMap<String, UserServiceRecord>()
     private val recordBaselines = ConcurrentHashMap<UserServiceRecord, PackageSignatureVerifier.Baseline>()
     private val recordUids = ConcurrentHashMap<UserServiceRecord, Int>()
@@ -282,52 +279,8 @@ class ShizukuUserServiceManager : UserServiceManager() {
         }
         val baseline = PackageSignatureVerifier.Baseline.fromSnapshot(snapshot)
         recordBaselines[record] = baseline
-
-        val packageName = packageInfo.packageName
-        val listener = object : ApkChangedListener {
-
-            override fun onApkChanged() {
-                var newSourceDir: String? = null
-                var verified = false
-
-                for (u in UsersCompat.getUserIdsNoThrow()) {
-                    val pi = Android17Compat.getPackageInfo(
-                        packageName,
-                        PackageSignatureVerifier.signatureLookupFlags(),
-                        u
-                    )
-                    val applicationInfo = pi?.applicationInfo
-                    if (applicationInfo != null && applicationInfo.sourceDir != null) {
-                        val currentSnapshot = PackageSignatureVerifier.extractSnapshot(pi, u)
-                        if (baseline.matches(currentSnapshot)) {
-                            newSourceDir = applicationInfo.sourceDir
-                            verified = true
-                        }
-                        break
-                    }
-                }
-
-                if (newSourceDir == null || !verified) {
-                    UserServiceManager.LOGGER.v(
-                        "remove record %s because package %s was removed or changed signature",
-                        record.token,
-                        packageName
-                    )
-                    record.removeSelf()
-                } else {
-                    UserServiceManager.LOGGER.v(
-                        "update apk listener for record %s since package %s is upgrading",
-                        record.token,
-                        packageName
-                    )
-                    ApkChangedObservers.stop(this)
-                    ApkChangedObservers.start(newSourceDir, this)
-                }
-            }
-        }
-
-        ApkChangedObservers.start(ai.sourceDir, listener)
-        apkChangedListeners[record] = listener
+        // Upgrades and uninstalls are caught by reconcileUserServicePackages(), which runs
+        // every 3s. FileObserver on /data/app is denied by SELinux for uid 2000.
     }
 
     override fun onUserServiceRecordRemoved(record: UserServiceRecord) {
@@ -335,9 +288,5 @@ class ShizukuUserServiceManager : UserServiceManager() {
         activeTokens.remove(record.token)
         recordBaselines.remove(record)
         recordUids.remove(record)
-        val listener = apkChangedListeners.remove(record)
-        if (listener != null) {
-            ApkChangedObservers.stop(listener)
-        }
     }
 }

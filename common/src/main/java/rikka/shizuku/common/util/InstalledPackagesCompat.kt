@@ -49,8 +49,12 @@ object InstalledPackagesCompat {
                     appendLine(SmartLogEngine.stackTraceToString(error))
                 }
             )
-            SmartLogEngine.appendSnapshotToFile(File(SmartLogEngine.SPOOL_TMP_PATH), snap)
-            SmartLogEngine.appendSnapshotToFile(File(SmartLogEngine.SPOOL_SHELL_PATH), snap)
+            // Only the privileged server (shell/root) may touch the starter spool paths.
+            val uid = android.os.Process.myUid()
+            if (uid == 2000 || uid == 0) {
+                SmartLogEngine.appendSnapshotToFile(File(SmartLogEngine.SPOOL_TMP_PATH), snap)
+                SmartLogEngine.appendSnapshotToFile(File(SmartLogEngine.SPOOL_SHELL_PATH), snap)
+            }
         } catch (_: Throwable) {
         }
     }

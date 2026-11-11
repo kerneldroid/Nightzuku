@@ -48,8 +48,8 @@ object SmartLogManager {
     private const val PREF_LAST_EXIT_INFO_TS = "smart_log_last_exit_info_ts"
     private const val PREF_UNCLEAN_EXIT_COUNT = "smart_log_unclean_exit_count"
     private const val LOCAL_STORE_REL_PATH = "smart_logs/manager_snapshots.log"
-    private const val MAX_LOGCAT_LINES = 80
-    private const val MAX_TRACE_LINES = 60
+    private const val MAX_LOGCAT_LINES = 240
+    private const val MAX_TRACE_LINES = 200
 
     data class SmartLogUiState(
         val snapshots: List<SmartLogSnapshot> = emptyList(),
@@ -301,15 +301,9 @@ object SmartLogManager {
         val ctx = appContext ?: runCatching { application.applicationContext }.getOrNull()
         val incoming = ArrayList<SmartLogSnapshot>()
 
-        // 1. Check /data/local/tmp/nightzuku_smart.log if accessible directly
-        runCatching {
-            val tmpFile = File(SmartLogEngine.SPOOL_TMP_PATH)
-            if (tmpFile.exists() && tmpFile.canRead()) {
-                incoming.addAll(SmartLogEngine.parseSnapshots(tmpFile.readText(Charsets.UTF_8)))
-            }
-        }
-
-        // 2. Query shizuku_server over Binder if running
+        // Starter spool files live under /data/local/tmp and the shell DE dir, both of which
+        // SELinux denies to untrusted_app. Only the server (uid 2000/0) reads them; the manager
+        // receives the merged snapshots below over Binder.
         val binder = runCatching { Shizuku.getBinder() }.getOrNull()
         if (binder != null && binder.pingBinder()) {
             val serverBundle = fetchServerSmartLogsBundle(binder)
@@ -578,7 +572,7 @@ object SmartLogManager {
             if (ctx != null) {
                 runCatching { resolveStorageFile(ctx).delete() }
             }
-            runCatching { File(SmartLogEngine.SPOOL_TMP_PATH).delete() }
+            // Spool files are cleared by shizuku_server; untrusted_app cannot delete them.
         }
         runCatching {
             ShizukuSettings.getPreferences().edit()
