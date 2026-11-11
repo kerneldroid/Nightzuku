@@ -50,6 +50,11 @@
     <string name="dialog_adb_invalid_port">Port is an integer ranging from 1 to 65535.</string>
     <string name="adb_pairing">Pairing</string>
     <string name="dialog_adb_pairing_title">Pair with device</string>
+    <string name="adb_pairing_auto_code">Auto-detect code</string>
+    <string name="adb_pairing_auto_waiting">Listening for the pairing code. Open Wireless debugging → Pair device with pairing code.</string>
+    <string name="adb_pairing_auto_timeout">Pairing code was not detected. Try again.</string>
+    <string name="adb_pairing_auto_enable_accessibility">Enable Nightzuku pairing in Accessibility, then open Wireless debugging → Pair device with pairing code.</string>
+    <string name="adb_pairing_auto_description">Reads the wireless-debugging pairing code from the system Settings dialog during a two-minute request from Nightzuku. It turns itself off after pairing, timeout, or when started without a request.</string>
     <string name="dialog_adb_pairing_discovery">Searching for pairing service</string>
     <string name="dialog_adb_pairing_paring_code">Pairing code</string>
     <string name="paring_code_is_wrong">Pairing code is wrong.</string>

@@ -53,6 +53,7 @@ import moe.shizuku.manager.adb.AdbInvalidPairingCodeException
 import moe.shizuku.manager.adb.AdbKey
 import moe.shizuku.manager.adb.AdbKeyException
 import moe.shizuku.manager.adb.AdbMdns
+import moe.shizuku.manager.adb.AdbPairingAutoDetect
 import moe.shizuku.manager.adb.AdbPairingClient
 import moe.shizuku.manager.adb.AdbSettings
 import moe.shizuku.manager.adb.PreferenceAdbKeyStore
@@ -630,6 +631,7 @@ fun HomeAdbPairDialog(onDismiss: () -> Unit) {
     var portError by remember { mutableStateOf<String?>(null) }
     var pairingCodeError by remember { mutableStateOf<String?>(null) }
     var isPairing by remember { mutableStateOf(false) }
+    var autoArmed by remember { mutableStateOf(AdbPairingAutoDetect.isArmed(context)) }
 
     LaunchedEffect(discoveredPort) {
         if (discoveredPort in 1..65535) portText = discoveredPort.toString()
@@ -757,6 +759,28 @@ fun HomeAdbPairDialog(onDismiss: () -> Unit) {
                             supportingText = portError?.let { { Text(it) } },
                             enabled = !isPairing
                         )
+
+                        val autoEnabled = AdbPairingAutoDetect.isServiceEnabled(context)
+                        TvButton(
+                            onClick = {
+                                autoArmed = true
+                                AdbPairingAutoDetect.arm(context)
+                                if (autoEnabled) {
+                                    AdbPairingAutoDetect.openDevelopmentSettings(context)
+                                } else {
+                                    AdbPairingAutoDetect.openAccessibilitySettings(context)
+                                }
+                            },
+                            enabled = !isPairing
+                        ) {
+                            TvText(stringResource(R.string.adb_pairing_auto_code))
+                        }
+                        if (autoArmed) {
+                            TvText(
+                                text = stringResource(R.string.adb_pairing_auto_waiting),
+                                style = TvMaterialTheme.typography.bodySmall
+                            )
+                        }
                     }
                 },
                 confirmButton = {
