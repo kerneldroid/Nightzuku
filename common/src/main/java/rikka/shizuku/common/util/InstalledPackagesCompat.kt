@@ -3,14 +3,19 @@ package rikka.shizuku.common.util
 import android.content.pm.PackageInfo
 import android.os.Build
 import android.util.Log
+import java.io.File
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
+import java.util.concurrent.atomic.AtomicBoolean
+import kerneldroid.nightzuku.util.HiddenApiIntrospector
+import kerneldroid.nightzuku.util.SmartLogEngine
 
 object InstalledPackagesCompat {
 
     private const val TAG = "InstalledPackagesCompat"
     private const val ANDROID_13 = 33
     private const val PARCELED_LIST_SLICE = "android.content.pm.ParceledListSlice"
+    private val reportedFailureOnce = AtomicBoolean(false)
 
     @JvmStatic
     fun getInstalledPackagesNoThrow(flags: Long, userId: Int): List<PackageInfo> {
@@ -18,7 +23,35 @@ object InstalledPackagesCompat {
             getInstalledPackages(flags, userId)
         } catch (e: Throwable) {
             Log.w(TAG, "getInstalledPackages failed", e)
+            recordSmartFailure(flags, userId, e)
             emptyList()
+        }
+    }
+
+    private fun recordSmartFailure(flags: Long, userId: Int, error: Throwable) {
+        if (!reportedFailureOnce.compareAndSet(false, true)) return
+        try {
+            val reflectionDump = HiddenApiIntrospector.inspectInterfaceMethods(
+                serviceName = "package",
+                interfaceName = "android.content.pm.IPackageManager",
+                targetProxy = runCatching { getPackageManager() }.getOrNull(),
+                methodKeywords = listOf("getInstalledPackages", "getInstalledApplications", "getPackageInfo")
+            )
+            val snap = SmartLogEngine.SmartLogSnapshot(
+                source = "QPR_COMPAT",
+                category = "IPACKAGEMANAGER_INSTALLED_PACKAGES",
+                severity = "ERROR",
+                summary = "getInstalledPackages(flags=$flags, userId=$userId) failed: ${error.javaClass.simpleName}: ${error.message}",
+                details = buildString {
+                    appendLine(reflectionDump)
+                    appendLine()
+                    appendLine("Stack trace:")
+                    appendLine(SmartLogEngine.stackTraceToString(error))
+                }
+            )
+            SmartLogEngine.appendSnapshotToFile(File(SmartLogEngine.SPOOL_TMP_PATH), snap)
+            SmartLogEngine.appendSnapshotToFile(File(SmartLogEngine.SPOOL_SHELL_PATH), snap)
+        } catch (_: Throwable) {
         }
     }
 
@@ -54,6 +87,17 @@ object InstalledPackagesCompat {
         val resultClassName = result.javaClass.name
         if (resultClassName.startsWith(PARCELED_LIST_SLICE) || resultClassName.contains("PackageInfoList")) {
             val list = result.javaClass.getMethod("getList").invoke(result)
+            return if (list == null) emptyList() else list as List<PackageInfo>
+        }
+
+        val fallbackGetList = runCatching { result.javaClass.getMethod("getList") }.getOrNull()
+        if (fallbackGetList != null) {
+            recordSmartFailure(
+                flags,
+                userId,
+                IllegalStateException("QPR return type drift detected: $resultClassName (recovered via getList())")
+            )
+            val list = fallbackGetList.invoke(result)
             return if (list == null) emptyList() else list as List<PackageInfo>
         }
 

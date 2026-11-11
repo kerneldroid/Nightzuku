@@ -25,4 +25,6 @@ object ServerConstants {
     const val BINDER_TRANSACTION_forceStopApp = 10012
     const val BINDER_TRANSACTION_getAppControlInfo = 10013
     const val BINDER_TRANSACTION_requestBinderForClient = 10014
+    const val BINDER_TRANSACTION_getSmartLogs = 10015
+    const val BINDER_TRANSACTION_clearSmartLogs = 10016
 }

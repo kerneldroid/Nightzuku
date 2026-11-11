@@ -60,6 +60,15 @@ object UsersCompat {
             if (ids.isEmpty()) listOf(0) else ids.toList()
         } catch (t: Throwable) {
             LOGGER.w(t, "Failed to enumerate users, falling back to user 0")
+            ServerSmartLogCollector.recordQprCompatFailure(
+                operationName = "GET_USERS",
+                serviceName = Context.USER_SERVICE,
+                interfaceName = "android.os.IUserManager",
+                targetProxy = runCatching { userManagerBinder.get() }.getOrNull(),
+                triedCandidates = "getUsers(boolean,boolean,boolean); getUsers(boolean)",
+                methodKeywords = listOf("getUsers", "getUserInfo", "getAliveUsers"),
+                failure = t
+            )
             listOf(0)
         }
     }
@@ -125,6 +134,15 @@ object UsersCompat {
                     invalidateActivityManager()
                 } else {
                     LOGGER.w(cause, "Unable to read foreground user ID")
+                    ServerSmartLogCollector.recordQprCompatFailure(
+                        operationName = "GET_CURRENT_USER",
+                        serviceName = Context.ACTIVITY_SERVICE,
+                        interfaceName = "android.app.IActivityManager",
+                        targetProxy = cachedActivityManager,
+                        triedCandidates = "IActivityManager.getCurrentUser()",
+                        methodKeywords = listOf("getCurrentUser", "getCurrentUserId"),
+                        failure = cause
+                    )
                 }
             }
         }

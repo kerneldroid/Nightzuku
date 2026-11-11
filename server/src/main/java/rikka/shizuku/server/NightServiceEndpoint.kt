@@ -26,6 +26,7 @@ import rikka.shizuku.ShizukuApiConstants
 import rikka.shizuku.server.api.RemoteProcessHolder
 import rikka.shizuku.server.util.Logger
 import rikka.shizuku.server.util.OsUtils
+import rikka.shizuku.server.util.ServerSmartLogCollector
 
 private fun Process.destroyCompat() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -314,6 +315,12 @@ class NightServiceEndpoint(
             NightProtocol.TRANSACTION_GET_SERVER_DIAGNOSTICS -> {
                 data.enforceInterface(NightProtocol.DESCRIPTOR)
                 service.enforceCallingPermission("getServerDiagnostics")
+                val isManager = service.checkCallerManagerPermission(
+                    "getServerDiagnostics",
+                    Binder.getCallingUid(),
+                    Binder.getCallingPid()
+                )
+                val smartBundle = if (isManager) ServerSmartLogCollector.buildSmartLogsBundle() else null
                 val diagnostics = Bundle().apply {
                     putInt("uid", OsUtils.getUid())
                     putInt("pid", OsUtils.getPid())
@@ -323,6 +330,11 @@ class NightServiceEndpoint(
                     putBoolean("accessPaused", service.configManager.isAccessPaused())
                     putBoolean("nightDogEnabled", service.configManager.getNightDogEnabled())
                     putInt("activeClientsCount", service.clientManager.getActiveClients().size)
+                    if (smartBundle != null) {
+                        putInt("smartSnapshotCount", smartBundle.getInt("snapshotCount", 0))
+                        putString("serializedSmartSnapshots", smartBundle.getString("serializedSnapshots"))
+                        putString("qprCompatAudit", smartBundle.getString("qprCompatAudit"))
+                    }
                 }
                 reply!!.writeNoException()
                 reply.writeBundle(diagnostics)

@@ -37,6 +37,7 @@ import rikka.shizuku.ShizukuApiConstants
 import rikka.shizuku.common.util.InstalledPackagesCompat
 import rikka.shizuku.nightdog.NightDog
 import rikka.shizuku.server.util.Android17Compat
+import rikka.shizuku.server.util.ServerSmartLogCollector
 import rikka.shizuku.server.util.HandlerUtil
 import rikka.shizuku.server.util.IContentProviderUtils
 import rikka.shizuku.server.util.OsUtils
@@ -63,6 +64,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         HandlerUtil.setMainHandler(mainHandler)
 
         Service.LOGGER.i("starting server...")
+        ServerSmartLogCollector.init()
 
         waitSystemService("package")
         waitSystemService(Context.ACTIVITY_SERVICE)
@@ -72,11 +74,21 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         val managerPi = getManagerPackageInfo()
         val foundAi = managerPi?.applicationInfo
         if (managerPi == null || foundAi == null) {
+            ServerSmartLogCollector.recordServerError(
+                category = "MANAGER_LOOKUP_FAILED",
+                summary = "shizuku_server could not resolve manager PackageInfo/ApplicationInfo on startup",
+                extraDetails = ServerSmartLogCollector.getOrRunQprCompatAudit()
+            )
             System.exit(ServerConstants.MANAGER_APP_NOT_FOUND)
         }
         val snapshot = PackageSignatureVerifier.extractSnapshot(managerPi!!, 0)
         if (snapshot == null) {
             Service.LOGGER.e("Failed to extract cryptographic signature for manager app, exiting...")
+            ServerSmartLogCollector.recordServerError(
+                category = "MANAGER_SIGNATURE_EXTRACTION_FAILED",
+                summary = "Failed to extract cryptographic signing certificate for manager package",
+                extraDetails = "packageName=${managerPi.packageName}"
+            )
             System.exit(ServerConstants.MANAGER_APP_NOT_FOUND)
         }
         managerBaseline = PackageSignatureVerifier.Baseline.fromSnapshot(snapshot!!)
@@ -1330,6 +1342,27 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             BinderSender.dispatchToUid(targetUid, targetPid)
             replyParcel.writeNoException()
             return true
+        } else if (code == ServerConstants.BINDER_TRANSACTION_getSmartLogs) {
+            val replyParcel = reply!!
+            if (!checkCallerManagerPermission("getSmartLogs", Binder.getCallingUid(), Binder.getCallingPid())) {
+                replyParcel.writeException(SecurityException("Permission denied"))
+                return true
+            }
+            data.enforceInterface(ShizukuApiConstants.BINDER_DESCRIPTOR)
+            val bundle = ServerSmartLogCollector.buildSmartLogsBundle()
+            replyParcel.writeNoException()
+            replyParcel.writeBundle(bundle)
+            return true
+        } else if (code == ServerConstants.BINDER_TRANSACTION_clearSmartLogs) {
+            val replyParcel = reply!!
+            if (!checkCallerManagerPermission("clearSmartLogs", Binder.getCallingUid(), Binder.getCallingPid())) {
+                replyParcel.writeException(SecurityException("Permission denied"))
+                return true
+            }
+            data.enforceInterface(ShizukuApiConstants.BINDER_DESCRIPTOR)
+            ServerSmartLogCollector.clearSmartLogs()
+            replyParcel.writeNoException()
+            return true
         }
         return super.onTransact(code, data, reply, flags)
     }
@@ -1370,6 +1403,13 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
 
                         override fun onFatalFault(reason: String) {
                             Service.LOGGER.e("NightDog detected fatal fault (%s), terminating server for recovery", reason)
+                            ServerSmartLogCollector.recordServerError(
+                                category = "NIGHTDOG_FATAL_FAULT",
+                                summary = "NightDog watchdog triggered server recovery due to fatal fault: $reason",
+                                extraDetails = "reason=$reason
+boundServices=${NightDog.getBoundServiceNames().joinToString()}
+totalRebinds=${NightDog.getTotalRebinds()}"
+                            )
                         }
                     }
                 )
@@ -1415,6 +1455,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         @JvmStatic
         fun main(args: Array<String>) {
             DdmHandleAppName.setAppName("shizuku_server", 0)
+            ServerSmartLogCollector.init()
             RishConfig.setLibraryPath(System.getProperty("shizuku.library.path"))
 
             Looper.prepareMainLooper()
@@ -1570,6 +1611,13 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                 }
             } catch (tr: Throwable) {
                 Service.LOGGER.e(tr, "failed send binder (%s) to user app %s in user %d", wire.name, packageName, userId)
+                if (packageName == ServerConstants.MANAGER_APPLICATION_ID) {
+                    ServerSmartLogCollector.recordServerError(
+                        category = "SEND_BINDER_MANAGER_FAILED",
+                        summary = "Failed to send ${wire.name} binder to manager app in user $userId",
+                        throwable = tr
+                    )
+                }
             } finally {
                 if (provider != null) {
                     try {

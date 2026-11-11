@@ -110,6 +110,15 @@ object Android17Compat {
         } catch (t: Throwable) {
             holder.failure = t
             LOGGER.w(t, "%s: resolving %s failed", backend.serviceName, backend.interfaceName)
+            ServerSmartLogCollector.recordQprCompatFailure(
+                operationName = "RESOLVE_${backend.name}",
+                serviceName = backend.serviceName,
+                interfaceName = backend.interfaceName,
+                targetProxy = null,
+                triedCandidates = "${backend.interfaceName}\$Stub.asInterface(IBinder)",
+                methodKeywords = listOf("asInterface", "getPackageInfo", "checkPermission"),
+                failure = t
+            )
             null
         }
     }
@@ -381,10 +390,21 @@ object Android17Compat {
         }
 
         markUnresolved(operation)
+        val triedShapesSummary = candidates.joinToString("; ") { "${it.methodName}(${shape(it.parameterTypes)})" }
         LOGGER.w(
             "%s: no candidate shape was accepted, candidates were (%s)",
             operation.name,
-            candidates.joinToString("; ") { shape(it.parameterTypes) }
+            triedShapesSummary
+        )
+        val primaryBackend = candidates.firstOrNull()?.backend ?: Backend.PACKAGE
+        ServerSmartLogCollector.recordQprCompatFailure(
+            operationName = operation.name,
+            serviceName = primaryBackend.serviceName,
+            interfaceName = primaryBackend.interfaceName,
+            targetProxy = obtain(primaryBackend),
+            triedCandidates = triedShapesSummary,
+            methodKeywords = candidates.map { it.methodName }.distinct(),
+            failure = rejection ?: lookup
         )
         return Outcome(false, null, rejection ?: lookup)
     }
