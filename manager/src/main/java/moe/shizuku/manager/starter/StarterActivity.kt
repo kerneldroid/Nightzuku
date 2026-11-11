@@ -239,8 +239,7 @@ class StarterActivity : AppActivity() {
 
                             item {
                                 StarterLogSection(
-                                    logText = logText,
-                                    onCopy = { copyLogToClipboard(logText) }
+                                    logText = logText
                                 )
                             }
 
@@ -481,28 +480,15 @@ private fun StarterStatusBlock(
 
 @Composable
 private fun StarterLogSection(
-    logText: String,
-    onCopy: () -> Unit
+    logText: String
 ) {
     val scroll = rememberScrollState()
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = stringResource(R.string.starter_output_title),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold
-            )
-            IconButton(onClick = onCopy) {
-                Icon(
-                    imageVector = Icons.Rounded.ContentCopy,
-                    contentDescription = stringResource(R.string.starter_copy_log)
-                )
-            }
-        }
+        Text(
+            text = stringResource(R.string.starter_output_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.medium,

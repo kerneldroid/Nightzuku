@@ -111,6 +111,7 @@ import moe.shizuku.manager.module.discovery.DiscoveredModule
 import moe.shizuku.manager.module.discovery.ModuleDiscoveryManager
 import moe.shizuku.manager.module.update.ModuleInstaller
 import moe.shizuku.manager.ui.compose.ExpressiveSwitch
+import moe.shizuku.manager.ui.compose.AnimatedScreenContent
 import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
 import moe.shizuku.manager.ui.compose.ShizukuIcon
 import moe.shizuku.manager.ui.compose.ShizukuLazyScaffold
@@ -198,8 +199,11 @@ fun CatalogScreen(onNavigateUp: () -> Unit) {
     }
 
     ShizukuExpressiveTheme {
-        run {
-            val activeModule = detailModule
+        AnimatedScreenContent(
+            targetState = detailModule,
+            label = "catalogDetailRoute",
+            depth = { if (it == null) 0 else 1 }
+        ) { activeModule ->
             if (activeModule != null) {
                 ModuleDetailScreen(
                     module = activeModule,

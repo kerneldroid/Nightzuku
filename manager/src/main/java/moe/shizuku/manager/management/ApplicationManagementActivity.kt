@@ -112,6 +112,7 @@ import moe.shizuku.manager.R
 import moe.shizuku.manager.app.AppActivity
 import moe.shizuku.manager.authorization.AppControlSnapshot
 import moe.shizuku.manager.authorization.AuthorizationManager
+import moe.shizuku.manager.ui.compose.AnimatedScreenContent
 import moe.shizuku.manager.ui.compose.ExpressiveCard
 import moe.shizuku.manager.ui.compose.ExpressiveSwitch
 import moe.shizuku.manager.ui.compose.SettingsItem
@@ -274,12 +275,16 @@ class ApplicationManagementActivity : AppActivity() {
                 val activeControlRow = remember(rows, activeControlKey) {
                     activeControlKey?.let { key -> rows?.firstOrNull { it.key == key } }
                 }
+                var lastActiveControlRow by remember { mutableStateOf<AppRow?>(null) }
+                if (activeControlRow != null) {
+                    lastActiveControlRow = activeControlRow
+                }
                 val onToggle = remember(viewModel) {
                     { row: AppRow -> viewModel.toggle(row.uid, row.packageName) }
                 }
 
-                BackHandler(enabled = activeControlRow != null || searchQuery.isNotEmpty()) {
-                    if (activeControlRow != null) {
+                BackHandler(enabled = activeControlKey != null || searchQuery.isNotEmpty()) {
+                    if (activeControlKey != null) {
                         activeControlKey = null
                         lifecycleScope.launch { viewModel.refreshGranted() }
                     } else if (searchQuery.isNotEmpty()) {
@@ -289,19 +294,30 @@ class ApplicationManagementActivity : AppActivity() {
 
                 ShizukuExpressiveTheme {
                     Box(modifier = Modifier.fillMaxSize()) {
-                        if (activeControlRow != null) {
-                            DeepAppControlScreen(
-                                row = activeControlRow,
-                                onBack = {
-                                    activeControlKey = null
-                                    lifecycleScope.launch { viewModel.refreshGranted() }
-                                },
-                                onAdbLimited = { showAdbLimitedDialog = true },
-                                onStateMutated = {
-                                    lifecycleScope.launch { viewModel.refreshGranted() }
-                                }
-                            )
-                        } else {
+                        AnimatedScreenContent(
+                            targetState = activeControlKey,
+                            label = "appManagementPhoneRoute",
+                            depth = { if (it == null) 0 else 1 }
+                        ) { routeKey ->
+                            val targetRow = if (routeKey != null) {
+                                rows?.firstOrNull { it.key == routeKey }
+                                    ?: lastActiveControlRow?.takeIf { it.key == routeKey }
+                            } else {
+                                null
+                            }
+                            if (routeKey != null && targetRow != null) {
+                                DeepAppControlScreen(
+                                    row = targetRow,
+                                    onBack = {
+                                        activeControlKey = null
+                                        lifecycleScope.launch { viewModel.refreshGranted() }
+                                    },
+                                    onAdbLimited = { showAdbLimitedDialog = true },
+                                    onStateMutated = {
+                                        lifecycleScope.launch { viewModel.refreshGranted() }
+                                    }
+                                )
+                            } else {
                             val current = rows
                             val filteredRows = remember(current, searchQuery) {
                                 val q = searchQuery.trim()
@@ -496,6 +512,7 @@ class ApplicationManagementActivity : AppActivity() {
                                     }
                                 }
                             }
+                        }
                         }
 
                         if (showAdbLimitedDialog) {
