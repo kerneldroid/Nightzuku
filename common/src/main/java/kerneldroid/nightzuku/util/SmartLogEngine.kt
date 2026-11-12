@@ -1,5 +1,8 @@
 package kerneldroid.nightzuku.util
 
+import android.os.Process
+import android.system.Os
+import android.util.Base64
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
@@ -19,9 +22,30 @@ object SmartLogEngine {
 
     const val BEGIN_MARKER = "===SMART_SNAPSHOT_BEGIN==="
     const val END_MARKER = "===SMART_SNAPSHOT_END==="
+    const val BASE64_PREFIX = "base64:"
 
+    const val METHOD_PUSH_SMART_LOG = "pushSmartLog"
+    const val EXTRA_SMART_LOG_PAYLOAD = "smartLogPayload"
+    const val MANAGER_PROVIDER_AUTHORITY = "kerneldroid.nightzuku.shizuku"
+
+    /** Server-to-server spool paths (readable by UID 0 / UID 2000). */
     const val SPOOL_TMP_PATH = "/data/local/tmp/nightzuku_smart.log"
     const val SPOOL_SHELL_PATH = "/data/user_de/0/com.android.shell/nightzuku_smart.log"
+
+    /**
+     * App-owned external cache spool paths accessible to both UID 0 / UID 2000 AND the
+     * `untrusted_app` Manager (`kerneldroid.nightzuku`) under Android 10+ SELinux / FUSE rules,
+     * even when `shizuku_server` is dead.
+     */
+    const val SPOOL_EXT_EMULATED_PATH = "/storage/emulated/0/Android/data/kerneldroid.nightzuku/cache/nightzuku_smart.log"
+
+    /**
+     * App-owned internal DE/CE cache spool paths written by UID 0 (root) with matching app UID/GID
+     * and inherited `app_data_file` SELinux label.
+     */
+    const val SPOOL_APP_DE_CACHE_PATH = "/data/user_de/0/kerneldroid.nightzuku/cache/nightzuku_smart.log"
+    const val SPOOL_APP_CE_CACHE_PATH = "/data/data/kerneldroid.nightzuku/cache/nightzuku_smart.log"
+    const val SPOOL_FILE_NAME = "nightzuku_smart.log"
 
     const val MAX_SNAPSHOTS_RETAINED = 25
     private const val MAX_SPOOL_FILE_BYTES = 128 * 1024L
@@ -63,6 +87,36 @@ object SmartLogEngine {
     }
 
     @JvmStatic
+    fun encodeBase64Payload(raw: String): String {
+        return try {
+            val encoded = Base64.encodeToString(raw.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+            "$BASE64_PREFIX$encoded"
+        } catch (_: Throwable) {
+            raw
+        }
+    }
+
+    @JvmStatic
+    fun decodePayloadIfNeeded(payload: String?): String {
+        if (payload.isNullOrBlank()) return ""
+        val trimmed = payload.trim()
+        if (!trimmed.startsWith(BASE64_PREFIX)) {
+            return trimmed
+        }
+        val b64 = trimmed.removePrefix(BASE64_PREFIX).trim()
+        return try {
+            String(Base64.decode(b64, Base64.DEFAULT), Charsets.UTF_8)
+        } catch (_: Throwable) {
+            // Pure-JVM fallback for unit tests where android.util.Base64 may be stubbed
+            try {
+                String(java.util.Base64.getDecoder().decode(b64), Charsets.UTF_8)
+            } catch (_: Throwable) {
+                ""
+            }
+        }
+    }
+
+    @JvmStatic
     fun serializeSnapshot(snapshot: SmartLogSnapshot): String {
         val cleanSummary = snapshot.summary.replace('\n', ' ').trim()
         val cleanDetails = snapshot.details
@@ -96,18 +150,19 @@ object SmartLogEngine {
 
     @JvmStatic
     fun parseSnapshots(raw: String): List<SmartLogSnapshot> {
-        if (raw.isBlank()) return emptyList()
+        val decoded = decodePayloadIfNeeded(raw)
+        if (decoded.isBlank()) return emptyList()
         val results = ArrayList<SmartLogSnapshot>()
         var searchFrom = 0
 
         while (true) {
-            val startIdx = raw.indexOf(BEGIN_MARKER, searchFrom)
+            val startIdx = decoded.indexOf(BEGIN_MARKER, searchFrom)
             if (startIdx < 0) break
             val bodyStart = startIdx + BEGIN_MARKER.length
-            val endIdx = raw.indexOf(END_MARKER, bodyStart)
+            val endIdx = decoded.indexOf(END_MARKER, bodyStart)
             if (endIdx < 0) break
 
-            val block = raw.substring(bodyStart, endIdx).trim()
+            val block = decoded.substring(bodyStart, endIdx).trim()
             parseSingleBlock(block)?.let { parsed ->
                 mergeIntoList(results, parsed)
             }
@@ -210,11 +265,21 @@ object SmartLogEngine {
 
     /**
      * Appends a snapshot to a spool file on disk, pruning older entries if the file exceeds [MAX_SPOOL_FILE_BYTES].
+     * When running as root (`UID 0`) and writing into the Manager's internal cache directory,
+     * automatically copies the parent directory's UID/GID and SELinux security context (`app_data_file`)
+     * so `untrusted_app` can read the file without SELinux denials even when `shizuku_server` is dead.
      */
     @JvmStatic
-    fun appendSnapshotToFile(file: File, snapshot: SmartLogSnapshot) {
+    fun appendSnapshotToFile(file: File, snapshot: SmartLogSnapshot, inheritParentOwnerAndSeContext: Boolean = false) {
         try {
-            file.parentFile?.mkdirs()
+            val parent = file.parentFile ?: return
+            if (!parent.exists()) {
+                if (inheritParentOwnerAndSeContext) {
+                    // Do not create `/data/user_de/0/kerneldroid.nightzuku/cache` if the package dir doesn't exist
+                    return
+                }
+                parent.mkdirs()
+            }
             val existing = if (file.exists() && file.canRead()) {
                 parseSnapshots(file.readText(Charsets.UTF_8))
             } else {
@@ -229,7 +294,50 @@ object SmartLogEngine {
             } else {
                 file.writeText(serialized, Charsets.UTF_8)
             }
-            file.setReadable(true, false)
+            if (inheritParentOwnerAndSeContext && runCatching { Process.myUid() == 0 }.getOrDefault(false)) {
+                applyParentOwnerAndSeLinuxContext(parent, file)
+            } else {
+                file.setReadable(true, false)
+            }
+        } catch (_: Throwable) {
+        }
+    }
+
+    /**
+     * Writes [snapshot] to all privileged and SELinux-accessible cross-process spool locations.
+     */
+    @JvmStatic
+    fun appendSnapshotToAllSpools(snapshot: SmartLogSnapshot) {
+        val uid = runCatching { Process.myUid() }.getOrDefault(-1)
+        // /data/local/tmp and the shell DE dir are only writable by the server (uid 2000/0);
+        // writing them from untrusted_app would only produce SELinux denials.
+        if (uid == 0 || uid == 2000) {
+            appendSnapshotToFile(File(SPOOL_TMP_PATH), snapshot)
+            appendSnapshotToFile(File(SPOOL_SHELL_PATH), snapshot)
+        }
+        // /sdcard is a symlink to /storage/emulated/0; writing both would duplicate the entry.
+        appendSnapshotToFile(File(SPOOL_EXT_EMULATED_PATH), snapshot)
+        if (uid == 0) {
+            appendSnapshotToFile(File(SPOOL_APP_DE_CACHE_PATH), snapshot, inheritParentOwnerAndSeContext = true)
+            appendSnapshotToFile(File(SPOOL_APP_CE_CACHE_PATH), snapshot, inheritParentOwnerAndSeContext = true)
+        }
+    }
+
+    private fun applyParentOwnerAndSeLinuxContext(parentDir: File, targetFile: File) {
+        try {
+            val st = Os.stat(parentDir.absolutePath)
+            Os.chown(targetFile.absolutePath, st.st_uid, st.st_gid)
+            Os.chmod(targetFile.absolutePath, 384) // 0600
+        } catch (_: Throwable) {
+        }
+        try {
+            val selinuxClass = Class.forName("android.os.SELinux")
+            val getFileContext = selinuxClass.getDeclaredMethod("getFileContext", String::class.java)
+            val setFileContext = selinuxClass.getDeclaredMethod("setFileContext", String::class.java, String::class.java)
+            val parentCtx = getFileContext.invoke(null, parentDir.absolutePath) as? String
+            if (!parentCtx.isNullOrBlank()) {
+                setFileContext.invoke(null, targetFile.absolutePath, parentCtx)
+            }
         } catch (_: Throwable) {
         }
     }

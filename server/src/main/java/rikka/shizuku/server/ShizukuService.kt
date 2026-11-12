@@ -23,6 +23,7 @@ import android.os.SystemClock
 import java.util.concurrent.ConcurrentHashMap
 import kerneldroid.nightzuku.api.LegacyParcelCodec
 import kerneldroid.nightzuku.api.NightProtocol
+import kerneldroid.nightzuku.util.HiddenApiIntrospector
 import kerneldroid.nightzuku.util.PackageSignatureVerifier
 import moe.shizuku.api.BinderContainer
 import moe.shizuku.server.IRemoteProcess
@@ -64,6 +65,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         HandlerUtil.setMainHandler(mainHandler)
 
         Service.LOGGER.i("starting server...")
+        HiddenApiIntrospector.exemptHiddenApis()
         ServerSmartLogCollector.init()
 
         waitSystemService("package")
@@ -1453,6 +1455,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         @JvmStatic
         fun main(args: Array<String>) {
             DdmHandleAppName.setAppName("shizuku_server", 0)
+            HiddenApiIntrospector.exemptHiddenApis()
             ServerSmartLogCollector.init()
             RishConfig.setLibraryPath(System.getProperty("shizuku.library.path"))
 

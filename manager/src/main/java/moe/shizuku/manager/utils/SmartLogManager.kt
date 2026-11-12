@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.os.Parcel
+import com.topjohnwu.superuser.Shell
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
@@ -38,7 +39,12 @@ import rikka.shizuku.server.ServerConstants
  * 1. Manager JVM uncaught exceptions and runtime failures.
  * 2. Previous process native crashes (`SIGSEGV`/`SIGABRT` in JNI/Rust) and ANRs via Android 11+ `ApplicationExitInfo`.
  * 3. Rust `adb-pairing` (`libadb.so`) SPAKE2/HKDF/AES-GCM errors and Java wireless ADB pairing failures.
- * 4. Rust `starter` (`libshizuku.so`) supervisor crashes, SELinux denials, and abnormal server exits.
+ * 4. Rust `starter` (`libshizuku.so`) supervisor crashes, SELinux denials, and abnormal server exits —
+ *    even when `shizuku_server` dies fatally during external `adb shell` or boot script launch:
+ *    - Tier 1: Direct IPC push into `ShizukuManagerProvider` (`content://kerneldroid.nightzuku.shizuku`, method `pushSmartLog`)
+ *    - Tier 2: App-owned external cache spool (`/storage/emulated/0/Android/data/kerneldroid.nightzuku/cache/nightzuku_smart.log`)
+ *    - Tier 3: Root-direct internal DE/CE cache spool with inherited UID/GID and `app_data_file` SELinux context
+ *    - Tier 4: Root shell fallback for `/data/local/tmp/nightzuku_smart.log`
  * 5. `shizuku_server` QPR4+ hidden API reflection drift (`Android17Compat`, `UsersCompat`, `InstalledPackagesCompat`)
  *    and `NightDog` watchdog faults over Binder IPC.
  */
@@ -48,6 +54,7 @@ object SmartLogManager {
     private const val PREF_LAST_EXIT_INFO_TS = "smart_log_last_exit_info_ts"
     private const val PREF_UNCLEAN_EXIT_COUNT = "smart_log_unclean_exit_count"
     private const val LOCAL_STORE_REL_PATH = "smart_logs/manager_snapshots.log"
+    private const val MAX_PUSH_PAYLOAD_CHARS = 128 * 1024
     private const val MAX_LOGCAT_LINES = 240
     private const val MAX_TRACE_LINES = 200
 
@@ -85,11 +92,13 @@ object SmartLogManager {
     fun init(context: Context) {
         val ctx = context.applicationContext ?: context
         appContext = ctx
+        HiddenApiIntrospector.exemptHiddenApis()
         if (!initialized.compareAndSet(false, true)) {
             scope.launch { syncWithServerAndDisk() }
             return
         }
 
+        ensureSpoolDirectories(ctx)
         installUncaughtExceptionHandler(ctx)
         Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
 
@@ -100,6 +109,23 @@ object SmartLogManager {
         }
     }
 
+    /**
+     * Ensures the Manager's internal DE/CE cache directories and external app-specific cache
+     * directory (`/storage/emulated/0/Android/data/kerneldroid.nightzuku/cache`) exist so
+     * `rust/starter` and `shizuku_server` can write SELinux-accessible spool files even when
+     * the server dies before Binder comes up.
+     */
+    private fun ensureSpoolDirectories(context: Context) {
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                context.createDeviceProtectedStorageContext().cacheDir?.mkdirs()
+            }
+            context.cacheDir?.mkdirs()
+            context.externalCacheDir?.mkdirs()
+            context.externalCacheDirs?.forEach { it?.mkdirs() }
+        }
+    }
+
     private fun resolveStorageFile(context: Context): File {
         val storageCtx = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             context.createDeviceProtectedStorageContext()
@@ -107,6 +133,61 @@ object SmartLogManager {
             context
         }
         return File(storageCtx.filesDir, LOCAL_STORE_REL_PATH)
+    }
+
+    private fun resolveAccessibleSpoolFiles(context: Context?): List<File> {
+        val files = LinkedHashSet<File>()
+        if (context != null) {
+            runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    val deCache = context.createDeviceProtectedStorageContext().cacheDir
+                    if (deCache != null) {
+                        files.add(File(deCache, SmartLogEngine.SPOOL_FILE_NAME))
+                    }
+                }
+            }
+            runCatching {
+                context.cacheDir?.let { files.add(File(it, SmartLogEngine.SPOOL_FILE_NAME)) }
+            }
+            runCatching {
+                context.externalCacheDir?.let { files.add(File(it, SmartLogEngine.SPOOL_FILE_NAME)) }
+                context.externalCacheDirs?.filterNotNull()?.forEach { dir ->
+                    files.add(File(dir, SmartLogEngine.SPOOL_FILE_NAME))
+                }
+            }
+        }
+        files.add(File(SmartLogEngine.SPOOL_APP_DE_CACHE_PATH))
+        files.add(File(SmartLogEngine.SPOOL_APP_CE_CACHE_PATH))
+        files.add(File(SmartLogEngine.SPOOL_EXT_EMULATED_PATH))
+        // /data/local/tmp and the shell DE dir are deliberately absent: SELinux denies them to
+        // untrusted_app. The server reads those and delivers them over Binder or pushSmartLog.
+        return files.toList()
+    }
+
+    /**
+     * Ingests a raw or Base64-encoded Smart Log snapshot payload pushed directly into
+     * `ShizukuManagerProvider` (`content://kerneldroid.nightzuku.shizuku`, method `pushSmartLog`)
+     * by `rust/starter` or `shizuku_server`.
+     */
+    @JvmStatic
+    fun ingestPushedPayload(context: Context, rawPayload: String?): Boolean {
+        if (rawPayload.isNullOrBlank() || rawPayload.length > MAX_PUSH_PAYLOAD_CHARS) {
+            return false
+        }
+        val ctx = context.applicationContext ?: context
+        appContext = ctx
+        val parsed = SmartLogEngine.parseSnapshots(rawPayload)
+        if (parsed.isEmpty()) {
+            return false
+        }
+        synchronized(lock) {
+            val merged = SmartLogEngine.mergeSnapshots(snapshots, parsed)
+            snapshots.clear()
+            snapshots.addAll(merged)
+            persistLocalSnapshotsLocked(ctx)
+        }
+        refreshUiState()
+        return true
     }
 
     private fun installUncaughtExceptionHandler(context: Context) {
@@ -190,7 +271,6 @@ object SmartLogManager {
                     info.reason == ApplicationExitInfo.REASON_INITIALIZATION_FAILURE
                 if (!isAbnormal) continue
 
-                // Skip if our JVM UncaughtExceptionHandler already recorded a crash within 5 seconds
                 val alreadyCapturedByJvm = synchronized(lock) {
                     snapshots.any {
                         it.category == "APP_UNCAUGHT_CRASH" &&
@@ -286,6 +366,7 @@ object SmartLogManager {
     fun syncAll(context: Context? = null) {
         if (context != null) {
             appContext = context.applicationContext ?: context
+            ensureSpoolDirectories(appContext!!)
         }
         scope.launch {
             val ctx = appContext ?: runCatching { application.applicationContext }.getOrNull()
@@ -301,9 +382,21 @@ object SmartLogManager {
         val ctx = appContext ?: runCatching { application.applicationContext }.getOrNull()
         val incoming = ArrayList<SmartLogSnapshot>()
 
-        // Starter spool files live under /data/local/tmp and the shell DE dir, both of which
-        // SELinux denies to untrusted_app. Only the server (uid 2000/0) reads them; the manager
-        // receives the merged snapshots below over Binder.
+        // 1. Ingest the spool files the manager is allowed to read: its own DE/CE cache and the
+        // app-specific external cache. Server-only paths (/data/local/tmp, shell DE) are read by
+        // shizuku_server and delivered over Binder below.
+        for (spoolFile in resolveAccessibleSpoolFiles(ctx)) {
+            runCatching {
+                if (spoolFile.exists() && spoolFile.canRead()) {
+                    val parsed = SmartLogEngine.parseSnapshots(spoolFile.readText(Charsets.UTF_8))
+                    if (parsed.isNotEmpty()) {
+                        incoming.addAll(parsed)
+                    }
+                }
+            }
+        }
+
+        // 2. Query shizuku_server over Binder if running
         val binder = runCatching { Shizuku.getBinder() }.getOrNull()
         if (binder != null && binder.pingBinder()) {
             val serverBundle = fetchServerSmartLogsBundle(binder)
@@ -315,6 +408,20 @@ object SmartLogManager {
                 val audit = serverBundle.getString("qprCompatAudit")
                 if (!audit.isNullOrBlank()) {
                     serverQprAudit = audit
+                }
+            }
+        } else {
+            // 3. Fallback when server is dead and a cached root shell is open: read shell spool files via su
+            runCatching {
+                val cachedShell = Shell.getCachedShell()
+                if (cachedShell != null && cachedShell.isRoot) {
+                    val out = ArrayList<String>()
+                    Shell.cmd(
+                        "cat ${SmartLogEngine.SPOOL_TMP_PATH} ${SmartLogEngine.SPOOL_SHELL_PATH} 2>/dev/null"
+                    ).to(out).exec()
+                    if (out.isNotEmpty()) {
+                        incoming.addAll(SmartLogEngine.parseSnapshots(out.joinToString("\n")))
+                    }
                 }
             }
         }
@@ -572,7 +679,9 @@ object SmartLogManager {
             if (ctx != null) {
                 runCatching { resolveStorageFile(ctx).delete() }
             }
-            // Spool files are cleared by shizuku_server; untrusted_app cannot delete them.
+            for (spoolFile in resolveAccessibleSpoolFiles(ctx)) {
+                runCatching { if (spoolFile.exists()) spoolFile.delete() }
+            }
         }
         runCatching {
             ShizukuSettings.getPreferences().edit()

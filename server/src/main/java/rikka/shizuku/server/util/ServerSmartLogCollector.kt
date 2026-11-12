@@ -1,22 +1,28 @@
 package rikka.shizuku.server.util
 
+import android.content.IContentProvider
 import android.os.Build
 import android.os.Bundle
+import android.os.IBinder
 import java.io.File
 import kerneldroid.nightzuku.util.HiddenApiIntrospector
 import kerneldroid.nightzuku.util.SmartLogEngine
 import kerneldroid.nightzuku.util.SmartLogEngine.SmartLogSnapshot
+import rikka.hidden.compat.ActivityManagerApis
 
 /**
  * Server-side Smart Log aggregator and QPR compatibility diagnostic recorder inside `shizuku_server`.
  *
  * Responsibilities:
- * 1. Captures uncaught server exceptions before process termination and persists them to disk.
- * 2. Captures Android 16/17 QPR4+ hidden API reflection failures from [Android17Compat],
+ * 1. Immediately lifts ART hidden API restrictions (`HiddenApiIntrospector.exemptHiddenApis()`)
+ *    inside `shizuku_server` (`app_process`) so blacklisted framework methods are visible to reflection.
+ * 2. Captures uncaught server exceptions before process termination, persists them to all SELinux-compliant
+ *    spools, and pushes them directly to `ShizukuManagerProvider` (`pushSmartLog`) so the Manager
+ *    receives the crash snapshot even if `shizuku_server` dies fatally during external ADB/boot launch.
+ * 3. Captures Android 16/17 QPR4+ hidden API reflection failures from [Android17Compat],
  *    [UsersCompat], and `InstalledPackagesCompat` along with live AIDL method dumps.
- * 3. Ingests native `rust/starter` crash/error snapshots from `/data/local/tmp/nightzuku_smart.log`
- *    and `/data/user_de/0/com.android.shell/nightzuku_smart.log`.
- * 4. Serves accumulated snapshots and a live QPR compatibility probe to the Nightzuku Manager
+ * 4. Ingests native `rust/starter` crash/error snapshots from spool files.
+ * 5. Serves accumulated snapshots and a live QPR compatibility probe to the Nightzuku Manager
  *    over Binder (`BINDER_TRANSACTION_getSmartLogs`).
  */
 object ServerSmartLogCollector {
@@ -25,14 +31,20 @@ object ServerSmartLogCollector {
     private val lock = Any()
     private val snapshots = ArrayList<SmartLogSnapshot>()
 
-    private val tmpSpoolFile = File(SmartLogEngine.SPOOL_TMP_PATH)
-    private val shellSpoolFile = File(SmartLogEngine.SPOOL_SHELL_PATH)
+    private val spoolFiles = listOf(
+        File(SmartLogEngine.SPOOL_TMP_PATH),
+        File(SmartLogEngine.SPOOL_SHELL_PATH),
+        File(SmartLogEngine.SPOOL_EXT_EMULATED_PATH),
+        File(SmartLogEngine.SPOOL_APP_DE_CACHE_PATH),
+        File(SmartLogEngine.SPOOL_APP_CE_CACHE_PATH)
+    )
 
     @Volatile
     private var cachedQprAudit: String? = null
 
     @JvmStatic
     fun init() {
+        HiddenApiIntrospector.exemptHiddenApis()
         installUncaughtExceptionHandler()
         ingestSpoolFiles()
     }
@@ -53,7 +65,7 @@ object ServerSmartLogCollector {
     @JvmStatic
     fun ingestSpoolFiles() {
         synchronized(lock) {
-            for (file in listOf(tmpSpoolFile, shellSpoolFile)) {
+            for (file in spoolFiles) {
                 try {
                     if (file.exists() && file.canRead()) {
                         val raw = file.readText(Charsets.UTF_8)
@@ -103,6 +115,7 @@ object ServerSmartLogCollector {
         methodKeywords: List<String>,
         failure: Throwable?
     ) {
+        HiddenApiIntrospector.exemptHiddenApis()
         val reflectionDump = HiddenApiIntrospector.inspectInterfaceMethods(
             serviceName = serviceName,
             interfaceName = interfaceName,
@@ -176,14 +189,54 @@ object ServerSmartLogCollector {
             val updated = SmartLogEngine.mergeSnapshots(snapshots, listOf(snap))
             snapshots.clear()
             snapshots.addAll(updated)
-            SmartLogEngine.appendSnapshotToFile(tmpSpoolFile, snap)
-            SmartLogEngine.appendSnapshotToFile(shellSpoolFile, snap)
+            SmartLogEngine.appendSnapshotToAllSpools(snap)
+        }
+        pushSnapshotToManagerProvider(snap)
+    }
+
+    /**
+     * Pushes [snapshot] directly to `ShizukuManagerProvider` (`kerneldroid.nightzuku.shizuku`)
+     * via `ActivityManagerApis.getContentProviderExternal`. Because `shell` (`u:r:shell:s0`) and
+     * `su` (`u:r:su:s0`) are permitted by SELinux to call exported ContentProviders of `untrusted_app`,
+     * the Manager persists the snapshot inside its own internal `app_data_file` storage even if
+     * `shizuku_server` exits fatally right after.
+     */
+    private fun pushSnapshotToManagerProvider(snapshot: SmartLogSnapshot) {
+        val authority = SmartLogEngine.MANAGER_PROVIDER_AUTHORITY
+        val token: IBinder? = null
+        var provider: IContentProvider? = null
+        try {
+            provider = ActivityManagerApis.getContentProviderExternal(authority, 0, token, authority)
+            if (provider == null || !provider.asBinder().pingBinder()) {
+                return
+            }
+            val serialized = SmartLogEngine.serializeSnapshot(snapshot)
+            val extras = Bundle().apply {
+                putString(SmartLogEngine.EXTRA_SMART_LOG_PAYLOAD, serialized)
+            }
+            IContentProviderUtils.callCompat(
+                provider,
+                null,
+                authority,
+                SmartLogEngine.METHOD_PUSH_SMART_LOG,
+                serialized,
+                extras
+            )
+        } catch (_: Throwable) {
+        } finally {
+            if (provider != null) {
+                try {
+                    ActivityManagerApis.removeContentProviderExternal(authority, token)
+                } catch (_: Throwable) {
+                }
+            }
         }
     }
 
     @JvmStatic
     fun getOrRunQprCompatAudit(): String {
         cachedQprAudit?.let { return it }
+        HiddenApiIntrospector.exemptHiddenApis()
         val audit = HiddenApiIntrospector.runLiveCompatProbe()
         cachedQprAudit = audit
         return audit
@@ -212,8 +265,9 @@ object ServerSmartLogCollector {
     fun clearSmartLogs() {
         synchronized(lock) {
             snapshots.clear()
-            runCatching { if (tmpSpoolFile.exists()) tmpSpoolFile.delete() }
-            runCatching { if (shellSpoolFile.exists()) shellSpoolFile.delete() }
+            for (file in spoolFiles) {
+                runCatching { if (file.exists()) file.delete() }
+            }
         }
     }
 }

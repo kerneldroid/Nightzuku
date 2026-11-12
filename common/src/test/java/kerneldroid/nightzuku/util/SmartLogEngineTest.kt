@@ -80,4 +80,28 @@ class SmartLogEngineTest {
         assertTrue(!report.contains("╔"))
         assertTrue(!report.contains("NIGHTZUKU SMART LOG"))
     }
+
+    @Test
+    fun base64EncodedPushPayloadDecodesAndParsesCleanly() {
+        val snap = SmartLogEngine.SmartLogSnapshot(
+            id = "dead0001",
+            timestampMs = 1700000012345L,
+            source = "RUST_STARTER",
+            category = "STARTER_SELINUX_BLOCKED",
+            severity = "FATAL",
+            summary = "SELinux policy blocks binder IPC",
+            details = "su_context=u:r:su:s0"
+        )
+        val raw = SmartLogEngine.serializeSnapshot(snap)
+        val b64Payload = "base64:" + java.util.Base64.getEncoder().encodeToString(raw.toByteArray(Charsets.UTF_8))
+        val parsed = SmartLogEngine.parseSnapshots(b64Payload)
+        assertEquals(1, parsed.size)
+        assertEquals("dead0001", parsed[0].id)
+        assertEquals("STARTER_SELINUX_BLOCKED", parsed[0].category)
+
+        // Verify HiddenApiIntrospector.exemptHiddenApis() is safe in unit test JVM
+        HiddenApiIntrospector.exemptHiddenApis()
+        val methods = HiddenApiIntrospector.getAllMethodsUnfiltered(String::class.java)
+        assertTrue(methods.isNotEmpty())
+    }
 }

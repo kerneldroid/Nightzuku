@@ -3,7 +3,6 @@ package rikka.shizuku.common.util
 import android.content.pm.PackageInfo
 import android.os.Build
 import android.util.Log
-import java.io.File
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
 import java.util.concurrent.atomic.AtomicBoolean
@@ -31,6 +30,7 @@ object InstalledPackagesCompat {
     private fun recordSmartFailure(flags: Long, userId: Int, error: Throwable) {
         if (!reportedFailureOnce.compareAndSet(false, true)) return
         try {
+            HiddenApiIntrospector.exemptHiddenApis()
             val reflectionDump = HiddenApiIntrospector.inspectInterfaceMethods(
                 serviceName = "package",
                 interfaceName = "android.content.pm.IPackageManager",
@@ -49,12 +49,7 @@ object InstalledPackagesCompat {
                     appendLine(SmartLogEngine.stackTraceToString(error))
                 }
             )
-            // Only the privileged server (shell/root) may touch the starter spool paths.
-            val uid = android.os.Process.myUid()
-            if (uid == 2000 || uid == 0) {
-                SmartLogEngine.appendSnapshotToFile(File(SmartLogEngine.SPOOL_TMP_PATH), snap)
-                SmartLogEngine.appendSnapshotToFile(File(SmartLogEngine.SPOOL_SHELL_PATH), snap)
-            }
+            SmartLogEngine.appendSnapshotToAllSpools(snap)
         } catch (_: Throwable) {
         }
     }
@@ -62,6 +57,7 @@ object InstalledPackagesCompat {
     @Suppress("UNCHECKED_CAST")
     @JvmStatic
     fun getInstalledPackages(flags: Long, userId: Int): List<PackageInfo> {
+        HiddenApiIntrospector.exemptHiddenApis()
         try {
             val packageManager = getContextPackageManager()
             val method = packageManager.javaClass.getMethod("getInstalledPackagesAsUser", Int::class.java, Int::class.java)

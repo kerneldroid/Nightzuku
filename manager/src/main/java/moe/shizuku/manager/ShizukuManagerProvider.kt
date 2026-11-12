@@ -16,7 +16,9 @@ import kerneldroid.nightzuku.api.NightProtocol
 import kerneldroid.nightzuku.api.NightProvider
 import moe.shizuku.api.BinderContainer
 import moe.shizuku.manager.module.ModuleRuntimeUtils
+import kerneldroid.nightzuku.util.SmartLogEngine
 import moe.shizuku.manager.utils.Logger.LOGGER
+import moe.shizuku.manager.utils.SmartLogManager
 import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuApiConstants
 import rikka.shizuku.ShizukuApiConstants.USER_SERVICE_ARG_TOKEN
@@ -102,6 +104,19 @@ class ShizukuManagerProvider : NightProvider() {
     }
 
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
+        if (method == SmartLogEngine.METHOD_PUSH_SMART_LOG) {
+            val callingUid = Binder.getCallingUid()
+            if (callingUid != 0 && callingUid != 2000 && callingUid != Process.myUid()) {
+                return null
+            }
+            val ctx = context ?: return null
+            val rawPayload = extras?.getString(SmartLogEngine.EXTRA_SMART_LOG_PAYLOAD) ?: arg
+            val accepted = SmartLogManager.ingestPushedPayload(ctx, rawPayload)
+            return Bundle().apply {
+                putBoolean("accepted", accepted)
+            }
+        }
+
         if (method == METHOD_VERIFY_HOST) {
             val ctx = context ?: return null
             val signer = ModuleRuntimeUtils.getManagerSignerSha256(ctx)

@@ -767,20 +767,17 @@ mod tests {
             "SERVER_PROCESS_CRASH",
             "ERROR",
             "shizuku_server exited with 139",
-            "server_pid=1234
-signal=11",
+            "server_pid=1234\nsignal=11",
         );
-        assert!(block.starts_with("===SMART_SNAPSHOT_BEGIN===
-"));
-        assert!(block.contains("SOURCE: RUST_STARTER
-"));
-        assert!(block.contains("CATEGORY: SERVER_PROCESS_CRASH
-"));
-        assert!(block.contains("SEVERITY: ERROR
-"));
-        assert!(block.contains("SUMMARY: shizuku_server exited with 139
-"));
-        assert!(block.ends_with("===SMART_SNAPSHOT_END===
-"));
+        assert!(block.starts_with("===SMART_SNAPSHOT_BEGIN===\n"));
+        assert!(block.contains("SOURCE: RUST_STARTER\n"));
+        assert!(block.contains("CATEGORY: SERVER_PROCESS_CRASH\n"));
+        assert!(block.contains("SEVERITY: ERROR\n"));
+        assert!(block.contains("SUMMARY: shizuku_server exited with 139\n"));
+        assert!(block.ends_with("===SMART_SNAPSHOT_END===\n"));
+        let b64 = logging::base64_encode(block.as_bytes());
+        assert!(!b64.is_empty());
+        assert!(!b64.contains(' '));
+        assert!(!b64.contains('\n'));
     }
 }
