@@ -132,58 +132,6 @@ fun TvSettingsScreen(
             }
 
             item {
-                TvSettingsGroupTitle(stringResource(R.string.modules_settings_title))
-            }
-            item {
-                TvSettingsClickRow(
-                    title = stringResource(R.string.modules_access_mode),
-                    summary = stringResource(moduleAccessMode.labelRes),
-                    onClick = onModuleAccessModeClick
-                )
-            }
-            if (moduleAccessMode == ModuleSettings.AccessMode.CUSTOM) {
-                item {
-                    TvSettingsClickRow(
-                        title = stringResource(R.string.modules_custom_permissions),
-                        summary = stringResource(R.string.modules_custom_permissions_summary),
-                        onClick = onCustomPermissionsClick
-                    )
-                }
-            }
-            item {
-                TvSettingsToggleRow(
-                    title = stringResource(R.string.modules_background_actions),
-                    summary = stringResource(R.string.modules_background_actions_summary),
-                    checked = allowBackgroundActions,
-                    onCheckedChange = onAllowBackgroundActionsChange
-                )
-            }
-            item {
-                TvSettingsToggleRow(
-                    title = stringResource(R.string.modules_background_check_title),
-                    summary = stringResource(R.string.modules_background_check_summary),
-                    checked = backgroundCheckEnabled,
-                    onCheckedChange = onBackgroundCheckEnabledChange
-                )
-            }
-            item {
-                TvSettingsToggleRow(
-                    title = stringResource(R.string.modules_recommand_webui),
-                    summary = stringResource(R.string.modules_recommand_webui_summary),
-                    checked = recommandWebUi,
-                    onCheckedChange = onRecommandWebUiChange
-                )
-            }
-            item {
-                TvSettingsToggleRow(
-                    title = stringResource(R.string.modules_recommand_action),
-                    summary = stringResource(R.string.modules_recommand_action_summary),
-                    checked = recommandAction,
-                    onCheckedChange = onRecommandActionChange
-                )
-            }
-
-            item {
                 TvSettingsGroupTitle(stringResource(R.string.lab_features_title))
             }
             item {
@@ -194,16 +142,6 @@ fun TvSettingsScreen(
                 )
             }
 
-            item {
-                TvSettingsGroupTitle(stringResource(R.string.update_settings_github))
-            }
-            item {
-                TvSettingsClickRow(
-                    title = stringResource(R.string.update_settings_github_pat),
-                    summary = stringResource(R.string.update_settings_github_pat_title),
-                    onClick = onGitHubTokenClick
-                )
-            }
         }
     }
 }

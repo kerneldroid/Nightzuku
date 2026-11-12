@@ -57,7 +57,6 @@ internal fun TVHomeScreen(
     onSettings: () -> Unit,
     onAbout: () -> Unit,
     onStop: () -> Unit,
-    onModules: () -> Unit,
     onManageApps: () -> Unit,
     onTerminal: () -> Unit,
     onStartRoot: () -> Unit,
@@ -154,19 +153,6 @@ internal fun TVHomeScreen(
                         },
                         enabled = running,
                         onClick = onManageApps
-                    )
-                }
-                item {
-                    TvSimpleActionCard(
-                        icon = R.drawable.ic_adb_24dp,
-                        title = stringResource(R.string.modules_title),
-                        body = if (running) {
-                            stringResource(R.string.home_modules_description)
-                        } else {
-                            stringResource(R.string.home_status_service_not_running, stringResource(R.string.app_name))
-                        },
-                        enabled = running,
-                        onClick = onModules
                     )
                 }
                 item {

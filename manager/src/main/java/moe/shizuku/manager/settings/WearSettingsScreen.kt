@@ -54,11 +54,6 @@ fun WearSettingsScreen(
     val nightModeTitle = stringResource(rikka.core.R.string.dark_theme)
     val blackThemeTitle = stringResource(R.string.settings_black_night_theme)
     val systemColorTitle = stringResource(R.string.settings_use_system_color)
-    val accessModeTitle = stringResource(R.string.modules_access_mode)
-    val accessModeSummary = stringResource(moduleAccessMode.labelRes)
-    val customPermissionsTitle = stringResource(R.string.modules_custom_permissions)
-    val backgroundActionsTitle = stringResource(R.string.modules_background_actions)
-    val backgroundCheckTitle = stringResource(R.string.modules_background_check_title)
     val labFeaturesTitle = stringResource(R.string.lab_features_title)
 
     val transformationSpec = rememberTransformationSpec()
@@ -139,57 +134,6 @@ fun WearSettingsScreen(
 
             item {
                 WearTitleCard(
-                    onClick = onModuleAccessModeClick,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec),
-                    transformation = SurfaceTransformation(transformationSpec),
-                    title = { WearText(accessModeTitle) },
-                    subtitle = { WearText(accessModeSummary) }
-                )
-            }
-
-            if (moduleAccessMode == moe.shizuku.manager.module.ModuleSettings.AccessMode.CUSTOM) {
-                item {
-                    WearTitleCard(
-                        onClick = onCustomPermissionsClick,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .transformedHeight(this, transformationSpec),
-                        transformation = SurfaceTransformation(transformationSpec),
-                        title = { WearText(customPermissionsTitle) }
-                    )
-                }
-            }
-
-            item {
-                WearSwitchButton(
-                    checked = allowBackgroundActions,
-                    onCheckedChange = onAllowBackgroundActionsChange,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec),
-                    transformation = SurfaceTransformation(transformationSpec),
-                    label = { WearText(backgroundActionsTitle) },
-                    icon = { WearIcon(Icons.Rounded.PlayArrow, contentDescription = null) }
-                )
-            }
-
-            item {
-                WearSwitchButton(
-                    checked = backgroundCheckEnabled,
-                    onCheckedChange = onBackgroundCheckEnabledChange,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec),
-                    transformation = SurfaceTransformation(transformationSpec),
-                    label = { WearText(backgroundCheckTitle) },
-                    icon = { WearIcon(Icons.Rounded.TaskAlt, contentDescription = null) }
-                )
-            }
-
-            item {
-                WearTitleCard(
                     onClick = onLabFeaturesClick,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -199,17 +143,6 @@ fun WearSettingsScreen(
                 )
             }
 
-            item {
-                WearTitleCard(
-                    onClick = onGitHubTokenClick,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec),
-                    transformation = SurfaceTransformation(transformationSpec),
-                    title = { WearText(stringResource(R.string.update_settings_github_pat)) },
-                    subtitle = { WearText(stringResource(R.string.update_settings_github_pat_title)) }
-                )
-            }
         }
     }
 }

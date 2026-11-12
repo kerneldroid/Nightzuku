@@ -53,7 +53,6 @@ internal fun WearHomeScreen(
     onSettings: () -> Unit,
     onAbout: () -> Unit,
     onStop: () -> Unit,
-    onModules: () -> Unit,
     onManageApps: () -> Unit,
     onTerminal: () -> Unit,
     onStartRoot: () -> Unit,
@@ -114,21 +113,6 @@ internal fun WearHomeScreen(
                             WearIcon(Icons.Rounded.Apps, contentDescription = null, modifier = Modifier.size(24.dp))
                             Spacer(Modifier.width(8.dp))
                             WearText(text = stringResource(R.string.home_app_management_title))
-                        }
-                    }
-                }
-                item {
-                    WearButton(
-                        onClick = onModules,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .transformedHeight(this, transformationSpec),
-                        transformation = SurfaceTransformation(transformationSpec)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            WearIcon(Icons.Rounded.Extension, contentDescription = null, modifier = Modifier.size(24.dp))
-                            Spacer(Modifier.width(8.dp))
-                            WearText(text = stringResource(R.string.modules_title))
                         }
                     }
                 }

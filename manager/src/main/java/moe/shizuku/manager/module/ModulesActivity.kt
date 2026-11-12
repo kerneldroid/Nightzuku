@@ -137,6 +137,14 @@ class ModulesActivity : AppActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // ADB modules and their catalog are not offered on TV/Wear; the engine stays so existing
+        // modules keep working, but the UI layer is mobile-only.
+        if (moe.shizuku.manager.utils.EnvironmentUtils.isWatch(this) ||
+            moe.shizuku.manager.utils.EnvironmentUtils.isTV(this)
+        ) {
+            finish()
+            return
+        }
 
         setContent {
             val context = LocalContext.current
