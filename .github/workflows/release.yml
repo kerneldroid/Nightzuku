@@ -119,6 +119,14 @@ jobs:
             -Pstub.versionCode=${{ github.run_number }} \
             -Pstub.versionName=${GITHUB_REF_NAME#v}
           cp stub/app/build/outputs/apk/release/app-release.apk "dist/nightzuku-stub-${{ github.ref_name }}.apk"
+      - name: Verify APK identities
+        run: |
+          BT="$ANDROID_HOME/build-tools/37.0.0"
+          "$BT/aapt2" dump badging dist/*-release.apk | grep -q "name='kerneldroid.nightzuku'"
+          "$BT/aapt2" dump badging dist/*-stealth-*.apk | grep -q "name='$STEALTH_ID'"
+          "$BT/aapt2" dump xmltree --file AndroidManifest.xml dist/*-stealth-*.apk \
+            | grep -q "kerneldroid.nightzuku.manager"
+          "$BT/aapt2" dump badging dist/*stub*.apk | grep -q "name='moe.shizuku.privileged.api'"
       - name: Verify signatures
         run: |
           for apk in dist/*.apk; do
