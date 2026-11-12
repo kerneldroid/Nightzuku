@@ -30,7 +30,7 @@ object ClientRouting {
         if (declaredPermissions != null) {
             for (perm in declaredPermissions) {
                 val name = perm.name
-                if (name != null && name.endsWith(".permission.MANAGER") && client.packageName != ServerConstants.MANAGER_APPLICATION_ID) {
+                if (name != null && name.endsWith(".permission.MANAGER") && client.packageName != ManagerIdentity.packageName) {
                     return null
                 }
             }

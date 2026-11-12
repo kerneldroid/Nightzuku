@@ -10,6 +10,7 @@ use std::os::unix::fs::OpenOptionsExt;
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
 use std::ptr;
+use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(target_os = "android")]
@@ -23,14 +24,45 @@ const ANDROID_LOG_ERROR: c_int = 6;
 
 const SMART_LOG_TMP_PATH: &str = "/data/local/tmp/nightzuku_smart.log";
 const SMART_LOG_SHELL_PATH: &str = "/data/user_de/0/com.android.shell/nightzuku_smart.log";
-const SMART_LOG_EXT_EMULATED_PATH: &str =
-    "/storage/emulated/0/Android/data/kerneldroid.nightzuku/cache/nightzuku_smart.log";
-const SMART_LOG_APP_DE_CACHE_DIR: &str = "/data/user_de/0/kerneldroid.nightzuku/cache";
-const SMART_LOG_APP_DE_CACHE_PATH: &str =
-    "/data/user_de/0/kerneldroid.nightzuku/cache/nightzuku_smart.log";
-const SMART_LOG_APP_CE_CACHE_DIR: &str = "/data/data/kerneldroid.nightzuku/cache";
-const SMART_LOG_APP_CE_CACHE_PATH: &str =
-    "/data/data/kerneldroid.nightzuku/cache/nightzuku_smart.log";
+const DEFAULT_MANAGER_PACKAGE: &str = "kerneldroid.nightzuku";
+
+/// Stealth builds use a randomized application id; the package is resolved from the APK path
+/// before any snapshot is written.
+static MANAGER_PACKAGE: OnceLock<String> = OnceLock::new();
+
+pub fn set_manager_package(package: &str) {
+    let _ = MANAGER_PACKAGE.set(package.to_string());
+}
+
+pub fn manager_package() -> &'static str {
+    MANAGER_PACKAGE
+        .get()
+        .map(String::as_str)
+        .unwrap_or(DEFAULT_MANAGER_PACKAGE)
+}
+
+fn ext_emulated_path() -> String {
+    format!(
+        "/storage/emulated/0/Android/data/{}/cache/nightzuku_smart.log",
+        manager_package()
+    )
+}
+
+fn app_de_cache_dir() -> String {
+    format!("/data/user_de/0/{}/cache", manager_package())
+}
+
+fn app_de_cache_path() -> String {
+    format!("{}/nightzuku_smart.log", app_de_cache_dir())
+}
+
+fn app_ce_cache_dir() -> String {
+    format!("/data/data/{}/cache", manager_package())
+}
+
+fn app_ce_cache_path() -> String {
+    format!("{}/nightzuku_smart.log", app_ce_cache_dir())
+}
 
 const MAX_SMART_LOG_BYTES: u64 = 128 * 1024;
 const RETAIN_SMART_LOG_BYTES: usize = 64 * 1024;
@@ -311,20 +343,20 @@ pub fn record_smart_snapshot(category: &str, severity: &str, summary: &str, deta
 
     // 2. App-owned external cache spool (accessible to both shell/root and untrusted_app
     // Manager). /sdcard is the same file as /storage/emulated/0; writing both duplicated entries.
-    let _ = append_to_spool_file(SMART_LOG_EXT_EMULATED_PATH, bytes, 0o666);
+    let _ = append_to_spool_file(&ext_emulated_path(), bytes, 0o666);
 
     // 3. When running as root (UID 0), also write directly into the Manager's internal DE/CE cache
     //    with inherited UID/GID and `app_data_file` SELinux context
     #[cfg(unix)]
     if unsafe { libc::getuid() } == 0 {
         append_to_app_internal_cache_as_root(
-            SMART_LOG_APP_DE_CACHE_DIR,
-            SMART_LOG_APP_DE_CACHE_PATH,
+            &app_de_cache_dir(),
+            &app_de_cache_path(),
             bytes,
         );
         append_to_app_internal_cache_as_root(
-            SMART_LOG_APP_CE_CACHE_DIR,
-            SMART_LOG_APP_CE_CACHE_PATH,
+            &app_ce_cache_dir(),
+            &app_ce_cache_path(),
             bytes,
         );
     }

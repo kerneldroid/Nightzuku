@@ -9,7 +9,8 @@ object ServerConstants {
     const val LEGACY_PERMISSION = "moe.shizuku.manager.permission.API_V23"
 
     const val MANAGER_APPLICATION_ID = "kerneldroid.nightzuku"
-    const val REQUEST_PERMISSION_ACTION = "$MANAGER_APPLICATION_ID.intent.action.REQUEST_PERMISSION"
+    const val REQUEST_PERMISSION_ACTION_SUFFIX = ".intent.action.REQUEST_PERMISSION"
+    const val REQUEST_PERMISSION_ACTION = "$MANAGER_APPLICATION_ID$REQUEST_PERMISSION_ACTION_SUFFIX"
 
     const val BINDER_TRANSACTION_getApplications = 10001
     const val BINDER_TRANSACTION_setNightDogEnabled = 10002

@@ -69,6 +69,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         ServerSmartLogCollector.init()
 
         waitSystemService("package")
+        ManagerIdentity.resolve()
         waitSystemService(Context.ACTIVITY_SERVICE)
         waitSystemService(Context.USER_SERVICE)
         waitSystemService(Context.APP_OPS_SERVICE)
@@ -282,7 +283,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
     internal fun verifyManagerSignature(): Boolean {
         val probe = try {
             val pi = Android17Compat.getPackageInfoOrThrow(
-                ServerConstants.MANAGER_APPLICATION_ID,
+                ManagerIdentity.packageName,
                 PackageSignatureVerifier.signatureLookupFlags(),
                 0
             )
@@ -506,7 +507,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         packageName: String,
         protocolVersion: Int
     ): ClientRecord? {
-        val isManager = ServerConstants.MANAGER_APPLICATION_ID == packageName &&
+        val isManager = ManagerIdentity.packageName == packageName &&
             UserHandleCompat.getUserId(callingUid) == 0 &&
             verifyManagerSignature()
 
@@ -563,7 +564,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             throw SecurityException("Request package $requestPackageName does not belong to uid $callingUid")
         }
 
-        val isManager = ServerConstants.MANAGER_APPLICATION_ID == requestPackageName &&
+        val isManager = ManagerIdentity.packageName == requestPackageName &&
             UserHandleCompat.getUserId(callingUid) == 0 &&
             verifyManagerSignature()
 
@@ -626,7 +627,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
     private fun grantManagerSecureSettings(callingUid: Int) {
         try {
             Android17Compat.grantRuntimePermission(
-                ServerConstants.MANAGER_APPLICATION_ID,
+                ManagerIdentity.packageName,
                 Manifest.permission.WRITE_SECURE_SETTINGS,
                 UserHandleCompat.getUserId(callingUid)
             )
@@ -684,7 +685,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
 
         val ai = Android17Compat.getApplicationInfo(clientRecord.packageName, 0L, userId) ?: return
 
-        val pi = Android17Compat.getPackageInfo(ServerConstants.MANAGER_APPLICATION_ID, 0L, userId)
+        val pi = Android17Compat.getPackageInfo(ManagerIdentity.packageName, 0L, userId)
         val userInfo = UsersCompat.getUserInfo(userId)
         val isWorkProfileUser = if (userInfo != null) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -717,8 +718,8 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         openPrompts.entries.removeIf { now - it.value > PROMPT_ANSWER_WINDOW_MS }
         openPrompts[Triple(callingUid, callingPid, requestCode)] = now
 
-        val intent = Intent(ServerConstants.REQUEST_PERMISSION_ACTION)
-            .setPackage(ServerConstants.MANAGER_APPLICATION_ID)
+        val intent = Intent(ManagerIdentity.requestPermissionAction)
+            .setPackage(ManagerIdentity.packageName)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NEW_DOCUMENT)
             .putExtra("uid", callingUid)
             .putExtra("pid", callingPid)
@@ -1088,7 +1089,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             for (pi in InstalledPackagesCompat.getInstalledPackagesNoThrow(
                 (PackageManager.GET_META_DATA or PackageManager.GET_PERMISSIONS).toLong(), user
             )) {
-                if (ServerConstants.MANAGER_APPLICATION_ID == pi.packageName) continue
+                if (ManagerIdentity.packageName == pi.packageName) continue
                 val applicationInfo = pi.applicationInfo ?: continue
 
                 val uid = applicationInfo.uid
@@ -1478,7 +1479,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         @JvmStatic
         fun getManagerPackageInfo(): PackageInfo? {
             return Android17Compat.getPackageInfo(
-                ServerConstants.MANAGER_APPLICATION_ID,
+                ManagerIdentity.packageName,
                 PackageSignatureVerifier.signatureLookupFlags(),
                 0
             )
@@ -1486,7 +1487,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
 
         @JvmStatic
         fun getManagerApplicationInfo(): ApplicationInfo? {
-            return Android17Compat.getApplicationInfo(ServerConstants.MANAGER_APPLICATION_ID, 0L, 0)
+            return Android17Compat.getApplicationInfo(ManagerIdentity.packageName, 0L, 0)
         }
 
         private fun sendBinderToClient(legacyBinder: Binder, nightBinder: Binder, userId: Int) {
@@ -1528,13 +1529,13 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
 
         @JvmStatic
         fun sendBinderToManager(legacyBinder: Binder, nightBinder: Binder, userId: Int) {
-            sendBinderToUserApp(ClientRouting.Wire.NIGHTZUKU, nightBinder, ServerConstants.MANAGER_APPLICATION_ID, userId, true)
-            sendBinderToUserApp(ClientRouting.Wire.SHIZUKU, legacyBinder, ServerConstants.MANAGER_APPLICATION_ID, userId, false)
+            sendBinderToUserApp(ClientRouting.Wire.NIGHTZUKU, nightBinder, ManagerIdentity.packageName, userId, true)
+            sendBinderToUserApp(ClientRouting.Wire.SHIZUKU, legacyBinder, ManagerIdentity.packageName, userId, false)
         }
 
         @JvmStatic
         fun sendBinderToManager(binder: Binder, userId: Int) {
-            sendBinderToUserApp(ClientRouting.Wire.SHIZUKU, binder, ServerConstants.MANAGER_APPLICATION_ID, userId, true)
+            sendBinderToUserApp(ClientRouting.Wire.SHIZUKU, binder, ManagerIdentity.packageName, userId, true)
         }
 
         @JvmStatic
@@ -1612,7 +1613,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                 }
             } catch (tr: Throwable) {
                 Service.LOGGER.e(tr, "failed send binder (%s) to user app %s in user %d", wire.name, packageName, userId)
-                if (packageName == ServerConstants.MANAGER_APPLICATION_ID) {
+                if (packageName == ManagerIdentity.packageName) {
                     ServerSmartLogCollector.recordServerError(
                         category = "SEND_BINDER_MANAGER_FAILED",
                         summary = "Failed to send ${wire.name} binder to manager app in user $userId",

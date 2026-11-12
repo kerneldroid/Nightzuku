@@ -11,7 +11,7 @@ plugins {
 android {
     namespace 'moe.shizuku.manager'
     defaultConfig {
-        applicationId "kerneldroid.nightzuku"
+        applicationId project.findProperty("nightzuku.applicationId") ?: "kerneldroid.nightzuku"
         versionCode rootProject.ext.versionCode
         versionName rootProject.ext.versionName
     }

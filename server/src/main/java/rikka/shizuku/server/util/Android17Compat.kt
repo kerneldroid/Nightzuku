@@ -3,6 +3,7 @@ package rikka.shizuku.server.util
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
+import android.content.pm.ProviderInfo
 import android.os.IBinder
 import android.os.RemoteException
 import android.os.ServiceManager
@@ -30,6 +31,7 @@ object Android17Compat {
     private enum class Operation {
         PACKAGE_INFO,
         APPLICATION_INFO,
+        RESOLVE_PROVIDER,
         CHECK_PERMISSION_PACKAGE,
         CHECK_PERMISSION_UID,
         GRANT_RUNTIME_PERMISSION,
@@ -179,6 +181,32 @@ object Android17Compat {
                 )
             )
         ) as PackageInfo?
+    }
+
+    fun resolveContentProvider(authority: String, userId: Int): String? {
+        return try {
+            val info = value(
+                Operation.RESOLVE_PROVIDER,
+                listOf(
+                    Candidate(
+                        Backend.PACKAGE,
+                        "resolveContentProvider",
+                        listOf(STRING, LONG, INT),
+                        listOf(authority, 0L, userId)
+                    ),
+                    Candidate(
+                        Backend.PACKAGE,
+                        "resolveContentProvider",
+                        listOf(STRING, INT, INT),
+                        listOf(authority, 0, userId)
+                    )
+                )
+            ) as? ProviderInfo
+            info?.packageName
+        } catch (t: Throwable) {
+            LOGGER.w(t, "resolveContentProvider(%s, %d) failed", authority, userId)
+            null
+        }
     }
 
     fun getApplicationInfo(packageName: String, flags: Long, userId: Int): ApplicationInfo? {

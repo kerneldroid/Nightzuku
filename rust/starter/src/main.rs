@@ -155,6 +155,19 @@ fn read_self_exe() -> Option<Vec<u8>> {
 
 /// Attempts to derive `<app_dir>/base.apk` from `/proc/self/exe` (`<app_dir>/lib/<abi>/libshizuku.so`)
 /// to avoid spawning a `pm path` shell process in the common extracted-native-libs layout.
+/// Extracts the package id from `/data/app/<pkg>-<hash>/base.apk` (or the legacy
+/// `/data/app/<pkg>/base.apk`) so stealth builds do not depend on a compile-time id.
+fn derive_package_from_apk_path(apk_path: &str) -> Option<String> {
+    let parent = dirname(apk_path);
+    let name = parent.rsplit('/').next()?;
+    let package = name.split('-').next()?;
+    if package.contains('.') && !package.is_empty() {
+        Some(package.to_string())
+    } else {
+        None
+    }
+}
+
 fn derive_apk_from_self_exe() -> Option<String> {
     let exe_bytes = read_self_exe()?;
     let exe_str = std::str::from_utf8(&exe_bytes).ok()?;
@@ -672,8 +685,12 @@ fn main() {
         apk_path = derived;
     }
 
+    if let Some(package) = derive_package_from_apk_path(&apk_path) {
+        logging::set_manager_package(&package);
+    }
+
     if apk_path.is_empty() {
-        let command = c_arg(&format!("pm path {PACKAGE_NAME}"));
+        let command = c_arg(&format!("pm path {}", logging::manager_package()));
         let pipe = unsafe { libc::popen(command.as_ptr(), c"r".as_ptr()) };
         if !pipe.is_null() {
             let mut line = [0u8; libc::PATH_MAX as usize];
@@ -697,7 +714,7 @@ fn main() {
             "STARTER_APK_PATH_MISSING",
             "FATAL",
             "Starter failed to resolve base.apk path for manager package",
-            &format!("package={PACKAGE_NAME}"),
+            &format!("package={}", logging::manager_package()),
         );
         exit(EXIT_FATAL_PM_PATH);
     }
