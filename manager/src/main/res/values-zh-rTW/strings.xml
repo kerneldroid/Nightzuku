@@ -27,7 +27,6 @@
     <!-- Lab Features -->
     <string name="lab_features_title">實驗室功能</string>
     <string name="stub_notice_title">嘿，朋友，請讀一下！</string>
-    <string name="stub_notice_message"><![CDATA[Nightzuku 可以與使用 Shizuku API 的用戶端搭配運作，但它無法啟用 stub 讓其他應用程式看到 Shizuku 套件 ID。建議安裝任意版本的普通 Shizuku；無需啟用，它只會是空殼。基於原則我不提供這個空殼：涉及授權問題，也不希望建立與維護它。]]></string>
     <string name="stub_notice_confirm">知道了</string>
     <string name="translation_contributors">kerneldroid</string>
     <string name="home_status_service_version">版本 %2$s，%1$s</string>

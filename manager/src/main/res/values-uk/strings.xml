@@ -442,7 +442,6 @@
     <string name="app_control_last_connected_never">Ніколи не підключалося</string>
     <string name="app_control_signer_sha256">SHA-256 сертифіката підпису</string>
     <string name="stub_notice_title">Гей, друже, прочитай!</string>
-    <string name="stub_notice_message"><![CDATA[Nightzuku вміє працювати з клієнтами, що використовують Shizuku API, АЛЕ не вміє активувати stub, щоб інші застосунки бачили ID пакета Shizuku. Бажано встановити звичайний Shizuku будь-якої версії — активувати його не потрібно, він буде пустушкою. Я не роблю пустушку з принципу: проблема з ліцензією та небажання її створювати й підтримувати.]]></string>
     <string name="stub_notice_confirm">Зрозуміло</string>
     <string name="translation_contributors">kerneldroid</string>
     <string name="guide_quick_start">Швидкий старт</string>
