@@ -111,7 +111,6 @@ private sealed interface PhoneSettingsRoute {
 
 private enum class SecondarySubscreen(val depth: Int) {
     ROOT(0),
-    TOKEN_SETTINGS(1),
     LAB_FEATURES(1)
 }
 
@@ -243,11 +242,6 @@ class SettingsActivity : AppActivity() {
                             depth = { it.depth }
                         ) { subscreen ->
                             when (subscreen) {
-                                SecondarySubscreen.TOKEN_SETTINGS -> {
-                                    moe.shizuku.manager.module.catalog.WearTokenSettingsScreen(
-                                        onBack = { secondarySubscreen = SecondarySubscreen.ROOT }
-                                    )
-                                }
                                 else -> {
                                     WearSettingsScreen(
                                         startOnBoot = startOnBoot,
@@ -276,21 +270,6 @@ class SettingsActivity : AppActivity() {
                                         onLabFeaturesClick = {
                                             startActivity(android.content.Intent(this@SettingsActivity, LabFeaturesActivity::class.java))
                                         },
-                                        moduleAccessMode = moduleAccessMode,
-                                        onModuleAccessModeClick = { showModuleModeDialog = true },
-                                        onCustomPermissionsClick = { showCustomPermissionsDialog = true },
-                                        allowBackgroundActions = allowBackgroundActions,
-                                        onAllowBackgroundActionsChange = { enabled ->
-                                            ModuleSettings.setAllowBackgroundActions(enabled)
-                                            allowBackgroundActions = enabled
-                                        },
-                                        backgroundCheckEnabled = backgroundCheckEnabled,
-                                        onBackgroundCheckEnabledChange = { enabled ->
-                                            ModuleSettings.setBackgroundCheckEnabled(enabled)
-                                            backgroundCheckEnabled = enabled
-                                            ModuleUpdateScheduler.syncSchedule(this@SettingsActivity)
-                                        },
-                                        onGitHubTokenClick = { secondarySubscreen = SecondarySubscreen.TOKEN_SETTINGS }
                                     )
                                 }
                             }
@@ -308,11 +287,6 @@ class SettingsActivity : AppActivity() {
                             depth = { it.depth }
                         ) { subscreen ->
                             when (subscreen) {
-                                SecondarySubscreen.TOKEN_SETTINGS -> {
-                                    TvTokenSettingsScreen(
-                                        onNavigateUp = { secondarySubscreen = SecondarySubscreen.ROOT }
-                                    )
-                                }
                                 SecondarySubscreen.LAB_FEATURES -> {
                                     TvLabMenuScreen(
                                         onNavigateUp = {
@@ -347,34 +321,9 @@ class SettingsActivity : AppActivity() {
                                             useSystemColor = enabled
                                             recreateTick++
                                         },
-                                        moduleAccessMode = moduleAccessMode,
-                                        onModuleAccessModeClick = { showModuleModeDialog = true },
-                                        onCustomPermissionsClick = { showCustomPermissionsDialog = true },
-                                        allowBackgroundActions = allowBackgroundActions,
-                                        onAllowBackgroundActionsChange = { enabled ->
-                                            ModuleSettings.setAllowBackgroundActions(enabled)
-                                            allowBackgroundActions = enabled
-                                        },
-                                        backgroundCheckEnabled = backgroundCheckEnabled,
-                                        onBackgroundCheckEnabledChange = { enabled ->
-                                            ModuleSettings.setBackgroundCheckEnabled(enabled)
-                                            backgroundCheckEnabled = enabled
-                                            ModuleUpdateScheduler.syncSchedule(this@SettingsActivity)
-                                        },
-                                        recommandWebUi = recommandWebUi,
-                                        onRecommandWebUiChange = { enabled ->
-                                            ModuleSettings.setRecommandForWebUi(enabled)
-                                            recommandWebUi = enabled
-                                        },
-                                        recommandAction = recommandAction,
-                                        onRecommandActionChange = { enabled ->
-                                            ModuleSettings.setRecommandForAction(enabled)
-                                            recommandAction = enabled
-                                        },
                                         onLabFeaturesClick = {
                                             secondarySubscreen = SecondarySubscreen.LAB_FEATURES
-                                        },
-                                        onGitHubTokenClick = { secondarySubscreen = SecondarySubscreen.TOKEN_SETTINGS }
+                                        }
                                     )
                                 }
                             }

@@ -24,7 +24,6 @@ import androidx.tv.material3.MaterialTheme as TvMaterialTheme
 import androidx.tv.material3.Surface as TvSurface
 import androidx.tv.material3.Text as TvText
 import moe.shizuku.manager.R
-import moe.shizuku.manager.module.ModuleSettings
 import moe.shizuku.manager.ui.compose.ShizukuIcon
 
 @Composable
@@ -40,19 +39,7 @@ fun TvSettingsScreen(
     onBlackNightThemeChange: (Boolean) -> Unit,
     useSystemColor: Boolean,
     onUseSystemColorChange: (Boolean) -> Unit,
-    moduleAccessMode: ModuleSettings.AccessMode,
-    onModuleAccessModeClick: () -> Unit,
-    onCustomPermissionsClick: () -> Unit,
-    allowBackgroundActions: Boolean,
-    onAllowBackgroundActionsChange: (Boolean) -> Unit,
-    backgroundCheckEnabled: Boolean,
-    onBackgroundCheckEnabledChange: (Boolean) -> Unit,
-    recommandWebUi: Boolean,
-    onRecommandWebUiChange: (Boolean) -> Unit,
-    recommandAction: Boolean,
-    onRecommandActionChange: (Boolean) -> Unit,
-    onLabFeaturesClick: () -> Unit,
-    onGitHubTokenClick: () -> Unit
+    onLabFeaturesClick: () -> Unit
 ) {
     Row(modifier = Modifier.fillMaxSize()) {
 

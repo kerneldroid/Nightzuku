@@ -95,185 +95,6 @@ class ModuleWebViewActivity : AppActivity() {
                 }
             }
 
-            val isWatch = moe.shizuku.manager.utils.EnvironmentUtils.isWatch(this@ModuleWebViewActivity)
-            if (isWatch) {
-                moe.shizuku.manager.ui.compose.WearShizukuTheme {
-                    var webViewCrashError by remember { mutableStateOf<String?>(null) }
-
-                    androidx.compose.foundation.layout.Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(WearMaterialTheme.colorScheme.background)
-                    ) {
-                        if (webViewCrashError == null) {
-                            AndroidView(
-                                factory = {
-                                    val wrapper = android.widget.FrameLayout(this@ModuleWebViewActivity)
-                                    val webView = try {
-                                        WebView(this@ModuleWebViewActivity)
-                                    } catch (e: Throwable) {
-                                        android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                            webViewCrashError = e.message ?: "Unknown error"
-                                        }
-                                        return@AndroidView wrapper
-                                    }
-                                    activeWebView = webView
-                                    wrapper.addView(
-                                        webView,
-                                        android.widget.FrameLayout.LayoutParams(
-                                            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                                            android.view.ViewGroup.LayoutParams.MATCH_PARENT
-                                        )
-                                    )
-                                    configureModuleWebView(
-                                        webView = webView,
-                                        module = module,
-                                        index = index,
-                                        trusted = trusted,
-                                        webNetworkAllowed = webNetworkAllowed,
-                                        exposeBridge = exposeBridge,
-                                        isWatch = true,
-                                        onPendingCommand = { req, cb ->
-                                            pendingCommand = req
-                                            pendingDecision = cb
-                                        }
-                                    )
-                                    wrapper
-                                },
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                    }
-
-                    webViewCrashError?.let { errorMsg ->
-                        val okText = stringResource(android.R.string.ok)
-                        androidx.compose.ui.window.Dialog(
-                            onDismissRequest = { finish() },
-                            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
-                        ) {
-                            moe.shizuku.manager.ui.compose.WearShizukuTheme {
-                                androidx.compose.foundation.layout.Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(WearMaterialTheme.colorScheme.background)
-                                ) {
-                                    moe.shizuku.manager.ui.compose.WearScreenScaffold { scrollState ->
-                                        androidx.wear.compose.foundation.lazy.TransformingLazyColumn(
-                                            state = scrollState,
-                                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                                                top = 32.dp,
-                                                bottom = 32.dp,
-                                                start = 8.dp,
-                                                end = 8.dp
-                                            ),
-                                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
-                                            modifier = Modifier
-                                                .fillMaxSize()
-                                                .background(WearMaterialTheme.colorScheme.background)
-                                        ) {
-                                            item {
-                                                WearText(
-                                                    text = stringResource(R.string.modules_webview_error_title),
-                                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    color = WearMaterialTheme.colorScheme.error,
-                                                    style = WearMaterialTheme.typography.titleMedium
-                                                )
-                                            }
-                                            item {
-                                                WearText(
-                                                    text = stringResource(R.string.modules_webview_error_message, errorMsg),
-                                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                                    modifier = Modifier.fillMaxWidth()
-                                                )
-                                            }
-                                            item {
-                                                WearButton(
-                                                    onClick = { finish() },
-                                                    modifier = Modifier.fillMaxWidth()
-                                                ) {
-                                                    WearText(okText)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    pendingCommand?.let { request ->
-                        val warningTitle = stringResource(R.string.unsafe_warning_title)
-                        val okText = stringResource(android.R.string.ok)
-                        val cancelText = stringResource(android.R.string.cancel)
-                        androidx.compose.ui.window.Dialog(
-                            onDismissRequest = {
-                                pendingDecision?.invoke(false)
-                                pendingCommand = null
-                                pendingDecision = null
-                            },
-                            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
-                        ) {
-                            moe.shizuku.manager.ui.compose.WearScreenScaffold { scrollState ->
-                                androidx.wear.compose.foundation.lazy.TransformingLazyColumn(
-                                    state = scrollState,
-                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                                        top = 32.dp,
-                                        bottom = 32.dp,
-                                        start = 8.dp,
-                                        end = 8.dp
-                                    ),
-                                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(WearMaterialTheme.colorScheme.background)
-                                ) {
-                                    item {
-                                        WearText(
-                                            text = warningTitle,
-                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                            modifier = Modifier.fillMaxWidth(),
-                                            color = WearMaterialTheme.colorScheme.primary,
-                                            style = WearMaterialTheme.typography.titleMedium
-                                        )
-                                    }
-                                    item {
-                                        WearText(
-                                            text = request.command,
-                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-                                    }
-                                    item {
-                                        WearButton(
-                                            onClick = {
-                                                pendingDecision?.invoke(true)
-                                                pendingCommand = null
-                                                pendingDecision = null
-                                            },
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            WearText(okText)
-                                        }
-                                    }
-                                    item {
-                                        WearFilledTonalButton(
-                                            onClick = {
-                                                pendingDecision?.invoke(false)
-                                                pendingCommand = null
-                                                pendingDecision = null
-                                            },
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            WearText(cancelText)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
                 ShizukuExpressiveTheme {
                     ShizukuScaffold(
                         title = module.name,
@@ -290,7 +111,6 @@ class ModuleWebViewActivity : AppActivity() {
                                         trusted = trusted,
                                         webNetworkAllowed = webNetworkAllowed,
                                         exposeBridge = exposeBridge,
-                                        isWatch = false,
                                         onPendingCommand = { req, cb ->
                                             pendingCommand = req
                                             pendingDecision = cb
@@ -323,7 +143,6 @@ class ModuleWebViewActivity : AppActivity() {
                         )
                     }
                 }
-            }
         }
     }
 
@@ -335,7 +154,6 @@ class ModuleWebViewActivity : AppActivity() {
         @Suppress("UNUSED_PARAMETER") trusted: Boolean,
         webNetworkAllowed: Boolean,
         exposeBridge: Boolean,
-        isWatch: Boolean,
         onPendingCommand: (ModuleCommandRequest, (Boolean) -> Unit) -> Unit
     ) {
         val assetServer = ModuleWebAssetServer(
@@ -361,7 +179,6 @@ class ModuleWebViewActivity : AppActivity() {
 
             settings.useWideViewPort = true
             settings.loadWithOverviewMode = true
-            if (isWatch) settings.textZoom = 85
 
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
             webViewClient = object : LocalModuleWebViewClient(assetServer) {

@@ -39,15 +39,7 @@ fun WearSettingsScreen(
     onBlackNightThemeChange: (Boolean) -> Unit,
     useSystemColor: Boolean,
     onUseSystemColorChange: (Boolean) -> Unit,
-    onLabFeaturesClick: () -> Unit,
-    moduleAccessMode: moe.shizuku.manager.module.ModuleSettings.AccessMode,
-    onModuleAccessModeClick: () -> Unit,
-    onCustomPermissionsClick: () -> Unit,
-    allowBackgroundActions: Boolean,
-    onAllowBackgroundActionsChange: (Boolean) -> Unit,
-    backgroundCheckEnabled: Boolean,
-    onBackgroundCheckEnabledChange: (Boolean) -> Unit,
-    onGitHubTokenClick: () -> Unit
+    onLabFeaturesClick: () -> Unit
 ) {
     val startOnBootTitle = stringResource(R.string.settings_start_on_boot)
     val languageTitle = stringResource(R.string.settings_language)
