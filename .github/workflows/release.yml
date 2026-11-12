@@ -72,23 +72,70 @@ jobs:
           echo 'android.native.buildOutput=verbose' >> gradle.properties
           echo 'org.gradle.caching=true' >> gradle.properties
           echo 'org.gradle.parallel=true' >> gradle.properties
-      - name: Build release APK
+      - name: Build default release APK
         run: ./gradlew :manager:assembleRelease
-      - name: Verify signature
+      - name: Stage default APK
         run: |
-          apk=$(ls out/apk/*-release.apk)
-          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --print-certs "$apk"
-      - name: Upload release APK
+          mkdir -p dist
+          cp out/apk/*-release.apk "dist/nightzuku-${{ github.ref_name }}-release.apk"
+      - name: Generate stealth package id
+        run: |
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import random
+          import string
+          alphabet = string.ascii_lowercase + string.digits
+          def segment():
+              return random.choice(string.ascii_lowercase) + "".join(
+                  random.choice(alphabet) for _ in range(7)
+              )
+          print(f"STEALTH_ID=com.{segment()}.{segment()}")
+          PY
+      - name: Build stealth release APK
+        run: ./gradlew :manager:assembleRelease -Pnightzuku.applicationId=$STEALTH_ID
+      - name: Stage stealth APK
+        run: |
+          cp out/apk/*-release.apk "dist/nightzuku-${{ github.ref_name }}-stealth-$STEALTH_ID.apk"
+      - name: Checkout compatibility stub
+        uses: actions/checkout@v7
+        with:
+          repository: kerneldroid/nightzuku-stub
+          path: stub
+          ref: main
+      - name: Configure stub signing
+        run: |
+          {
+            printf 'KEYSTORE_FILE=../key.jks\n'
+            printf 'KEYSTORE_PASSWORD=%s\n' "$KEYSTORE_PASSWORD"
+            printf 'KEYSTORE_ALIAS=%s\n' "$KEYSTORE_ALIAS"
+            printf 'KEYSTORE_ALIAS_PASSWORD=%s\n' "$KEYSTORE_ALIAS_PASSWORD"
+          } > stub/signing.properties
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
+          KEYSTORE_ALIAS_PASSWORD: ${{ secrets.KEYSTORE_ALIAS_PASSWORD }}
+      - name: Build compatibility stub APK
+        run: |
+          ./stub/gradlew -p stub :app:assembleRelease \
+            -Pstub.versionCode=${{ github.run_number }} \
+            -Pstub.versionName=${GITHUB_REF_NAME#v}
+          cp stub/app/build/outputs/apk/release/app-release.apk "dist/nightzuku-stub-${{ github.ref_name }}.apk"
+      - name: Verify signatures
+        run: |
+          for apk in dist/*.apk; do
+            echo "== $apk"
+            "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --print-certs "$apk"
+          done
+      - name: Upload APKs
         uses: actions/upload-artifact@v7
         with:
           name: nightzuku-${{ github.ref_name }}-release
-          path: out/apk/*-release.apk
+          path: dist/*.apk
           compression-level: 9
           overwrite: true
       - name: GitHub Release
         uses: softprops/action-gh-release@v3
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: out/apk/*-release.apk
+          files: dist/*.apk
           fail_on_unmatched_files: true
           generate_release_notes: true
