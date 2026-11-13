@@ -321,6 +321,9 @@ abstract class HomeActivity : AppActivity() {
     override fun onResume() {
         super.onResume()
         checkServerStatus()
+        // Refresh the authorized-app count when returning from Application management; grants
+        // made there must be visible without a manual pull-to-refresh.
+        appsModel.load()
         SmartLogManager.syncAll(this)
         permissionRefreshTick.intValue++
     }

@@ -34,7 +34,7 @@ Modules are discovered via GitHub Topics search (`topic:adb-modules`). Module au
 
 ## Security
 
-- Token stored in SharedPreferences (not encrypted — trade-off for emulator compatibility)
+- Token stored encrypted with AndroidKeyStore (`AES/GCM/NoPadding`); legacy plaintext tokens are migrated on startup
 - Token validated for `ghp_`/`github_pat_` prefix (30+ chars)
 - Token NOT logged to logcat
 - Token only sent to `api.github.com` / `github.com` domains (not leaked to updateJson URLs)
@@ -44,8 +44,8 @@ Modules are discovered via GitHub Topics search (`topic:adb-modules`). Module au
 | Platform | Catalog UI | Token Settings | Lab Menu |
 |----------|-----------|----------------|----------|
 | Phone | CatalogScreen.kt | UpdateSettingsScreen.kt | Via SettingsActivity |
-| Android TV | TvCatalogScreen.kt | TvTokenSettingsScreen.kt | TvLabMenuScreen.kt |
-| WearOS | WearCatalogScreen.kt | WearTokenSettingsScreen.kt | Via WearSettingsScreen |
+| Android TV | Not available (modules UI removed) | Not available | TvLabMenuScreen.kt |
+| WearOS | Not available (modules UI removed) | Not available | Via WearSettingsScreen |
 
 ## API Usage
 
@@ -76,12 +76,8 @@ module/update/
 module/catalog/
 ├── CatalogScreen.kt            # Phone catalog UI
 ├── TvCatalogScreen.kt          # TV catalog UI
-├── WearCatalogScreen.kt        # WearOS catalog UI
 ├── TokenStore.kt               # Token storage
-├── WearTokenSettingsScreen.kt  # WearOS token settings
-└── (TvTokenSettingsScreen.kt   # in settings/ package)
 
 settings/
 ├── TvLabMenuScreen.kt          # TV Lab Features menu
-└── TvTokenSettingsScreen.kt    # TV token settings
 ```

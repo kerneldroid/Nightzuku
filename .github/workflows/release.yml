@@ -2,6 +2,11 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      stealth_id:
+        description: "Optional fixed stealth application id (manual hotfix builds)"
+        required: false
+        default: ""
   push:
     tags:
       - 'v*'
@@ -79,7 +84,13 @@ jobs:
           mkdir -p dist
           cp out/apk/*-release.apk "dist/nightzuku-${{ github.ref_name }}-release.apk"
       - name: Generate stealth package id
+        env:
+          FIXED_STEALTH_ID: ${{ inputs.stealth_id }}
         run: |
+          if [ -n "$FIXED_STEALTH_ID" ]; then
+            echo "STEALTH_ID=$FIXED_STEALTH_ID" >> "$GITHUB_ENV"
+            exit 0
+          fi
           python3 - <<'PY' >> "$GITHUB_ENV"
           import random
           import string

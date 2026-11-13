@@ -17,6 +17,10 @@
 
 -keepnames class moe.shizuku.api.BinderContainer
 
+# InstalledPackagesCompat resolves this service holder by name/field at runtime.
+# Without the keep rule R8 renames the class and drops the field, breaking package queries.
+-keep class rikka.hidden.compat.Services { *; }
+
 # Missing class android.app.IProcessObserver$Stub
 # Missing class android.app.IUidObserver$Stub
 -keepclassmembers class rikka.hidden.compat.adapter.ProcessObserverAdapter {

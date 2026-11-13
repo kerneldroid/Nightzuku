@@ -42,7 +42,33 @@ def resolveGitCommitId = {
     return "nogit"
 }
 def gitCommitId = resolveGitCommitId()
-def gitCommitCount = 61
+def resolveVersionCounter = {
+    try {
+        def git = { List<String> args ->
+            def proc = (['git'] + args).execute(null, project.rootDir)
+            proc.waitFor()
+            if (proc.exitValue() != 0) return null
+            return proc.in.text.trim()
+        }
+        def latest = git(['describe', '--tags', '--abbrev=0', '--match', 'v*-r*'])
+        if (!latest) return 62
+        // When HEAD itself is tagged, count from the previous release so rebuilding the
+        // same release keeps the same version code.
+        def atHead = git(['tag', '--points-at', 'HEAD'])?.readLines()?.contains(latest)
+        if (atHead) {
+            latest = git(['describe', '--tags', '--abbrev=0', '--match', 'v*-r*', "${latest}^"])
+        }
+        if (!latest) return 62
+        def matcher = latest =~ /-r(\d+)$/
+        if (!matcher.find()) return 62
+        def base = matcher.group(1).toInteger()
+        def count = git(['rev-list', '--count', "${latest}..HEAD"])?.toInteger() ?: 0
+        return base + count
+    } catch (Throwable ignored) {
+        return 62
+    }
+}
+def gitCommitCount = resolveVersionCounter()
 def baseVersionName = "${api_version_major}.7.1"
 ext {
     versionCode = gitCommitCount

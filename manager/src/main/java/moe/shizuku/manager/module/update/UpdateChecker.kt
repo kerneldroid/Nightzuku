@@ -89,10 +89,8 @@ class UpdateChecker private constructor() {
             }
         }
 
-        val author = module.author?.trim()?.takeIf { it.isNotBlank() && !it.contains(' ') }
-        if (author != null) {
-            return Triple(author, module.id, sourceSubPath)
-        }
+        // Do not guess owner/repo from author + module id: that sends requests to unrelated
+        // GitHub repositories. Without explicit metadata the update check is unsupported.
         return null
     }
 

@@ -7,7 +7,7 @@ Nightzuku splits background supervision into two specialized components so privi
 
 ## Why `JobScheduler` + `NightDog` Instead of Polling Inside `NightDogClient`
 
-- **Separation of privileges**: Checking GitHub Releases or raw `module.prop` over HTTPS requires zero ADB/root privileges and depends on network state (unmetered Wi-Fi vs cellular, Doze window batching). `ModuleUpdateScheduler` delegates periodic polling to Android's system `JobScheduler` (`ModuleUpdateJobService`, job ID `40921`), which enforces `NETWORK_TYPE_UNMETERED` / `NETWORK_TYPE_ANY`, survives app process death without keeping a 15-minute coroutine loop alive, and adds zero third-party library bloat (`androidx.work` / `Room` are not required).
+- **Separation of privileges**: Checking GitHub Releases or raw `module.prop` over HTTPS requires zero ADB/root privileges and depends on network state (unmetered Wi-Fi vs cellular, Doze window batching). `ModuleUpdateScheduler` delegates periodic polling to Android's system `JobScheduler` (`ModuleUpdateJobService`, job ID `4200`), which enforces `NETWORK_TYPE_UNMETERED` / `NETWORK_TYPE_ANY`, survives app process death without keeping a 15-minute coroutine loop alive, and adds zero third-party library bloat (`androidx.work` / `Room` are not required).
 - **Privileged execution handoff**: When `ModuleUpdateScheduler` detects available updates and `Auto-update modules` is enabled, it hands the verified update targets to `NightDogClient.applyUpdates()`. If `shizuku_server` is active (`Shizuku.pingBinder()`), `NightDogClient` atomically backs up and installs each module, then re-executes `service.sh` with root/ADB privileges. If the server is offline during a background job, `NightDogClient` queues the pending updates and applies them automatically as soon as `OnBinderReceivedListener` fires.
 
 ## How It Works
@@ -40,7 +40,7 @@ Nightzuku splits background supervision into two specialized components so privi
 ### 3. Background Module Update Checker (`ModuleUpdateScheduler` & `ModuleUpdateJobService`)
 
 - Synchronizes an OS `JobInfo` schedule whenever update settings change (`ModuleUpdateScheduler.syncSchedule()`):
-  - **Frequencies**: `NEVER` (manual only), `ON_START` (runs when `shizuku_server` starts), `EVERY_6_HOURS`, `DAILY` (default), `WEEKLY`.
+  - **Frequencies**: `MANUAL` (default, no periodic job), `ON_START` (runs when `shizuku_server` starts), `EVERY_6_HOURS`, `DAILY`, `WEEKLY`.
   - **Network constraints**: Enforces `JobInfo.NETWORK_TYPE_UNMETERED` when `Wi-Fi / unmetered network only` is enabled, or `JobInfo.NETWORK_TYPE_ANY` otherwise, plus a direct `ConnectivityManager` check for immediate/manual runs.
 - **Per-module version pinning (`Freeze version`)**: Modules pinned by the user are skipped during update checks and batch updates.
 - **Atomic backup & rollback (`AdbModuleManager`)**: Before replacing an existing module directory during an update, Nightzuku moves the previous version to `<id>.backup`, preserves `.source.prop` and the `disable` state, and rolls back automatically if extraction or validation fails.
@@ -65,8 +65,8 @@ Nightzuku splits background supervision into two specialized components so privi
 | Rebind backoff | 5 s – 60 s | Exponential backoff delay between failed service rebinds |
 | Max rebind attempts | 10 | Max attempts before terminating server for starter recovery |
 | Stable uptime reset | 60 s | Server uptime threshold that resets starter's crash counter |
-| Update check scheduler | `JobScheduler` | OS-managed periodic job (`JOB_ID = 40921`) with network constraints |
-| Default update cadence | `DAILY` (24h) | Configurable to `NEVER`, `ON_START`, `6h`, `24h`, or `168h` |
+| Update check scheduler | `JobScheduler` | OS-managed periodic job (`JOB_ID = 4200`) with network constraints |
+| Default update cadence | `MANUAL` | Configurable to `MANUAL`, `ON_START`, `6h`, `24h`, or `168h` |
 
 ## Key Files
 

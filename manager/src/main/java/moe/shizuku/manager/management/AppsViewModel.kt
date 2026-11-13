@@ -223,6 +223,9 @@ class AppsViewModel(context: Context) : ViewModel() {
             } finally {
                 endMutation()
             }
+            // Confirm the server state immediately; external permission prompts can change
+            // other rows while this screen is open.
+            refreshGranted()
         }
     }
 

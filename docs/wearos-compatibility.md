@@ -33,21 +33,5 @@ Legacy dialogs have been replaced with native `androidx.wear.compose.material3.A
 * **Scroll Support:** Dialog content is scrollable, ensuring accessibility on round displays.
 * **Platform UI:** Uses native Wear OS Material 3 buttons and layouts.
 
-### 4. WebView Fallback for WearOS
-On WearOS devices (especially emulators or specialized builds) that lack a functional WebView provider, Nightzuku now implements a robust fallback.
-* **Crash Prevention:** Activity initialization is wrapped in a `try-catch` block to intercept `UnsupportedOperationException` from the system `WebViewFactory`.
-* **User Feedback:** Instead of crashing or showing a white screen, a native WearOS dialog informs the user that WebUI is unsupported on their hardware.
-
-
-## Verification
-* The Nightzuku server successfully binds and operates on Wear OS 7 (API 37) and Wear OS 6.1 (API 36.1) emulators and real devices.
-* Application UI provides a first-class native experience on 1.4-inch and 1.5-inch round displays across all supported versions.
-* All core functionalities, including ADB bindings and root execution, are functional.
-
-## Troubleshooting: Wi-Fi Pairing & Activation
-
-If pairing fails or the application does not appear in "Paired devices":
-
-1. **Re-pairing is mandatory after updates**: If you encounter connection/handshake errors (`SSLProtocolException` / `CERTIFICATE_VERIFY_FAILED`), you must pair the app again. Deleting the old keys/paired devices in the Developer options on the watch and starting a clean pairing process is recommended.
-2. **Foreground execution for pairing**: Due to Wear OS standby restrictions, the app must remain in the foreground (or keep the pairing service active) during pairing to prevent the OS from freezing the process.
-3. **Wi-Fi interface connection**: The pairing service connects directly to the dynamic Wi-Fi IP address of the watch discovered via mDNS, rather than `127.0.0.1`. Make sure the watch is connected to Wi-Fi.
+### 4. WebView on WearOS
+ADB Modules (including their WebUI) are not offered on WearOS. The mobile module UI, WebView host and engine remain available on phones; no Wear-specific WebView fallback is shipped.

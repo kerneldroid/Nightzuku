@@ -288,6 +288,10 @@ object AdbModuleManager {
             marker.delete()
         } else {
             marker.writeText("disabled\n")
+            val service = runCatching {
+                Shizuku.getBinder()?.takeIf { it.pingBinder() }?.let { IShizukuService.Stub.asInterface(it) }
+            }.getOrNull()
+            ModuleRuntimeUtils.killShellModuleProcesses(service, module.id)
         }
     }
 
@@ -298,6 +302,7 @@ object AdbModuleManager {
         val service = runCatching {
             Shizuku.getBinder()?.takeIf { it.pingBinder() }?.let { IShizukuService.Stub.asInterface(it) }
         }.getOrNull()
+        ModuleRuntimeUtils.killShellModuleProcesses(service, module.id)
         ModuleRuntimeUtils.deleteShellModuleRuntime(service, module.id)
     }
 
@@ -347,19 +352,25 @@ object AdbModuleManager {
             return ModuleActionResult(exitCode = -1, stdout = "", stderr = "Cannot read script: ${e.message}")
         }
 
+        return synchronized(ModuleRuntimeUtils.runtimeLock(module.id)) {
         val binder = Shizuku.getBinder() ?: error("Shizuku service is not running.")
         val service = IShizukuService.Stub.asInterface(binder)
         val ctx = runCatching { application.applicationContext }.getOrNull()
         val env = ModuleRuntimeUtils.buildModuleEnvironment(ctx, module, module.directory, useShellRuntimeDir = true)
         val shellDir = ModuleRuntimeUtils.syncModuleToShellRuntime(service, module)
         val wrappedScript = "cd \"\$MODDIR\" || exit 1\n$scriptContent"
+        // Feed the script through stdin. Passing it as one argv element hits Linux
+        // MAX_ARG_STRLEN (128 KB) below the 256 KB module limit and makes $0 == "sh".
         val remote = service.newProcess(
-            arrayOf("sh", "-c", wrappedScript),
+            arrayOf("sh", "-s", module.id),
             env,
             shellDir.absolutePath
         )
-
-        runCatching { ParcelFileDescriptor.AutoCloseOutputStream(remote.getOutputStream()).close() }
+        runCatching {
+            ParcelFileDescriptor.AutoCloseOutputStream(remote.getOutputStream()).use { out ->
+                out.write(wrappedScript.toByteArray(Charsets.UTF_8))
+            }
+        }
         val stdoutPfd = remote.getInputStream()
         val stderrPfd = remote.getErrorStream()
         var stdout = ""
@@ -404,7 +415,8 @@ object AdbModuleManager {
             stderr = stderr
         )
         writeLastLog(logFile, module, script, result, finished)
-        return result
+        result
+        }
     }
 
     fun readModule(directory: File): AdbModule? {

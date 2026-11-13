@@ -1,5 +1,6 @@
 package kerneldroid.nightzuku.util
 
+import android.os.Build
 import android.os.Process
 import android.system.Os
 import android.util.Base64
@@ -107,7 +108,8 @@ object SmartLogEngine {
         return try {
             String(Base64.decode(b64, Base64.DEFAULT), Charsets.UTF_8)
         } catch (_: Throwable) {
-            // Pure-JVM fallback for unit tests where android.util.Base64 may be stubbed
+            // java.util.Base64 is API 26+; never touch it on older devices.
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return ""
             try {
                 String(java.util.Base64.getDecoder().decode(b64), Charsets.UTF_8)
             } catch (_: Throwable) {

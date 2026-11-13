@@ -303,7 +303,7 @@ private class ViewModel(
             if (isRoot) {
                 startRoot()
             } else {
-                startAdb(host!!, port)
+                startAdb(host ?: "127.0.0.1", port)
             }
         } catch (e: Throwable) {
             postResult(e)

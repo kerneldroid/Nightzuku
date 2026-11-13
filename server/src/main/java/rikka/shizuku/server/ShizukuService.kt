@@ -1054,7 +1054,9 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                 record.allowed = !paused
                 pushPermissionState(record, false, caps)
             }
-            syncRuntimePermissionsForUid(uid, false)
+            // Keep Android's runtime permission in sync with the one-time grant; it is revoked
+            // again when the client process dies.
+            syncRuntimePermissionsForUid(uid, true)
         } else {
             clientManager.clearOneTimeGrant(uid)
             configManager.update(uid, uidPackages, ConfigManager.MASK_PERMISSION, ConfigManager.FLAG_ALLOWED)
@@ -1558,7 +1560,13 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                 Service.LOGGER.e(tr, "Failed to add %d:%s to power save temp whitelist", userId, packageName)
             }
 
-            val name = packageName + ClientRouting.providerSuffix(wire)
+            // Manager provider authorities are fixed so native clients keep working with
+            // stealth package ids; client providers stay in their own package.
+            val name = if (packageName == ManagerIdentity.packageName) {
+                ManagerIdentity.AUTHORITY_BASE + ClientRouting.providerSuffix(wire)
+            } else {
+                packageName + ClientRouting.providerSuffix(wire)
+            }
             var provider: IContentProvider? = null
             val token: IBinder? = null
 

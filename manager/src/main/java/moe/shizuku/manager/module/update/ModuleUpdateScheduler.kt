@@ -26,6 +26,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.shizuku.manager.R
+import moe.shizuku.manager.ShizukuSettings
 import moe.shizuku.manager.module.AdbModule
 import moe.shizuku.manager.module.AdbModuleManager
 import moe.shizuku.manager.module.ModuleSettings
@@ -52,6 +53,7 @@ object ModuleUpdateScheduler {
     const val JOB_ID_MODULE_UPDATE_CHECK = 4200
     private const val UPDATE_NOTIFICATION_CHANNEL_ID = "nightzuku_module_updates"
     private const val UPDATE_NOTIFICATION_ID = 4201
+    private const val PREF_LAST_UPDATES = "adb_modules_last_updates"
 
     private const val SIX_HOURS_MS = 6L * 60L * 60L * 1000L
     private const val DAY_MS = 24L * 60L * 60L * 1000L
@@ -70,6 +72,7 @@ object ModuleUpdateScheduler {
      */
     fun syncSchedule(context: Context) {
         val appCtx = context.applicationContext
+        restoreCachedUpdates(appCtx)
         val scheduler = appCtx.getSystemService(JobScheduler::class.java) ?: return
 
         val freq = ModuleSettings.getUpdateFrequency()
@@ -201,6 +204,7 @@ object ModuleUpdateScheduler {
                 }
 
                 _updatesByModule.value = updatesMap
+                persistUpdates(appCtx, updatesMap)
                 NightDogClient.notifyUpdatesChanged(updatesMap, autoUpdatedNames)
 
                 if (ModuleSettings.isUpdateNotificationsEnabled()) {
@@ -233,7 +237,60 @@ object ModuleUpdateScheduler {
                 currentVersionCode = module.versionCode
             )
             _updatesByModule.value = current
+            persistUpdates(appContext(), current)
             NightDogClient.notifyUpdatesChanged(current, emptyList())
+        }
+    }
+
+    private fun appContext(): Context? =
+        runCatching { moe.shizuku.manager.application.applicationContext }.getOrNull()
+
+    private fun restoreCachedUpdates(context: Context) {
+        if (_updatesByModule.value.isNotEmpty()) return
+        val raw = runCatching {
+            ShizukuSettings.getPreferences().getString(PREF_LAST_UPDATES, null)
+        }.getOrNull() ?: return
+        val restored = runCatching {
+            val array = org.json.JSONArray(raw)
+            val map = LinkedHashMap<String, UpdateResult>()
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val id = obj.getString("moduleId")
+                map[id] = UpdateResult(
+                    moduleId = id,
+                    hasUpdate = obj.optBoolean("hasUpdate"),
+                    currentVersion = obj.optString("currentVersion").takeIf { it.isNotEmpty() && it != "null" },
+                    currentVersionCode = if (obj.has("currentVersionCode")) obj.getLong("currentVersionCode") else null,
+                    latestVersion = obj.optString("latestVersion").takeIf { it.isNotEmpty() && it != "null" },
+                    latestVersionCode = if (obj.has("latestVersionCode")) obj.getLong("latestVersionCode") else null,
+                    downloadUrl = obj.optString("downloadUrl").takeIf { it.isNotEmpty() && it != "null" },
+                    changelog = obj.optString("changelog").takeIf { it.isNotEmpty() && it != "null" }
+                )
+            }
+            map
+        }.getOrNull() ?: return
+        _updatesByModule.value = restored
+    }
+
+    private fun persistUpdates(context: Context?, updates: Map<String, UpdateResult>) {
+        if (context == null) return
+        runCatching {
+            val array = org.json.JSONArray()
+            for (result in updates.values) {
+                array.put(org.json.JSONObject().apply {
+                    put("moduleId", result.moduleId)
+                    put("hasUpdate", result.hasUpdate)
+                    put("currentVersion", result.currentVersion)
+                    put("currentVersionCode", result.currentVersionCode)
+                    put("latestVersion", result.latestVersion)
+                    put("latestVersionCode", result.latestVersionCode)
+                    put("downloadUrl", result.downloadUrl)
+                    put("changelog", result.changelog)
+                })
+            }
+            ShizukuSettings.getPreferences().edit()
+                .putString(PREF_LAST_UPDATES, array.toString())
+                .apply()
         }
     }
 

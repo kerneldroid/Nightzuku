@@ -2,6 +2,8 @@ package rikka.shizuku.common.util
 
 import android.content.pm.PackageInfo
 import android.os.Build
+import android.os.IBinder
+import android.os.ServiceManager
 import android.util.Log
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
@@ -58,14 +60,18 @@ object InstalledPackagesCompat {
     @JvmStatic
     fun getInstalledPackages(flags: Long, userId: Int): List<PackageInfo> {
         HiddenApiIntrospector.exemptHiddenApis()
-        try {
-            val packageManager = getContextPackageManager()
-            val method = packageManager.javaClass.getMethod("getInstalledPackagesAsUser", Int::class.java, Int::class.java)
-            val result = invoke(method, packageManager, flags.toInt(), userId)
-            return if (result == null) emptyList() else result as List<PackageInfo>
-        } catch (ignored: NoSuchMethodException) {
-        } catch (e: Exception) {
-            Log.d(TAG, "getInstalledPackagesAsUser failed, falling back to hidden API", e)
+        // ApplicationPackageManager.getInstalledPackagesAsUser only accepts int flags. On API 33+
+        // PackageInfoFlags is 64-bit, so this fast path would silently drop the high bits.
+        if (Build.VERSION.SDK_INT < ANDROID_13) {
+            try {
+                val packageManager = getContextPackageManager()
+                val method = packageManager.javaClass.getMethod("getInstalledPackagesAsUser", Int::class.java, Int::class.java)
+                val result = invoke(method, packageManager, flags.toInt(), userId)
+                return if (result == null) emptyList() else result as List<PackageInfo>
+            } catch (ignored: NoSuchMethodException) {
+            } catch (e: Exception) {
+                Log.d(TAG, "getInstalledPackagesAsUser failed, falling back to hidden API", e)
+            }
         }
 
         val packageManager = getPackageManager()
@@ -105,11 +111,22 @@ object InstalledPackagesCompat {
     }
 
     private fun getPackageManager(): Any {
-        val servicesClass = Class.forName("rikka.hidden.compat.Services")
-        val field = servicesClass.getDeclaredField("packageManager")
-        field.setAccessible(true)
-        val service = field.get(null)
-        return service.javaClass.getMethod("get").invoke(service)!!
+        // The hidden compat holder is renamed/field-stripped by R8 in release builds.
+        // Keep the reflection path for the manager, then fall back to the real system binder
+        // (usable in shizuku_server, which runs as shell/root).
+        try {
+            val servicesClass = Class.forName("rikka.hidden.compat.Services")
+            val field = servicesClass.getDeclaredField("packageManager")
+            field.setAccessible(true)
+            val service = field.get(null)
+            return service.javaClass.getMethod("get").invoke(service)!!
+        } catch (_: Throwable) {
+            val binder: IBinder = ServiceManager.getService("package")
+                ?: throw IllegalStateException("package service is unavailable")
+            val stub = Class.forName("android.content.pm.IPackageManager\$Stub")
+            return stub.getDeclaredMethod("asInterface", IBinder::class.java)
+                .invoke(null, binder)!!
+        }
     }
 
     private fun getContextPackageManager(): Any {

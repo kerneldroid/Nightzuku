@@ -59,61 +59,35 @@ object ShizukuSystemApis {
                 val pmBinder = ShizukuBinderWrapper(rawBinder)
                 sPackageManager = packageManagerStub.getDeclaredMethod("asInterface", IBinder::class.java).invoke(null, pmBinder)
                 sPackageManager?.let { pm ->
+                    val string = String::class.java
+                    val long = Long::class.javaPrimitiveType!!
+                    val int = Int::class.javaPrimitiveType!!
+                    fun signature(vararg types: Class<*>): Array<out Class<*>> = types
                     for (method in pm.javaClass.methods) {
                         when (method.name) {
-                            "getInstalledPackages" -> {
-                                if (method.parameterTypes.isNotEmpty() &&
-                                    (method.parameterTypes[0] == Long::class.javaPrimitiveType ||
-                                        method.parameterTypes[0] == Int::class.javaPrimitiveType)
-                                ) {
-                                    val current = getInstalledPackagesMethod
-                                    if (current == null ||
-                                        (method.parameterTypes[0] == Long::class.javaPrimitiveType &&
-                                            current.parameterTypes[0] != Long::class.javaPrimitiveType) ||
-                                        method.parameterTypes.size > current.parameterTypes.size
-                                    ) {
-                                        getInstalledPackagesMethod = method
-                                    }
-                                }
+                            "getInstalledPackages" -> when {
+                                method.parameterTypes.contentEquals(signature(long, int)) ->
+                                    getInstalledPackagesMethod = method
+                                getInstalledPackagesMethod == null &&
+                                    method.parameterTypes.contentEquals(signature(int, int)) ->
+                                    getInstalledPackagesMethod = method
                             }
-                            "getPackageInfo" -> {
-                                if (method.parameterTypes.size >= 2 &&
-                                    method.parameterTypes[0] == String::class.java &&
-                                    (method.parameterTypes[1] == Long::class.javaPrimitiveType ||
-                                        method.parameterTypes[1] == Int::class.javaPrimitiveType)
-                                ) {
-                                    val current = getPackageInfoMethod
-                                    if (current == null ||
-                                        (method.parameterTypes[1] == Long::class.javaPrimitiveType &&
-                                            current.parameterTypes[1] != Long::class.javaPrimitiveType) ||
-                                        method.parameterTypes.size > current.parameterTypes.size
-                                    ) {
-                                        getPackageInfoMethod = method
-                                    }
-                                }
+                            "getPackageInfo" -> when {
+                                method.parameterTypes.contentEquals(signature(string, long, int)) ->
+                                    getPackageInfoMethod = method
+                                getPackageInfoMethod == null &&
+                                    method.parameterTypes.contentEquals(signature(string, int, int)) ->
+                                    getPackageInfoMethod = method
                             }
-                            "getApplicationInfo" -> {
-                                if (method.parameterTypes.size >= 2 &&
-                                    method.parameterTypes[0] == String::class.java &&
-                                    (method.parameterTypes[1] == Long::class.javaPrimitiveType ||
-                                        method.parameterTypes[1] == Int::class.javaPrimitiveType)
-                                ) {
-                                    val current = getApplicationInfoMethod
-                                    if (current == null ||
-                                        (method.parameterTypes[1] == Long::class.javaPrimitiveType &&
-                                            current.parameterTypes[1] != Long::class.javaPrimitiveType) ||
-                                        method.parameterTypes.size > current.parameterTypes.size
-                                    ) {
-                                        getApplicationInfoMethod = method
-                                    }
-                                }
+                            "getApplicationInfo" -> when {
+                                method.parameterTypes.contentEquals(signature(string, long, int)) ->
+                                    getApplicationInfoMethod = method
+                                getApplicationInfoMethod == null &&
+                                    method.parameterTypes.contentEquals(signature(string, int, int)) ->
+                                    getApplicationInfoMethod = method
                             }
                             "checkPermission" -> {
-                                if (method.parameterTypes.size == 3 &&
-                                    method.parameterTypes[0] == String::class.java &&
-                                    method.parameterTypes[1] == String::class.java &&
-                                    method.parameterTypes[2] == Int::class.javaPrimitiveType
-                                ) {
+                                if (method.parameterTypes.contentEquals(signature(string, string, int))) {
                                     pmCheckPermissionMethod = method
                                 }
                             }
@@ -135,31 +109,31 @@ object ShizukuSystemApis {
                 val permBinder = ShizukuBinderWrapper(rawBinder)
                 sPermissionManager = permManagerStub.getDeclaredMethod("asInterface", IBinder::class.java).invoke(null, permBinder)
                 sPermissionManager?.let { pm ->
+                    val string = String::class.java
+                    val int = Int::class.javaPrimitiveType!!
+                    fun signature(vararg types: Class<*>): Array<out Class<*>> = types
                     for (method in pm.javaClass.methods) {
                         when (method.name) {
-                            "grantRuntimePermission" -> {
-                                if (method.parameterTypes.size >= 3 && method.parameterTypes[0] == String::class.java) {
-                                    val current = grantRuntimePermissionMethod
-                                    if (current == null || method.parameterTypes.size > current.parameterTypes.size) {
-                                        grantRuntimePermissionMethod = method
-                                    }
-                                }
+                            "grantRuntimePermission" -> when {
+                                method.parameterTypes.contentEquals(signature(string, string, string, int)) ->
+                                    grantRuntimePermissionMethod = method
+                                grantRuntimePermissionMethod == null &&
+                                    method.parameterTypes.contentEquals(signature(string, string, int, int)) ->
+                                    grantRuntimePermissionMethod = method
                             }
-                            "revokeRuntimePermission" -> {
-                                if (method.parameterTypes.size >= 3 && method.parameterTypes[0] == String::class.java) {
-                                    val current = revokeRuntimePermissionMethod
-                                    if (current == null || method.parameterTypes.size > current.parameterTypes.size) {
-                                        revokeRuntimePermissionMethod = method
-                                    }
-                                }
+                            "revokeRuntimePermission" -> when {
+                                method.parameterTypes.contentEquals(signature(string, string, string, int, string)) ->
+                                    revokeRuntimePermissionMethod = method
+                                revokeRuntimePermissionMethod == null &&
+                                    method.parameterTypes.contentEquals(signature(string, string, int, int, string)) ->
+                                    revokeRuntimePermissionMethod = method
                             }
-                            "checkPermission" -> {
-                                if (method.parameterTypes.size >= 3 && method.parameterTypes[0] == String::class.java) {
-                                    val current = checkPermissionMethod
-                                    if (current == null || method.parameterTypes.size > current.parameterTypes.size) {
-                                        checkPermissionMethod = method
-                                    }
-                                }
+                            "checkPermission" -> when {
+                                method.parameterTypes.contentEquals(signature(string, string, string, int)) ->
+                                    checkPermissionMethod = method
+                                checkPermissionMethod == null &&
+                                    method.parameterTypes.contentEquals(signature(string, string, int)) ->
+                                    checkPermissionMethod = method
                             }
                         }
                     }

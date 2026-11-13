@@ -14,7 +14,8 @@ import java.io.File
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Executors
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kerneldroid.nightzuku.api.NightProtocol
@@ -92,13 +93,21 @@ class NightServiceEndpoint(
     }
 
     private val logger = Logger("NightEndpoint")
+    private val EXEC_POOL_SIZE = 4
+    private val EXEC_QUEUE_CAPACITY = 64
     private val nightCallbacks = ConcurrentHashMap<Int, IBinder>()
     private val nightCallbackDeaths = ConcurrentHashMap<Int, IBinder.DeathRecipient>()
     private val callbackUids = ConcurrentHashMap<Int, Int>()
     private val activeExecCalls = ConcurrentHashMap<ExecCallKey, ActiveExecHandle>()
-    private val execPool = Executors.newCachedThreadPool { r ->
-        Thread(r, "night-exec").apply { isDaemon = true }
-    }
+    private val execPool = ThreadPoolExecutor(
+        EXEC_POOL_SIZE,
+        EXEC_POOL_SIZE,
+        30L,
+        TimeUnit.SECONDS,
+        ArrayBlockingQueue(EXEC_QUEUE_CAPACITY),
+        { r -> Thread(r, "night-exec").apply { isDaemon = true } },
+        ThreadPoolExecutor.CallerRunsPolicy()
+    )
 
     init {
         attachInterface(null, NightProtocol.DESCRIPTOR)

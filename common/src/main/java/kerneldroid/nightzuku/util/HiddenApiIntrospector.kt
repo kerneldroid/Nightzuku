@@ -2,7 +2,6 @@ package kerneldroid.nightzuku.util
 
 import android.os.Build
 import android.os.IBinder
-import java.lang.reflect.Executable
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 import java.util.concurrent.atomic.AtomicBoolean
@@ -92,8 +91,6 @@ object HiddenApiIntrospector {
                 if (rawList != null) {
                     for (item in rawList) {
                         if (item is Method) {
-                            collected[methodKey(item)] = item
-                        } else if (item is Executable && item is Method) {
                             collected[methodKey(item)] = item
                         }
                     }

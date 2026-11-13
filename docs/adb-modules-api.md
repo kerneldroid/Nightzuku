@@ -79,7 +79,7 @@ Safety limits:
 
 ## Runtime Environment
 
-Scripts run through Nightzuku server process creation (`sh /path/to/module/action.sh` or `sh /path/to/module/service.sh`) with the module directory as the working directory.
+Scripts run through Nightzuku server process creation with the script fed to `sh -s <module-id>` over stdin and the module directory as the working directory. This avoids the 128 KB `argv` limit and keeps `$0` set to the module id.
 
 Environment variables injected into every script execution:
 
@@ -96,7 +96,7 @@ NIGHTZUKU_HOST_VERSION=<manager_version_name>
 NIGHTZUKU_HOST_VERSION_CODE=<manager_version_code>
 NIGHTZUKU_MODULES_API=2
 NIGHTZUKU_BINDER_DESCRIPTOR=kerneldroid.nightzuku.INightService
-NIGHTZUKU_PROVIDER_AUTHORITY=kerneldroid.nightzuku.nightzuku
+NIGHTZUKU_PROVIDER_AUTHORITY=kerneldroid.nightzuku.shizuku
 NIGHTZUKU_SIGNER_SHA256=<manager signing certificate SHA-256>
 NIGHTZUKU_SESSION_TOKEN=<64-char HMAC-SHA256 token bound to module id>
 ```
@@ -114,7 +114,7 @@ Third-party forks (such as "Shizuku Next") sometimes copy Nightzuku's module UI 
 3. **Live Binder IPC Challenge (`verifyNightzukuHost`)**:
    - **Shell (`nightzuku-guard.sh`)**: Calls:
      ```sh
-     content call --uri content://kerneldroid.nightzuku.nightzuku \
+     content call --uri content://kerneldroid.nightzuku.shizuku \
        --method verifyNightzukuHost \
        --arg "guard-probe"
      ```

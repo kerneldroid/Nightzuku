@@ -105,12 +105,13 @@ log "installing APKs"
 "$ADB" install -g "$MANAGER_APK" >/dev/null
 "$ADB" install -g "$TEST_APK" >/dev/null
 
-log "installing the ADB test module"
-tar -C test-modules -cf - adb-test-module \
-    | adb_shell "run-as ${MANAGER_PKG} sh -c 'mkdir -p files/adb_modules && cd files/adb_modules && rm -rf adb-test-module && tar -xf -'"
+if [ "$SCREEN" = "phone" ]; then
+    log "installing the ADB test module"
+    tar -C test-modules -cf - adb-test-module \
+        | adb_shell "run-as ${MANAGER_PKG} sh -c 'mkdir -p files/adb_modules && cd files/adb_modules && rm -rf adb-test-module && tar -xf -'"
 
-log "trusting the test module and enabling full module access"
-adb_shell "run-as ${MANAGER_PKG} sh -c 'mkdir -p /data/user_de/0/${MANAGER_PKG}/shared_prefs && cat > /data/user_de/0/${MANAGER_PKG}/shared_prefs/settings.xml'" <<'XML'
+    log "trusting the test module and enabling full module access"
+    adb_shell "run-as ${MANAGER_PKG} sh -c 'mkdir -p /data/user_de/0/${MANAGER_PKG}/shared_prefs && cat > /data/user_de/0/${MANAGER_PKG}/shared_prefs/settings.xml'" <<'XML'
 <?xml version='1.0' encoding='utf-8' standalone='yes' ?>
 <map>
     <string name="adb_modules_access_mode">full</string>
@@ -119,6 +120,7 @@ adb_shell "run-as ${MANAGER_PKG} sh -c 'mkdir -p /data/user_de/0/${MANAGER_PKG}/
     </set>
 </map>
 XML
+fi
 
 log "pre-granting shizutest in the server config"
 TEST_UID="$(adb_shell pm list packages -U "$TEST_PKG" | tr -d '\r' \
@@ -132,6 +134,8 @@ adb_shell "cat > /data/user_de/0/com.android.shell/shizuku.json" <<JSON
 {"version":3,"packages":[{"uid":${TEST_UID},"flags":2,"packages":["${TEST_PKG}"],"lastConnectedAt":0}],"nightDogEnabled":false,"accessPaused":false}
 JSON
 adb_shell chmod 600 /data/user_de/0/com.android.shell/shizuku.json
+
+adb_shell "rm -f /data/local/tmp/nightzuku_smart.log /data/user_de/0/com.android.shell/nightzuku_smart.log" || true
 
 log "starting the Nightzuku server as shell"
 MANAGER_APK_PATH="$(adb_shell pm path "$MANAGER_PKG" | head -n 1 | sed 's/^package://' | tr -d '\r')"
@@ -165,15 +169,15 @@ case "$SCREEN" in
         SETTINGS_SHOT="settings.png"
         ;;
     wearos)
-        MAIN_SHOT="wearos_main_scaled.png"
-        APPS_SHOT="wearos_apps.png"
-        MODULES_SHOT="wearos_modules_scaled.png"
-        SETTINGS_SHOT="wearos_settings_scaled.png"
+        MAIN_SHOT="main.png"
+        APPS_SHOT="apps.png"
+        MODULES_SHOT=""
+        SETTINGS_SHOT="settings.png"
         ;;
     tv)
         MAIN_SHOT="main.png"
         APPS_SHOT=""
-        MODULES_SHOT="modules.png"
+        MODULES_SHOT=""
         SETTINGS_SHOT="settings.png"
         ;;
     *)
@@ -182,8 +186,18 @@ case "$SCREEN" in
         ;;
 esac
 
+dismiss_dialogs() {
+    for _ in 1 2 3 4; do
+        if tap_text "Got it"; then sleep 1; continue; fi
+        if tap_text "Close"; then sleep 1; continue; fi
+        break
+    done
+}
+
 log "capturing home"
 start_activity moe.shizuku.manager.MainActivity
+sleep 2
+dismiss_dialogs
 wait_text "is running" 60 || log "warning: service status text not found"
 if [ "$SCREEN" != "wearos" ]; then
     wait_text "Authorized 1 application" 30 || log "warning: authorized app count not confirmed"
@@ -199,15 +213,9 @@ if [ -n "$APPS_SHOT" ]; then
     shot "$APPS_SHOT"
 fi
 
-log "capturing ADB Modules"
-start_activity moe.shizuku.manager.module.ModulesActivity
-if [ "$SCREEN" = "wearos" ]; then
-    # On the small round display the module cards sit below the top action buttons.
-    sleep 2
-    scroll_once
-    sleep 2
-    scroll_once
-else
+if [ -n "$MODULES_SHOT" ]; then
+    log "capturing ADB Modules"
+    start_activity moe.shizuku.manager.module.ModulesActivity
     if ! wait_text "ADB Test Module" 20; then
         for _ in 1 2 3; do
             scroll_once
@@ -215,9 +223,9 @@ else
             wait_text "ADB Test Module" 5 && break
         done
     fi
+    sleep 2
+    shot "$MODULES_SHOT"
 fi
-sleep 2
-shot "$MODULES_SHOT"
 
 if [ "$SCREEN" = "phone" ]; then
     log "capturing Module WebUI"
@@ -237,7 +245,7 @@ if [ "$SCREEN" = "wearos" ]; then
     log "capturing the Wear OS theme dialog"
     if tap_text "Dark theme"; then
         sleep 2
-        shot wearos_dialog.png
+        shot dialog.png
     else
         log "warning: could not open the theme dialog"
     fi

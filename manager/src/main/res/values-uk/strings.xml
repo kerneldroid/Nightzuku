@@ -404,7 +404,7 @@
     <string name="app_management_search_empty">Відповідних застосунків не знайдено.</string>
     <string name="app_management_section_native">Нативний протокол (Nightzuku API)</string>
     <string name="app_management_section_legacy">Застарілий протокол (Shizuku API)</string>
-    <string name="app_management_hold_hint">Утримуйте застосунок 3–4 сек. для глибокого налаштування</string>
+    <string name="app_management_hold_hint">Утримуйте застосунок 2 сек. для глибокого налаштування</string>
     <string name="app_management_badge_native">Native Wire</string>
     <string name="app_management_badge_legacy">Legacy Wire</string>
     <string name="app_control_title">Контроль застосунку</string>

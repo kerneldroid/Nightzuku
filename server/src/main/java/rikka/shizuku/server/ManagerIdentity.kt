@@ -12,6 +12,7 @@ import rikka.shizuku.server.util.Android17Compat
 object ManagerIdentity {
 
     const val DISCOVERY_AUTHORITY = "kerneldroid.nightzuku.manager"
+    const val AUTHORITY_BASE = "kerneldroid.nightzuku"
 
     @Volatile
     var packageName: String = ServerConstants.MANAGER_APPLICATION_ID

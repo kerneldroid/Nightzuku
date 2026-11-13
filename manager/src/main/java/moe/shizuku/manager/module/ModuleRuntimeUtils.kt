@@ -49,6 +49,28 @@ object ModuleRuntimeUtils {
 
     val MODULE_ID_REGEX = Regex("[A-Za-z][A-Za-z0-9._-]{1,63}")
 
+    private val runtimeLocks = java.util.concurrent.ConcurrentHashMap<String, Any>()
+
+    /** Serializes staging, script execution and write-back for one module. */
+    fun runtimeLock(moduleId: String): Any = runtimeLocks.getOrPut(moduleId) { Any() }
+
+    /** Stops scripts and child processes still running from the shell staging directory. */
+    fun killShellModuleProcesses(service: IShizukuService?, moduleId: String) {
+        if (service == null || !MODULE_ID_REGEX.matches(moduleId)) return
+        val path = "$SHELL_MODULES_ROOT/$moduleId"
+        runCatching {
+            val remote = service.newProcess(
+                arrayOf("sh", "-c", "pkill -f \"$path\" 2>/dev/null || true"),
+                null,
+                "/data/local/tmp"
+            )
+            runCatching { ParcelFileDescriptor.AutoCloseOutputStream(remote.getOutputStream()).close() }
+            runCatching { remote.getInputStream()?.close() }
+            runCatching { remote.getErrorStream()?.close() }
+            remote.waitForTimeout(3L, TimeUnit.SECONDS.name)
+        }
+    }
+
     @Volatile
     private var cachedSignerSha256: String? = null
 
@@ -506,7 +528,7 @@ object ModuleRuntimeUtils {
         rootDir.walkTopDown().forEach { file ->
             val relPath = relativePathOrNull(rootDir, file) ?: return@forEach
             if (relPath.isEmpty()) return@forEach
-            if (relPath == "logs/last_action.log" || relPath == "logs/last_service.log") return@forEach
+            if (relPath == "logs/action-last.log" || relPath == "logs/service-last.log") return@forEach
 
             fileCount++
             if (fileCount > MAX_SYNC_FILES) return@forEach
@@ -610,6 +632,7 @@ object ModuleRuntimeUtils {
         val header = ByteArray(TAR_BLOCK_SIZE)
         var entryCount = 0
         var totalBytes = 0L
+        val seenPaths = HashSet<String>()
 
         while (true) {
             if (!readFully(input, header, TAR_BLOCK_SIZE)) break
@@ -638,6 +661,8 @@ object ModuleRuntimeUtils {
 
             if (typeFlag == '5' || fullName.endsWith("/")) {
                 if (!skipEntry) {
+                    seenPaths.add(normalized)
+
                     runCatching {
                         val clean = cleanRelativePath(normalized)
                         val dir = File(targetDir, clean)
@@ -648,6 +673,7 @@ object ModuleRuntimeUtils {
                 skipTarPayload(input, size)
             } else if (typeFlag == '0' || typeFlag == '\u0000') {
                 val outFile = if (!skipEntry) {
+                    seenPaths.add(normalized)
                     runCatching {
                         val clean = cleanRelativePath(normalized)
                         val file = File(targetDir, clean)
@@ -700,6 +726,19 @@ object ModuleRuntimeUtils {
             } else {
                 // Ignore symlinks ('2'), hardlinks ('1'), device nodes, or PAX headers for safety
                 skipTarPayload(input, size)
+            }
+        }
+
+
+        // Mirror deletions made by module scripts back into the manager sandbox.
+        runCatching {
+            val protected = setOf("module.prop", ".source.prop", ATTESTATION_FILE_NAME, "disable")
+            targetDir.walkTopDown().forEach { file ->
+                if (file == targetDir || !file.isFile) return@forEach
+                val rel = file.relativeTo(targetDir).invariantSeparatorsPath
+                if (rel.startsWith("logs/") || rel in protected || rel in seenPaths) return@forEach
+                if (file.parentFile?.name?.startsWith("logs") == true) return@forEach
+                file.delete()
             }
         }
     }

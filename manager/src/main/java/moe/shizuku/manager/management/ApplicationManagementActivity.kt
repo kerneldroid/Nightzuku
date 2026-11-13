@@ -193,9 +193,11 @@ class ApplicationManagementActivity : AppActivity() {
 
             if (isWatch || isTv) {
                 LaunchedEffect(Unit) {
-                    while (true) {
-                        delay(PERMISSION_POLL_MS)
-                        permissionTick.intValue++
+                    this@ApplicationManagementActivity.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                        while (true) {
+                            delay(PERMISSION_POLL_MS)
+                            permissionTick.intValue++
+                        }
                     }
                 }
             }
@@ -283,6 +285,15 @@ class ApplicationManagementActivity : AppActivity() {
                 }
                 val onToggle = remember(viewModel) {
                     { row: AppRow -> viewModel.toggle(row.uid, row.packageName) }
+                }
+
+                LaunchedEffect(Unit) {
+                    this@ApplicationManagementActivity.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                        while (true) {
+                            delay(PERMISSION_POLL_MS)
+                            viewModel.refreshGranted()
+                        }
+                    }
                 }
 
                 BackHandler(enabled = activeControlKey != null || searchQuery.isNotEmpty()) {
@@ -529,6 +540,7 @@ class ApplicationManagementActivity : AppActivity() {
     }
 
     private fun selectAll(packages: List<PackageInfo>, granted: Boolean) {
+        val failures = ArrayList<String>(4)
         packages.forEach { packageInfo ->
             val applicationInfo = packageInfo.applicationInfo ?: return@forEach
             val uid = applicationInfo.uid
@@ -539,8 +551,18 @@ class ApplicationManagementActivity : AppActivity() {
                 } else {
                     AuthorizationManager.revoke(packageName, uid)
                 }
-            } catch (_: SecurityException) {
+            } catch (t: SecurityException) {
+                failures += "${packageName}: ${t.message ?: "SecurityException"}"
+            } catch (t: Throwable) {
+                failures += "${packageName}: ${t.message ?: t.javaClass.simpleName}"
             }
+        }
+        if (failures.isNotEmpty()) {
+            Toast.makeText(
+                this,
+                "Failed for ${failures.size} app(s): ${failures.first()}",
+                Toast.LENGTH_LONG
+            ).show()
         }
         permissionTick.intValue++
         viewModel.load(onlyCount = true)

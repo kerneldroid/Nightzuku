@@ -7,6 +7,9 @@ This project tracks the latest Android platform developments, including Android 
 Upstream project reference: <https://github.com/RikkaApps/Shizuku>
 
 > [!NOTE]
+> `Nightzuku-private` is archived; development is back in this main repository.
+
+> [!NOTE]
 > **Migration from Shizuku is smooth — you do not need to uninstall the official Shizuku app.** Nightzuku no longer declares the legacy `moe.shizuku.manager.permission.API_V23` permission (it is explicitly removed from the merged manifest), so there is no permission or authority conflict with the official Shizuku manager. See [Dual-wire architecture & migration](#dual-wire-architecture--migration).
 
 ## Fork additions
@@ -90,17 +93,12 @@ Nightzuku acts as a proxy, receiving requests from the app and forwarding them t
   ### Wear OS UI (Native Material 3)
   <table>
     <tr>
-      <td align="center"><img src="screenshots/wearos/wearos_main_scaled.png" width="200" /><br/><b>Main Screen</b></td>
-      <td align="center"><img src="screenshots/wearos/wearos_apps.png" width="200" /><br/><b>Authorized Apps</b></td>
-    </tr>
-    <tr>
-      <td align="center"><img src="screenshots/wearos/wearos_modules_scaled.png" width="200" /><br/><b>ADB Modules</b></td>
-      <td align="center"><img src="screenshots/wearos/wearos_settings_scaled.png" width="200" /><br/><b>Settings</b></td>
-    </tr>
-    <tr>
-      <td colspan="2" align="center"><img src="screenshots/wearos/wearos_dialog.png" width="200" /><br/><b>Theme Dialog</b></td>
+      <td align="center"><img src="screenshots/wearos/main.png" width="200" /><br/><b>Main Screen</b></td>
+      <td align="center"><img src="screenshots/wearos/settings.png" width="200" /><br/><b>Settings</b></td>
     </tr>
   </table>
+
+  > ADB Modules are intentionally not offered on Wear OS. The mobile module UI is available on phones only.
 
   ### Android TV UI (Native Material 3)
   <table>
@@ -108,8 +106,7 @@ Nightzuku acts as a proxy, receiving requests from the app and forwarding them t
       <td colspan="2" align="center"><img src="screenshots/tv/main.png" width="500" /><br/><b>Main Screen</b></td>
     </tr>
     <tr>
-      <td align="center"><img src="screenshots/tv/modules.png" width="400" /><br/><b>ADB Modules</b></td>
-      <td align="center"><img src="screenshots/tv/settings.png" width="400" /><br/><b>Settings</b></td>
+      <td colspan="2" align="center"><img src="screenshots/tv/settings.png" width="400" /><br/><b>Settings</b></td>
     </tr>
   </table>
 </details>
