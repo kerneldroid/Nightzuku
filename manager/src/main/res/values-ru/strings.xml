@@ -479,14 +479,45 @@
     <string name="modules_webview_error_title">Ошибка WebView</string>
     <string name="modules_webview_error_message">WebView не поддерживается или завершился с ошибкой при инициализации на этом устройстве Wear OS.\n\n%1$s</string>
     <!-- Smart Logs -->
-    <string name="smart_log_dialog_title">Smart Logs — Умный снимок</string>
+    <string name="smart_log_dialog_title">Smart Logs</string>
     <string name="smart_log_dialog_message_single">Упс, что-то пошло не так. Если все нормально — закрой, если плохо — скопируй и отправь в Issues / PR.</string>
     <string name="smart_log_dialog_message_multiple">Упс, что-то пошло не так. Появляются множество ошибок (%1$d) — они соединены в один лог и разделены символами и временем снимка. Если все нормально — закрой, если плохо — скопируй и отправь в Issues / PR.</string>
-    <string name="smart_log_window_header">Умный лог (снимков: %1$d)</string>
+    <string name="smart_log_window_header">Захвачено снимков: %1$d</string>
+    <string name="smart_log_window_header_clean">Диагностический снимок</string>
     <string name="smart_log_button_copy">Скопировать</string>
     <string name="smart_log_button_clear">Очистить</string>
     <string name="smart_log_button_close">Закрыть</string>
     <string name="smart_log_button_open_issues">Отправить в Issues / PR</string>
     <string name="smart_log_home_summary_clean">Smart Logs активен: ошибок не обнаружено (нажмите для просмотра снимка)</string>
     <string name="smart_log_home_summary_errors">Smart Logs перехватил снимков ошибок: %1$d (всего событий: %2$d) — нажмите для открытия</string>
+    <!-- Security & Access -->
+    <string name="settings_security">Безопасность и доступ</string>
+    <string name="settings_category_security_summary">Изоляция пользователей, защита Knox и выдача Binder</string>
+    <string name="settings_security_server_stopped_title">Сервер не запущен</string>
+    <string name="settings_security_server_stopped_summary">Запустите сервер Nightzuku для настройки политик безопасности и доступа пользователей.</string>
+    <string name="settings_security_section_protection">Защита</string>
+    <string name="settings_security_pause_access_title">Приостановить доступ всех клиентов</string>
+    <string name="settings_security_pause_access_summary">Временно отклонять вызовы Binder, shell и UserService для всех клиентских приложений</string>
+    <string name="settings_security_block_isolated_title">Блокировать Knox и изолированные профили</string>
+    <string name="settings_security_block_isolated_summary">Не сканировать и не выдавать Binder в Samsung Knox, Защищённую папку, Частное пространство, Dual Messenger и клоны</string>
+    <string name="settings_security_section_delivery">Выдача Binder и протокол</string>
+    <string name="settings_security_delivery_mode_title">Режим выдачи Binder</string>
+    <string name="settings_security_delivery_all_declared">Все приложения с API</string>
+    <string name="settings_security_delivery_all_declared_summary">Выдавать Binder всем приложениям в разрешённых профилях, объявившим Nightzuku или Shizuku API</string>
+    <string name="settings_security_delivery_authorized_only">Только авторизованные</string>
+    <string name="settings_security_delivery_authorized_only_summary">Проактивно выдавать Binder и добавлять в белый список только уже разрешённые приложения</string>
+    <string name="settings_security_legacy_wire_title">Разрешить устаревший протокол Shizuku</string>
+    <string name="settings_security_legacy_wire_summary">Отключите, чтобы принимать подключения только от нативных клиентов Nightzuku API</string>
+    <string name="settings_security_section_users">Доступ пользователей и профилей</string>
+    <string name="settings_security_allow_work_profile_title">Разрешить рабочий профиль</string>
+    <string name="settings_security_allow_work_profile_summary">Разрешить выдачу Binder и список приложений для управляемого рабочего профиля</string>
+    <string name="settings_security_allow_secondary_users_title">Разрешить других пользователей</string>
+    <string name="settings_security_allow_secondary_users_summary">Разрешить выдачу Binder для дополнительных пользователей Android</string>
+    <string name="settings_security_section_detected_users">Обнаруженные пользователи Android</string>
+    <string name="settings_security_user_kind_primary">Основной пользователь</string>
+    <string name="settings_security_user_kind_work">Рабочий профиль</string>
+    <string name="settings_security_user_kind_isolated">Изолированный контейнер (Knox / Частный / Клон)</string>
+    <string name="settings_security_user_kind_secondary">Дополнительный пользователь</string>
+    <string name="settings_security_user_always_allowed">Всегда разрешён</string>
+    <string name="settings_security_user_blocked_by_policy">Заблокирован политикой изоляции</string>
 </resources>

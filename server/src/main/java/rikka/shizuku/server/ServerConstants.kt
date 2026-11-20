@@ -28,4 +28,7 @@ object ServerConstants {
     const val BINDER_TRANSACTION_requestBinderForClient = 10014
     const val BINDER_TRANSACTION_getSmartLogs = 10015
     const val BINDER_TRANSACTION_clearSmartLogs = 10016
+    const val BINDER_TRANSACTION_getSecurityPolicy = 10017
+    const val BINDER_TRANSACTION_setSecurityPolicy = 10018
+    const val BINDER_TRANSACTION_getDeviceUsers = 10019
 }

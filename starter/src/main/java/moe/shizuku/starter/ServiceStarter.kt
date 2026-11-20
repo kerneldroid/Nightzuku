@@ -87,12 +87,28 @@ object ServiceStarter {
             Looper.prepareMainLooper()
         }
 
+        val effectiveArgs = run {
+            val argvFile = args.firstOrNull { it.startsWith(ArgvTrampoline.ARG_FILE_PREFIX) }
+                ?.substring(ArgvTrampoline.ARG_FILE_PREFIX.length)
+            if (!argvFile.isNullOrBlank()) {
+                try {
+                    ArgvPayloadCodec.readAndDelete(argvFile).args
+                } catch (t: Throwable) {
+                    Log.e(TAG, "Failed to read argv payload file", t)
+                    System.exit(1)
+                    return
+                }
+            } else {
+                args
+            }
+        }
+
         var launchToken: String? = null
         var targetPackage: String? = null
         var targetUid: Int = -1
         var expectedSigners: Set<String> = emptySet()
 
-        for (arg in args) {
+        for (arg in effectiveArgs) {
             when {
                 arg.startsWith("--token=") -> launchToken = arg.substring("--token=".length)
                 arg.startsWith("--package=") -> targetPackage = arg.substring("--package=".length)
@@ -120,7 +136,7 @@ object ServiceStarter {
         }
 
         UserService.setTag(TAG)
-        val result = UserService.create(args)
+        val result = UserService.create(effectiveArgs)
 
         if (result == null) {
             System.exit(1)

@@ -2,6 +2,7 @@ package rikka.shizuku.server
 
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Bundle
 import android.os.Process
 import android.system.Os
 import android.util.AtomicFile
@@ -117,8 +118,8 @@ class ShizukuConfigManager : ConfigManager() {
         }
 
         // Import pre-existing runtime permission grants for Nightzuku's own declared permission
-        // when no explicit decision is stored in the config database yet.
-        for (userId in UsersCompat.getUserIdsNoThrow()) {
+        // only within users allowed by the active user isolation policy (never probing Knox/isolated profiles).
+        for (userId in getAllowedUserIds()) {
             for (pi in InstalledPackagesCompat.getInstalledPackagesNoThrow(
                 PackageManager.GET_PERMISSIONS.toLong(), userId
             )) {
@@ -422,6 +423,122 @@ class ShizukuConfigManager : ConfigManager() {
         persistNowLocked()
     }
 
+    @Synchronized
+    fun isUserAllowed(userId: Int): Boolean {
+        if (userId == 0) return true
+        val userInfo = UsersCompat.getUserInfo(userId)
+        val kind = if (userInfo != null) {
+            UserAccessPolicy.classify(userInfo)
+        } else {
+            UserAccessPolicy.classify(userId, null, 0, null)
+        }
+        return UserAccessPolicy.isUserAllowed(userId, kind, config)
+    }
+
+    @Synchronized
+    fun getAllowedUserIds(): List<Int> {
+        val users = runCatching {
+            UsersCompat.getUsers(excludePartial = true, excludeDying = true, excludePreCreated = true)
+        }.getOrNull()
+        if (users.isNullOrEmpty()) {
+            return listOf(0)
+        }
+        val allowed = LinkedHashSet<Int>()
+        for (user in users) {
+            val kind = UserAccessPolicy.classify(user)
+            if (UserAccessPolicy.isUserAllowed(user.id, kind, config)) {
+                allowed.add(user.id)
+            }
+        }
+        if (allowed.isEmpty()) {
+            allowed.add(0)
+        }
+        return allowed.toList()
+    }
+
+    @Synchronized
+    fun getDeviceUsersSnapshot(): List<UserAccessPolicy.DeviceUserSnapshot> {
+        val users = runCatching {
+            UsersCompat.getUsers(excludePartial = true, excludeDying = true, excludePreCreated = true)
+        }.getOrNull()
+        if (users.isNullOrEmpty()) {
+            return listOf(
+                UserAccessPolicy.DeviceUserSnapshot(
+                    userId = 0,
+                    name = "Owner",
+                    kind = UserAccessPolicy.ProfileKind.PRIMARY,
+                    allowed = true
+                )
+            )
+        }
+        return users.sortedBy { it.id }.map { user ->
+            val kind = UserAccessPolicy.classify(user)
+            val label = user.name?.takeIf { it.isNotBlank() } ?: "User ${user.id}"
+            UserAccessPolicy.DeviceUserSnapshot(
+                userId = user.id,
+                name = label,
+                kind = kind,
+                allowed = UserAccessPolicy.isUserAllowed(user.id, kind, config)
+            )
+        }
+    }
+
+    @Synchronized
+    fun shouldDeliverBinder(wire: ClientRouting.Wire, isAuthorized: Boolean): Boolean {
+        return UserAccessPolicy.shouldDeliverBinder(wire, config, isAuthorized)
+    }
+
+    @Synchronized
+    fun isLegacyWireAllowed(): Boolean = config.allowLegacyWire
+
+    @Synchronized
+    fun getSecurityPolicyBundle(): Bundle {
+        return Bundle().apply {
+            putBoolean("accessPaused", config.accessPaused)
+            putBoolean("blockIsolatedProfiles", config.blockIsolatedProfiles)
+            putBoolean("allowWorkProfile", config.allowWorkProfile)
+            putBoolean("allowSecondaryUsers", config.allowSecondaryUsers)
+            putBoolean("allowLegacyWire", config.allowLegacyWire)
+            putInt("binderDeliveryMode", UserAccessPolicy.sanitizeDeliveryMode(config.binderDeliveryMode))
+            putIntArray("allowedUserIds", config.allowedUserIds?.distinct()?.sorted()?.toIntArray() ?: IntArray(0))
+        }
+    }
+
+    @Synchronized
+    fun updateSecurityPolicy(bundle: Bundle): Boolean {
+        val newBlockIsolated = bundle.getBoolean("blockIsolatedProfiles", config.blockIsolatedProfiles)
+        val newAllowWork = bundle.getBoolean("allowWorkProfile", config.allowWorkProfile)
+        val newAllowSecondary = bundle.getBoolean("allowSecondaryUsers", config.allowSecondaryUsers)
+        val newAllowLegacy = bundle.getBoolean("allowLegacyWire", config.allowLegacyWire)
+        val newDeliveryMode = UserAccessPolicy.sanitizeDeliveryMode(
+            bundle.getInt("binderDeliveryMode", config.binderDeliveryMode)
+        )
+        val newAllowedUsers = bundle.getIntArray("allowedUserIds")
+            ?.filter { it > 0 }
+            ?.distinct()
+            ?.sorted()
+            ?.toMutableList()
+            ?: (config.allowedUserIds ?: ArrayList())
+
+        val changed = config.blockIsolatedProfiles != newBlockIsolated ||
+            config.allowWorkProfile != newAllowWork ||
+            config.allowSecondaryUsers != newAllowSecondary ||
+            config.allowLegacyWire != newAllowLegacy ||
+            config.binderDeliveryMode != newDeliveryMode ||
+            (config.allowedUserIds ?: emptyList()) != newAllowedUsers
+
+        if (changed) {
+            config.blockIsolatedProfiles = newBlockIsolated
+            config.allowWorkProfile = newAllowWork
+            config.allowSecondaryUsers = newAllowSecondary
+            config.allowLegacyWire = newAllowLegacy
+            config.binderDeliveryMode = newDeliveryMode
+            config.allowedUserIds = newAllowedUsers
+            persistNowLocked()
+        }
+        return changed
+    }
+
     companion object {
 
         private val GSON_IN: Gson = GsonBuilder().create()
@@ -455,6 +572,10 @@ class ShizukuConfigManager : ConfigManager() {
                 if (packages == null) {
                     packages = ArrayList()
                 }
+                if (allowedUserIds == null) {
+                    allowedUserIds = ArrayList()
+                }
+                binderDeliveryMode = UserAccessPolicy.sanitizeDeliveryMode(binderDeliveryMode)
             }
         }
 

@@ -1,84 +1,106 @@
 # Nightzuku
 
-**Nightzuku** is a customized modern fork of **Shizuku**, maintained by kerneldroid. It provides a robust, high-performance interface for applications to use system APIs directly with elevated permissions (root/ADB).
-
-This project tracks the latest Android platform developments, including Android 16/17 target stability, introduces a revamped Modern Material 3 Expressive UI using Jetpack Compose, a **dual-wire** server/client protocol, and a full ADB-backed ZIP modules runner.
-
-Upstream project reference: <https://github.com/RikkaApps/Shizuku>
+**Nightzuku** (`kerneldroid.nightzuku`) is an Android privileged Binder proxy and module execution runtime forked from [Shizuku](https://github.com/RikkaApps/Shizuku). It exposes Android system APIs directly to authorized client applications over Binder IPC under ADB (`uid=2000`) or root (`uid=0`) privileges, avoiding `su` shell spawning overhead.
 
 > [!NOTE]
-> `Nightzuku-private` is archived; development is back in this main repository.
+> Development is consolidated in this repository (`Nightzuku-private` is archived). Nightzuku strips `moe.shizuku.manager.permission.API_V23` from its merged manifest (`tools:node="remove"`) and can coexist with the official Shizuku manager without permission or authority conflicts.
 
-> [!NOTE]
-> **Migration from Shizuku is smooth — you do not need to uninstall the official Shizuku app.** Nightzuku no longer declares the legacy `moe.shizuku.manager.permission.API_V23` permission (it is explicitly removed from the merged manifest), so there is no permission or authority conflict with the official Shizuku manager. See [Dual-wire architecture & migration](#dual-wire-architecture--migration).
+## Architecture & Modules
 
-## Fork additions
+| Module | Language | Responsibility |
+| :--- | :--- | :--- |
+| `:manager` | Kotlin / Jetpack Compose | Material 3 Expressive UI (Phone, Android TV, Wear OS), ADB pairing, Security & Access settings, ADB Modules manager, Smart Logs viewer |
+| `:server` | Kotlin | Privileged `app_process` Binder server (`shizuku_server`), dual-wire IPC, signature pinning, user/profile isolation (`UserAccessPolicy`), `Android17Compat` |
+| `:common` | Kotlin | Shared hidden-API introspector (`HiddenApiIntrospector`), package signature verifier, label sanitizer, `SmartLogEngine` |
+| `:nightdog` | Kotlin | Server heartbeat watchdog (`NightDog`) and system service death/rebind supervisor |
+| `rust/starter` | Rust | Native server supervisor (`libshizuku.so`), process respawn, and crash spooling |
+| `rust/adb-pairing` | Rust | Native TLS / SPAKE2 / HKDF / AES-GCM wireless ADB pairing library (`libadb.so`) |
+| `rust/rish` | Rust | Interactive remote shell client over Shizuku/Nightzuku Binder |
 
-- Jetpack Compose manager UI with Material 3 Expressive components, motion, switches, and rounded icon treatment.
-- Dual-wire server/client protocol: a native zero-stub Nightzuku wire alongside the classic Shizuku wire.
-- Cryptographic SHA-256 package and manager certificate pinning (with Android 9+ `signingCertificateHistory` key-rotation lineage support) across server, `UserService` hosts, and ADB package reconciliation.
-- Global client access pause switch (`accessPaused`), per-UID `UserService` teardown, one-time grant process-death cleanup, and system Settings runtime permission revocation sync.
-- Hardened permission confirmation dialog (`RequestPermissionActivity`) with overlay hiding (`setHideOverlayWindows`), tap-grace window, Unicode/Bidi label sanitization, and shared-UID sibling package disclosure.
-- Android 16/17 target work with current preview SDK/build tooling in this fork (including `Android17Compat` and single-argument `IUserManager.getUsers` fallback).
-- ADB Modules screen for installing and managing ZIP modules with streaming size budgets and isolated shell execution.
-- Module features: `module.prop`, banner, enable/disable switch, `action.sh`, policy-gated `service.sh`, local WebUI, delete, path checks, size limits, output limits, and last-run logs.
-- Module policy settings: Safe mode, Full access, and background action control.
-- Online Module Catalog (GitHub Topics discovery) with downloads count, expressive full-width cards, and OS-scheduled background update checking via `JobScheduler` (`ModuleUpdateScheduler`).
-- Anti-fork host attestation (`verifyNightzukuHost` IPC + `nightzuku-guard.sh` / `nightzuku-guard.js`) so modules built for Nightzuku can detect and block broken third-party forks.
-- NightDog watchdog for server health, system service recovery, local module integrity verification, and privileged update application.
-- Debug test module under `test-modules/adb-test-module.zip`.
+## Dual-Wire IPC Protocol
 
-## Dual-wire architecture & migration
+Nightzuku operates two concurrent Binder wires and routes each client package via `ClientRouting`:
 
-Nightzuku runs a native, zero-stub protocol alongside the classic Shizuku wire, and routes each client to the wire it declares.
+| Wire | Interface / Permission | Characteristics |
+| :--- | :--- | :--- |
+| **Native** | `kerneldroid.nightzuku.INightService` (`kerneldroid.nightzuku.permission.API`) | Flat `Parcel` transactions, per-UID capability bitmasks, guarded `transactRemote`, one-shot `execFast`; zero server-side `moe.shizuku.api` stubs |
+| **Legacy** | `moe.shizuku.server.IShizukuService` (`moe.shizuku.manager.permission.API_V23`) | Backward-compatible Shizuku Binder wire; can be disabled globally in **Settings -> Security & Access** |
 
-- **Native wire** — `kerneldroid.nightzuku.INightService` (`NightClient` / `NightProtocol` / `NightServiceEndpoint`): flat `Parcel` transactions, per-UID capability masks, a guarded `transactRemote`, and a fast one-shot `execFast`. No `moe.shizuku.api` stub classes are required on the server side.
-- **Legacy wire** — the classic Shizuku binder, delivered to clients that still request the legacy permissions.
-- **Routing** — `ClientRouting` decides, per package, which wire(s) a client receives; `TransactGuard` verifies target binders before a transaction is forwarded.
+`TransactGuard` validates target Binders and enforces per-UID capability masks before forwarding any `transactRemote` call.
 
-This is what makes migration calm:
+## Security & Isolation Model
 
-- The legacy `moe.shizuku.manager.permission.API_V23` is **not** declared by Nightzuku (it is stripped via `tools:node="remove"`), so the official Shizuku app and Nightzuku can coexist and do not fight over the same permission/authority.
-- Apps that already integrate the Shizuku API keep working through the legacy wire — you can migrate to the native wire at your own pace.
+| Control | Mechanism | Default State |
+| :--- | :--- | :--- |
+| **Certificate pinning** | SHA-256 signing certificate verification with Android 9+ `signingCertificateHistory` rotation lineage across manager, clients, and `UserService` hosts | Always enforced |
+| **Isolated profile protection** | `UserAccessPolicy` classifies and blocks Samsung Knox, Secure Folder (`100–199`), Dual Messenger (`95–96`), Android 15+ Private Space, and OEM Clone profiles (`128`, `999`) from enumeration, temp-whitelisting, and Binder dispatch | Enabled (blocked) |
+| **Multi-user scope** | Configurable per-profile (Work Profile, Secondary Users) and per-user ID access via **Settings -> Security & Access** (`BINDER_TRANSACTION_getSecurityPolicy` / `setSecurityPolicy` / `getDeviceUsers`) | Primary user (`0`) only |
+| **Binder delivery scope** | Selectable between all declared API clients and pre-authorized apps only (`binderDeliveryMode`) | All declared API apps |
+| **Global access pause** | `accessPaused` immediately rejects non-manager Binder, shell, and `UserService` transactions | Off |
+| **Permission dialog hardening** | `setHideOverlayWindows`, tap-grace delay, Unicode/Bidi label sanitization, shared-UID sibling disclosure, 5-minute prompt nonce window | Always enforced |
+| **Smart Logs filtering** | Cross-layer crash/QPR/starter snapshot engine with strict OS/HWUI/OEM logcat noise filtering (`SmartLogEngine.filterProcessLogcat`) | Active |
+| **Extended `app_process` cmdline** | `LargeCommandTransport` + `ArgvTrampoline` transparently lifts the 128 KiB Linux `MAX_ARG_STRLEN` limit up to `4 MiB` for `app_process` and `sh -c`; advertised via `getServerDiagnostics` (`maxAppProcessCmdlineBytes`, `supportsExtendedAppProcessCmdline`) | Active |
+
+## Platform Support
+
+| Platform | UI Stack | ADB Modules & Catalog | Security & Access |
+| :--- | :--- | :--- | :--- |
+| **Phone / Tablet** | Jetpack Compose Material 3 Expressive | Supported (local ZIP + GitHub Catalog + Virtual HTTPS WebUI) | Full UI in Settings |
+| **Android TV** | `androidx.tv.material3` | Excluded | Server-enforced |
+| **Wear OS** | `androidx.wear.compose:compose-material3` | Excluded | Server-enforced |
 
 ## Documentation
 
-- [ADB Modules guide](docs/adb-modules-guide.md)
-- [ADB Modules API reference](docs/adb-modules-api.md)
-- [Nightzuku Connectors API](docs/nightzuku-connectors.md)
-- [Android 17 Compatibility](docs/android-17-compatibility.md)
-- [Wear OS Compatibility](docs/wearos-compatibility.md)
-- [Wear OS Pairing Guide](docs/wearos-pairing.md)
-- [Android TV Support](docs/android-tv-support.md)
-- [NightDog Watchdog](docs/nightdog.md)
+| Document | Scope |
+| :--- | :--- |
+| [ADB Modules API](docs/adb-modules-api.md) | ZIP format, `module.prop` schema, runtime env, `nightzuku-guard`, virtual HTTPS WebUI bridge |
+| [ADB Modules Guide](docs/adb-modules-guide.md) | Authoring workflow, minimal module template, Action vs Service policy, safety limits |
+| [GitHub Catalog](docs/github-catalog.md) | Decentralized `topic:adb-modules` discovery, PAT encryption, install modes, API quotas |
+| [NightDog Architecture](docs/nightdog.md) | Server watchdog state machine, `NightDogClient` supervision, `JobScheduler` update checks |
+| [Nightzuku Connectors](docs/nightzuku-connectors.md) | Local `ContentProvider` (`content://kerneldroid.nightzuku.connector`) for third-party activators |
+| [Android 17 Compatibility](docs/android-17-compatibility.md) | Verified hidden API signatures (`IPermissionManager`, `IPackageManager`, `IUserManager`) and `Android17Compat` |
+| [Android TV Support](docs/android-tv-support.md) | TV Compose architecture, D-pad focus model, and theming |
+| [Wear OS Compatibility](docs/wearos-compatibility.md) | Watch manifest flags, Wear Material 3 components, and SDK compatibility |
+| [Wear OS Pairing Guide](docs/wearos-pairing.md) | Wireless ADB pairing procedure and troubleshooting matrix for Wear OS 5+ |
 
-## Background
+## Developer & Build Reference
 
-When developing apps that require root, the standard approach is running commands in a `su` shell. This is slow, unreliable due to text processing, and limited to available commands. Even with ADB, apps often require root for privileged operations.
+### Client Integration
 
-Nightzuku provides a high-performance alternative by allowing apps to use system APIs directly with elevated permissions.
+- Upstream Shizuku API and samples: <https://github.com/RikkaApps/Shizuku-API>
+- ADB shell capabilities vary by Android release; inspect AOSP `packages/Shell/AndroidManifest.xml` and query `ShizukuService#getUid` / `checkPermission` at runtime.
+- Android 9+ restricts hidden API reflection; use [AndroidHiddenApiBypass](https://github.com/LSPosed/AndroidHiddenApiBypass) in client processes where required.
+- Direct `transactRemote` callers must verify transaction codes and parameter layouts against the target platform's AIDL definitions.
 
-## How does Nightzuku work?
+### Building from Source
 
-Android uses `binder` for interprocess communication (IPC) between apps and the system server. The system server checks the UID/PID of the client to enforce permissions.
+```sh
+git clone --recurse-submodules https://github.com/kerneldroid/Nightzuku.git
+cd Nightzuku
+./gradlew :manager:assembleDebug
+```
 
-Nightzuku guides users to start a Nightzuku server process with root or ADB. When an authorized app starts, it receives a binder to the Nightzuku server.
+Run unit tests:
 
-Nightzuku acts as a proxy, receiving requests from the app and forwarding them to the system server. This allows apps to use system APIs with the server's elevated permissions (root or ADB), making it almost identical to using system APIs directly.
+```sh
+./gradlew :common:testDebugUnitTest :server:testDebugUnitTest
+```
+
+`:manager:assembleDebug` packages a debuggable server. Enable **Always install with package manager** in Android Studio to ensure updated server binaries are deployed.
 
 ## Screenshots
 
 <details>
-  <summary>📸 Click to open Screenshot Gallery</summary>
+  <summary>Screenshot Gallery (automated emulator captures)</summary>
   <br/>
 
   > [!NOTE]
-  > These screenshots are generated automatically by the [`Screenshots`](.github/workflows/screenshots.yml) workflow on Android 17, Wear OS 7, and Android TV 16 emulators. They may lag slightly behind the latest commit.
+  > Captures are generated by [`.github/workflows/screenshots.yml`](.github/workflows/screenshots.yml) on Android 17, Wear OS 7, and Android TV 16 emulators and may lag behind `HEAD`.
 
-  ### Phone UI
+  ### Phone
   <table>
     <tr>
-      <td align="center"><img src="screenshots/phone/main.png" width="300" /><br/><b>Main Screen</b></td>
+      <td align="center"><img src="screenshots/phone/main.png" width="300" /><br/><b>Main</b></td>
       <td align="center"><img src="screenshots/phone/apps.png" width="300" /><br/><b>Authorized Apps</b></td>
     </tr>
     <tr>
@@ -90,20 +112,18 @@ Nightzuku acts as a proxy, receiving requests from the app and forwarding them t
     </tr>
   </table>
 
-  ### Wear OS UI (Native Material 3)
+  ### Wear OS
   <table>
     <tr>
-      <td align="center"><img src="screenshots/wearos/main.png" width="200" /><br/><b>Main Screen</b></td>
+      <td align="center"><img src="screenshots/wearos/main.png" width="200" /><br/><b>Main</b></td>
       <td align="center"><img src="screenshots/wearos/settings.png" width="200" /><br/><b>Settings</b></td>
     </tr>
   </table>
 
-  > ADB Modules are intentionally not offered on Wear OS. The mobile module UI is available on phones only.
-
-  ### Android TV UI (Native Material 3)
+  ### Android TV
   <table>
     <tr>
-      <td colspan="2" align="center"><img src="screenshots/tv/main.png" width="500" /><br/><b>Main Screen</b></td>
+      <td colspan="2" align="center"><img src="screenshots/tv/main.png" width="500" /><br/><b>Main</b></td>
     </tr>
     <tr>
       <td colspan="2" align="center"><img src="screenshots/tv/settings.png" width="400" /><br/><b>Settings</b></td>
@@ -111,40 +131,15 @@ Nightzuku acts as a proxy, receiving requests from the app and forwarding them t
   </table>
 </details>
 
-## Developer guide
+## License & Identity Constraints
 
-### API & sample
+Licensed under **Apache License 2.0** (`LICENSE`).
 
-Official API and samples are available at: <https://github.com/RikkaApps/Shizuku-API>
-
-### Technical Details
-
-1. **ADB Permissions**: ADB permissions vary by system version. Check available permissions in the [Shell AndroidManifest](https://github.com/aosp-mirror/platform_frameworks_base/blob/master/packages/Shell/AndroidManifest.xml). Use `ShizukuService#getUid` or `ShizukuService#checkPermission` to verify server capabilities.
-
-2. **Hidden API Restrictions**: From Android 9, hidden API usage is restricted. Use tools like [AndroidHiddenApiBypass](https://github.com/LSPosed/AndroidHiddenApiBypass) if necessary.
-
-3. **Android 8.0 & ADB**: On API 26, ADB lacks permissions to use `registerUidObserver`. If your app process is not started by an Activity, you may need to start a transparent activity to trigger binder transmission.
-
-4. **Direct `transactRemote` Usage**: Signatures for hidden APIs change between Android versions. While `ShizukuBinderWrapper` handles most cases, direct transaction calls must be carefully verified against the target platform's AIDL definitions.
-
-## Developing Nightzuku
-
-### Build
-
-- Clone with `git clone --recurse-submodules`
-- Build with Gradle: `./gradlew :manager:assembleDebug`
-
-The `:manager:assembleDebug` task generates a debuggable server. Ensure "Always install with package manager" is checked in Android Studio to use the latest server code during debugging.
-
-## License
-
-All code is licensed under Apache 2.0.
-
-- **Icon Usage**: You may not use `manager/src/main/res/mipmap*/ic_launcher*.png` for anything other than displaying Nightzuku.
-- **Identity**: You may not use `Shizuku` as an app name or use `moe.shizuku.privileged.api` as an application ID in derived works. The current package identity is `kerneldroid.nightzuku`.
-
+- **Launcher assets**: `manager/src/main/res/mipmap*/ic_launcher*.png` may only be used to represent Nightzuku.
+- **Package identity**: Derived works must not use the name `Shizuku` or the application ID `moe.shizuku.privileged.api`. This fork uses `kerneldroid.nightzuku`.
 
 ## Credits
 
-- [**Razgame**](https://github.com/RazGame/Shizuku) — for [app list fix](https://github.com/kerneldroid/Nightzuku/commit/6ea7e74984f860398760f5111a15083ea004c842).
-- [**Porter** (d4rken-org)](https://github.com/d4rken-org/porter) — for architectural and security hardening ideas (package signing identity verification, root/ADB config ownership handoff, permission dialog anti-spoofing, and wireless ADB/mDNS lifecycle edge-case analysis), re-engineered natively for Nightzuku's dual-wire architecture without code copying.
+- [RikkaApps/Shizuku](https://github.com/RikkaApps/Shizuku) — upstream architecture and protocol.
+- [Razgame](https://github.com/RazGame/Shizuku) — [app list fix](https://github.com/kerneldroid/Nightzuku/commit/6ea7e74984f860398760f5111a15083ea004c842).
+- [Porter (d4rken-org)](https://github.com/d4rken-org/porter) — security hardening concepts (package signing verification, config ownership handoff, anti-spoofing permission prompts, wireless ADB/mDNS edge-case analysis), re-implemented natively for Nightzuku.

@@ -433,14 +433,45 @@
     <string name="wear_catalog_sort_by">排序方式</string>
     <string name="wear_catalog_filter">篩選</string>
     <!-- Smart Logs -->
-    <string name="smart_log_dialog_title">智慧日誌 (Smart Logs)</string>
+    <string name="smart_log_dialog_title">智慧日誌</string>
     <string name="smart_log_dialog_message_single">糟糕，發生了一些問題。如果一切正常 — 請關閉；如果出現異常 — 請複製並提交至 Issues / PR。</string>
     <string name="smart_log_dialog_message_multiple">糟糕，發生了一些問題。偵測到多個錯誤（%1$d），已依分隔符號與快照時間合併為單一智慧日誌。如果一切正常 — 請關閉；如果出現異常 — 請複製並提交至 Issues / PR。</string>
-    <string name="smart_log_window_header">智慧日誌（快照：%1$d）</string>
+    <string name="smart_log_window_header">已擷取快照：%1$d</string>
+    <string name="smart_log_window_header_clean">診斷快照</string>
     <string name="smart_log_button_copy">複製</string>
     <string name="smart_log_button_clear">清除</string>
     <string name="smart_log_button_close">關閉</string>
     <string name="smart_log_button_open_issues">提交至 Issues / PR</string>
     <string name="smart_log_home_summary_clean">Smart Logs 已啟用：未偵測到錯誤（點擊檢視快照）</string>
     <string name="smart_log_home_summary_errors">Smart Logs 已擷取 %1$d 個錯誤快照（共 %2$d 次事件）— 點擊檢視</string>
+    <!-- Security & Access -->
+    <string name="settings_security">安全與存取</string>
+    <string name="settings_category_security_summary">使用者隔離、Knox 保護與 Binder 分派原則</string>
+    <string name="settings_security_server_stopped_title">服務未執行</string>
+    <string name="settings_security_server_stopped_summary">啟動 Nightzuku 服務後即可設定安全與使用者存取原則。</string>
+    <string name="settings_security_section_protection">保護</string>
+    <string name="settings_security_pause_access_title">暫停所有用戶端存取</string>
+    <string name="settings_security_pause_access_summary">暫時拒絕所有用戶端應用程式的 Binder、Shell 與 UserService 呼叫</string>
+    <string name="settings_security_block_isolated_title">封鎖 Knox 與隔離設定檔</string>
+    <string name="settings_security_block_isolated_summary">禁止探測或向 Samsung Knox、安全資料夾、私人空間、Dual Messenger 與複製設定檔分派 Binder</string>
+    <string name="settings_security_section_delivery">Binder 分派與通訊協定</string>
+    <string name="settings_security_delivery_mode_title">Binder 分派範圍</string>
+    <string name="settings_security_delivery_all_declared">所有宣告 API 的應用程式</string>
+    <string name="settings_security_delivery_all_declared_summary">向允許的使用者中所有宣告 Nightzuku 或 Shizuku API 的應用程式分派 Binder</string>
+    <string name="settings_security_delivery_authorized_only">僅已授權應用程式</string>
+    <string name="settings_security_delivery_authorized_only_summary">僅主動向已授權的應用程式分派 Binder 並加入暫時省電白名單</string>
+    <string name="settings_security_legacy_wire_title">允許舊版 Shizuku 協定</string>
+    <string name="settings_security_legacy_wire_summary">關閉後伺服器僅接受原生 Nightzuku API 用戶端</string>
+    <string name="settings_security_section_users">使用者與設定檔範圍</string>
+    <string name="settings_security_allow_work_profile_title">允許工作設定檔</string>
+    <string name="settings_security_allow_work_profile_summary">允許為受管理的工作設定檔分派 Binder 與列出應用程式</string>
+    <string name="settings_security_allow_secondary_users_title">允許其他使用者</string>
+    <string name="settings_security_allow_secondary_users_summary">允許為非主要 Android 使用者分派 Binder</string>
+    <string name="settings_security_section_detected_users">偵測到的 Android 使用者</string>
+    <string name="settings_security_user_kind_primary">主要使用者</string>
+    <string name="settings_security_user_kind_work">工作設定檔</string>
+    <string name="settings_security_user_kind_isolated">隔離容器（Knox / 私人 / 複製）</string>
+    <string name="settings_security_user_kind_secondary">其他使用者</string>
+    <string name="settings_security_user_always_allowed">一律啟用</string>
+    <string name="settings_security_user_blocked_by_policy">已受隔離原則封鎖</string>
 </resources>

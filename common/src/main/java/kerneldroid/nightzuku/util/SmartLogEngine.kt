@@ -344,6 +344,308 @@ object SmartLogEngine {
         }
     }
 
+
+    const val DEFAULT_FILTERED_LOGCAT_LINES = 80
+
+    private val LOGCAT_TIME_REGEX = Regex(
+        """^\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3}\s+([VDIWEFA])/([^(:]+?)\s*\(\s*\d+\):\s?(.*)$"""
+    )
+    private val LOGCAT_THREADTIME_REGEX = Regex(
+        """^\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3}\s+\d+\s+\d+\s+([VDIWEFA])\s+([^:]+?):\s?(.*)$"""
+    )
+
+    private val ALLOWED_TAG_PREFIXES = listOf(
+        "Shizuku",
+        "Nightzuku",
+        "NightDog",
+        "BinderSender",
+        "SmartLog",
+        "ServerSmartLog",
+        "AdbClient",
+        "AdbPairing",
+        "AdbMdns",
+        "AdbKey",
+        "AdbModule",
+        "Starter",
+        "starter",
+        "rish",
+        "libadb",
+        "libshizuku",
+        "HiddenApi",
+        "Android17Compat",
+        "UsersCompat",
+        "TransactGuard",
+        "ClientRouting",
+        "NightService",
+        "UserService",
+        "ConfigManager",
+        "AuthorizationManager",
+        "UserAccessPolicy",
+        "Module",
+        "AndroidRuntime",
+        "DEBUG",
+        "tombstoned",
+        "System.err"
+    )
+
+    private val DENIED_TAG_PREFIXES = listOf(
+        "OpenGLRenderer",
+        "Adreno",
+        "Mali",
+        "Vulkan",
+        "HWUI",
+        "ThreadedRenderer",
+        "RenderThread",
+        "BLASTBufferQueue",
+        "BufferQueue",
+        "SurfaceComposerClient",
+        "SurfaceControl",
+        "SurfaceSyncGroup",
+        "VRI[",
+        "ViewRootImpl",
+        "Choreographer",
+        "InsetsController",
+        "InsetsSourceConsumer",
+        "ImeTracker",
+        "InputMethodManager",
+        "InputTransport",
+        "InputEventReceiver",
+        "WindowOnBackDispatcher",
+        "WindowManager",
+        "DisplayManager",
+        "FrameTracker",
+        "InteractionJankMonitor",
+        "GraphicBuffer",
+        "gralloc",
+        "libEGL",
+        "libGLES",
+        "libvulkan",
+        "Skia",
+        "skia",
+        "CompatChangeReporter",
+        "ActivityThread",
+        "LoadedApk",
+        "ResourcesManager",
+        "AssetManager",
+        "ApplicationLoaders",
+        "nativeloader",
+        "ziparchive",
+        "ProfileInstaller",
+        "AutofillManager",
+        "ContentCapture",
+        "TextView",
+        "AppCompatDelegate",
+        "TrafficStats",
+        "ConnectivityManager",
+        "NetworkSecurityConfig",
+        "StrictMode",
+        "SystemSensorManager",
+        "AudioManager",
+        "MediaRouter",
+        "Phenotype",
+        "DynamiteModule",
+        "GmsClient",
+        "Firebase",
+        "PlayCore",
+        "SemDesktopMode",
+        "SemDvfs",
+        "SemWifi",
+        "SecContentProvider",
+        "Samsung",
+        "DecorView",
+        "ScrollIdentify",
+        "MultiWindow",
+        "Miui",
+        "MIUI",
+        "HyperOS",
+        "Oplus",
+        "OnePlus",
+        "ColorOS",
+        "Flyme",
+        "Emui",
+        "HwFramework",
+        "Vivo",
+        "Transsion",
+        "MTK",
+        "MediaTek",
+        "Qti",
+        "Qualcomm",
+        "vendor.",
+        "chatty",
+        "libc-netbsd",
+        "libc++",
+        "Parcel",
+        "Binder"
+    )
+
+    private val RELEVANT_MESSAGE_KEYWORDS = listOf(
+        "kerneldroid.nightzuku",
+        "moe.shizuku",
+        "rikka.shizuku",
+        "shizuku_server",
+        "nightdog",
+        "libadb.so",
+        "libshizuku.so",
+        "SecurityException",
+        "NoSuchMethodError",
+        "NoSuchFieldError",
+        "UnsatisfiedLinkError",
+        "DeadObjectException",
+        "RemoteException",
+        "SIGSEGV",
+        "SIGABRT",
+        "SIGBUS",
+        "Fatal signal",
+        "FATAL EXCEPTION",
+        "ANR in",
+        "avc: denied"
+    )
+
+    private val ART_NOISE_PATTERNS = listOf(
+        "Background concurrent",
+        "Background young concurrent",
+        "Explicit concurrent",
+        "Compiler allocated",
+        "Clamp target GC heap",
+        "WaitForGcToComplete",
+        "Accessing hidden method",
+        "Accessing hidden field",
+        "Relocating",
+        "Starting profile saver"
+    )
+
+    private fun isStackContinuation(message: String): Boolean {
+        val trimmed = message.trimStart()
+        return trimmed.startsWith("at ") ||
+            trimmed.startsWith("Caused by:") ||
+            trimmed.startsWith("Suppressed:") ||
+            (trimmed.startsWith("... ") && trimmed.endsWith(" more"))
+    }
+
+    private fun containsRelevantKeyword(text: String): Boolean {
+        return RELEVANT_MESSAGE_KEYWORDS.any { text.contains(it, ignoreCase = true) }
+    }
+
+    private fun isAllowedTag(tag: String): Boolean {
+        return ALLOWED_TAG_PREFIXES.any { prefix ->
+            tag.equals(prefix, ignoreCase = true) || tag.startsWith(prefix, ignoreCase = true)
+        }
+    }
+
+    private fun isDeniedTag(tag: String): Boolean {
+        return DENIED_TAG_PREFIXES.any { prefix ->
+            tag.equals(prefix, ignoreCase = true) || tag.startsWith(prefix, ignoreCase = true)
+        }
+    }
+
+    /**
+     * Filters process logcat lines to retain Nightzuku/Shizuku, IPC, Rust native, and crash
+     * diagnostics while stripping Android OS, GPU/HWUI, input, ART GC, and OEM framework noise.
+     */
+    @JvmStatic
+    fun filterProcessLogcat(
+        rawLines: List<String>,
+        maxLines: Int = DEFAULT_FILTERED_LOGCAT_LINES
+    ): String {
+        if (rawLines.isEmpty() || maxLines <= 0) return ""
+        val kept = ArrayList<Pair<String, String>>() // (dedupKey, fullLine)
+        var lastKeptWasCrashOrException = false
+
+        for (raw in rawLines) {
+            val line = raw.trimEnd()
+            if (line.isBlank() || line.startsWith("--------- beginning of")) {
+                continue
+            }
+
+            val match = LOGCAT_TIME_REGEX.matchEntire(line) ?: LOGCAT_THREADTIME_REGEX.matchEntire(line)
+            if (match == null) {
+                if (lastKeptWasCrashOrException && isStackContinuation(line)) {
+                    kept.add(line to line)
+                } else if (containsRelevantKeyword(line)) {
+                    kept.add(line to line)
+                    lastKeptWasCrashOrException = true
+                } else {
+                    lastKeptWasCrashOrException = false
+                }
+                continue
+            }
+
+            val level = match.groupValues[1][0]
+            val tag = match.groupValues[2].trim()
+            val message = match.groupValues[3]
+            val hasKeyword = containsRelevantKeyword(message)
+
+            if (lastKeptWasCrashOrException && isStackContinuation(message)) {
+                kept.add("$level/$tag:$message" to line)
+                continue
+            }
+
+            if (tag.equals("art", ignoreCase = true) || tag.equals("zygote", ignoreCase = true) || tag.equals("zygote64", ignoreCase = true)) {
+                val isArtNoise = ART_NOISE_PATTERNS.any { message.contains(it, ignoreCase = true) }
+                if (isArtNoise && !hasKeyword) {
+                    lastKeptWasCrashOrException = false
+                    continue
+                }
+                if (level != 'E' && level != 'F' && level != 'A' && !hasKeyword) {
+                    lastKeptWasCrashOrException = false
+                    continue
+                }
+            }
+
+            val isFatal = level == 'F' || level == 'A'
+            val isError = level == 'E' || isFatal
+
+            val keep = when {
+                isAllowedTag(tag) -> {
+                    // For Nightzuku/Shizuku/crash tags, keep W/E/F or any line with relevant info; drop noisy V/D unless relevant
+                    level != 'V' && (level != 'D' || hasKeyword || tag.contains("Shizuku", true) || tag.contains("Night", true) || tag.contains("SmartLog", true))
+                }
+                isDeniedTag(tag) -> {
+                    // Strictly drop OS/OEM/HWUI noise. Info/warning lines from denied tags are
+                    // discarded even when they mention our package name (ImeTracker, ActivityThread,
+                    // Choreographer, etc. routinely log `kerneldroid.nightzuku:...`), otherwise the
+                    // deny list would never suppress anything. Only real errors/fatals survive.
+                    isFatal || (isError && hasKeyword)
+                }
+                else -> {
+                    // Unknown third-party or OS subsystem tag: keep only errors/fatals mentioning Nightzuku/Shizuku/crash signals
+                    isError && hasKeyword
+                }
+            }
+
+            if (keep) {
+                kept.add("$level/$tag:$message" to line)
+                lastKeptWasCrashOrException = isError ||
+                    tag.equals("AndroidRuntime", ignoreCase = true) ||
+                    tag.equals("System.err", ignoreCase = true) ||
+                    tag.equals("DEBUG", ignoreCase = true)
+            } else {
+                lastKeptWasCrashOrException = false
+            }
+        }
+
+        if (kept.isEmpty()) return ""
+
+        // Collapse consecutive identical messages to avoid flooding GitHub issues
+        val collapsed = ArrayList<String>(kept.size)
+        var i = 0
+        while (i < kept.size) {
+            val (key, line) = kept[i]
+            var count = 1
+            while (i + count < kept.size && kept[i + count].first == key) {
+                count++
+            }
+            if (count > 1) {
+                collapsed.add("$line [x$count]")
+            } else {
+                collapsed.add(line)
+            }
+            i += count
+        }
+
+        return collapsed.takeLast(maxLines).joinToString("\n")
+    }
+
     /**
      * Formats one or multiple [SmartLogSnapshot]s into a unified human- and machine-readable
      * report separated by visual symbols and snapshot timestamps for GitHub Issues / PRs.

@@ -1059,10 +1059,11 @@ fun SmartLogRecoveryDialog(
                     ) {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             Text(
-                                text = stringResource(
-                                    R.string.smart_log_window_header,
-                                    snapshotCount.coerceAtLeast(1)
-                                ),
+                                text = if (snapshotCount > 0) {
+                                    stringResource(R.string.smart_log_window_header, snapshotCount)
+                                } else {
+                                    stringResource(R.string.smart_log_window_header_clean)
+                                },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 2.dp),

@@ -1,16 +1,19 @@
-# Wear OS Setup and Pairing Guide
+# Wear OS Wireless ADB Pairing Guide
 
-This guide describes how to pair and start Nightzuku on Wear OS 5+ devices (such as Galaxy Watch 7).
+Procedure for pairing and starting `shizuku_server` on Wear OS 5+ devices.
 
-## Instructions
+## Pairing Procedure
 
-1. Enable Developer Options: Go to Settings -> System -> About -> Software Info. Tap Software Version 7 times.
-2. Enable Debugging: In Settings -> Developer Options, enable ADB debugging and Wireless debugging.
-3. Device Pairing: Tap Wireless debugging -> Pair new device. Keep the screen active and the app in the foreground. Open Nightzuku, tap Pairing, and input the port and code.
-4. Start Service: Go back to the main Wireless debugging screen, note the new port, and tap Start in Nightzuku.
+1. Enable Developer Options: **Settings -> System -> About -> Software Info**, tap **Software Version** 7 times.
+2. Enable **ADB debugging** and **Wireless debugging** under **Settings -> Developer Options**.
+3. Open **Wireless debugging -> Pair new device**. Keep the screen awake and the pairing code visible.
+4. Open Nightzuku, select **Pairing**, and enter the displayed port and 6-digit pairing code.
+5. Return to the main **Wireless debugging** screen, note the active connection port, and select **Start** in Nightzuku.
 
 ## Troubleshooting
 
-- SSL Handshake Errors: Go to Developer options -> Revoke USB debugging authorizations, reboot the watch, and pair again.
-- Background Freezing: Ensure Nightzuku's battery optimization is set to Unrestricted to prevent the OS from freezing background service initialization.
-- Connection Timed Out: Verify that the watch is connected to the same Wi-Fi network.
+| Symptom | Likely Cause | Resolution |
+| :--- | :--- | :--- |
+| TLS / SSL handshake error | Stale ADB RSA key authorization | **Developer options -> Revoke USB debugging authorizations**, reboot watch, and pair again |
+| Service fails to initialize in background | OS battery optimization / app standby freeze | Set Nightzuku battery usage to **Unrestricted** |
+| Connection timed out | Watch disconnected from Wi-Fi or wrong port | Verify active Wi-Fi connection and confirm the current Wireless debugging port (not the pairing port) |

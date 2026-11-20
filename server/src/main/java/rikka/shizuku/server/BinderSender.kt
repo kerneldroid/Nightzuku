@@ -175,14 +175,18 @@ object BinderSender {
     private fun sendBinder(uid: Int, pid: Int) {
         val service = shizukuService ?: return
         val night = nightEndpoint ?: return
+        val userId = UserHandleCompat.getUserId(uid)
+        if (!service.isUserAllowedForBinder(userId)) {
+            logger.v("Skipping binder dispatch for blocked user %d (uid=%d)", userId, uid)
+            return
+        }
+
         val packages = PackageManagerApis.getPackagesForUidNoThrow(uid)
         if (packages.isEmpty()) {
             return
         }
 
         logger.d("sendBinder to uid %d: packages=%s", uid, TextUtils.join(", ", packages))
-
-        val userId = UserHandleCompat.getUserId(uid)
         var sentManager = false
         for (packageName in packages) {
             val packageInfo = Android17Compat.getPackageInfo(
@@ -206,8 +210,15 @@ object BinderSender {
             }
 
             val wire = ClientRouting.route(packageInfo)
-            if (wire != null) {
-                ShizukuService.sendBinderToClientPackage(packageInfo, wire, service, night, userId)
+            if (wire != null && service.shouldDeliverBinderForPackage(packageInfo, wire, userId)) {
+                ShizukuService.sendBinderToClientPackage(
+                    packageInfo,
+                    wire,
+                    service,
+                    night,
+                    userId,
+                    allowLegacyWire = service.isLegacyWireAllowed()
+                )
             }
         }
     }

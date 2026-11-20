@@ -159,7 +159,17 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             "newProcess",
             isTemporaryGrantActive(callingUid)
         )
-        return super.newProcess(cmd, env, dir)
+        val prepared = LargeCommandTransport.prepare(cmd, env, resolveManagerApkPathNoThrow())
+        return try {
+            super.newProcess(prepared.cmd, prepared.env, dir)
+        } catch (t: Throwable) {
+            prepared.cleanup()
+            throw t
+        }
+    }
+
+    internal fun resolveManagerApkPathNoThrow(): String? {
+        return runCatching { getManagerApplicationInfo()?.sourceDir }.getOrNull()
     }
 
     override fun getSystemProperty(name: String, defaultValue: String?): String {
@@ -254,6 +264,9 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             return true
         }
         if (configManager.isAccessPaused()) {
+            return false
+        }
+        if (!configManager.isUserAllowed(UserHandleCompat.getUserId(callingUid))) {
             return false
         }
         if (isTemporaryGrantActive(callingUid)) {
@@ -449,6 +462,9 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         if (configManager.isAccessPaused()) {
             return false
         }
+        if (!configManager.isUserAllowed(UserHandleCompat.getUserId(callingUid))) {
+            return false
+        }
         if (isTemporaryGrantActive(callingUid)) {
             configManager.recordConnection(callingUid)
             return true
@@ -510,6 +526,10 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         val isManager = ManagerIdentity.packageName == packageName &&
             UserHandleCompat.getUserId(callingUid) == 0 &&
             verifyManagerSignature()
+        if (!isManager && !configManager.isUserAllowed(UserHandleCompat.getUserId(callingUid))) {
+            Service.LOGGER.w("Rejected attachNightClient from disallowed user %d (%s)", UserHandleCompat.getUserId(callingUid), packageName)
+            return null
+        }
 
         var record = clientManager.findClient(callingUid, callingPid)
         if (record == null) {
@@ -567,6 +587,17 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         val isManager = ManagerIdentity.packageName == requestPackageName &&
             UserHandleCompat.getUserId(callingUid) == 0 &&
             verifyManagerSignature()
+        if (!isManager) {
+            val callingUserId = UserHandleCompat.getUserId(callingUid)
+            if (!configManager.isUserAllowed(callingUserId)) {
+                Service.LOGGER.w("Rejected attachApplication from disallowed user %d (%s)", callingUserId, requestPackageName)
+                return
+            }
+            if (!configManager.isLegacyWireAllowed()) {
+                Service.LOGGER.w("Rejected legacy attachApplication for %s (legacy wire disabled)", requestPackageName)
+                return
+            }
+        }
 
         clientManager.registerLegacyApplication(callingUid, callingPid, application)
 
@@ -676,7 +707,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         callingPid: Int,
         userId: Int
     ) {
-        if (configManager.isAccessPaused()) {
+        if (configManager.isAccessPaused() || !configManager.isUserAllowed(userId)) {
             if (!nightEndpoint.notifyRequestPermissionResult(callingUid, callingPid, requestCode, false, 0)) {
                 clientRecord.dispatchRequestPermissionResult(requestCode, false)
             }
@@ -1082,8 +1113,8 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         val list = ArrayList<PackageInfo>()
         val users = ArrayList<Int>()
         if (userId == -1) {
-            users.addAll(UsersCompat.getUserIdsNoThrow())
-        } else {
+            users.addAll(configManager.getAllowedUserIds())
+        } else if (configManager.isUserAllowed(userId)) {
             users.add(userId)
         }
 
@@ -1366,13 +1397,125 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             ServerSmartLogCollector.clearSmartLogs()
             replyParcel.writeNoException()
             return true
+        } else if (code == ServerConstants.BINDER_TRANSACTION_getSecurityPolicy) {
+            val replyParcel = reply!!
+            if (!checkCallerManagerPermission("getSecurityPolicy", Binder.getCallingUid(), Binder.getCallingPid())) {
+                replyParcel.writeException(SecurityException("Permission denied"))
+                return true
+            }
+            data.enforceInterface(ShizukuApiConstants.BINDER_DESCRIPTOR)
+            val bundle = configManager.getSecurityPolicyBundle()
+            replyParcel.writeNoException()
+            replyParcel.writeBundle(bundle)
+            return true
+        } else if (code == ServerConstants.BINDER_TRANSACTION_setSecurityPolicy) {
+            val replyParcel = reply!!
+            if (!checkCallerManagerPermission("setSecurityPolicy", Binder.getCallingUid(), Binder.getCallingPid())) {
+                replyParcel.writeException(SecurityException("Permission denied"))
+                return true
+            }
+            data.enforceInterface(ShizukuApiConstants.BINDER_DESCRIPTOR)
+            val bundle = data.readBundle(ShizukuService::class.java.classLoader)
+            if (bundle != null) {
+                if (bundle.containsKey("accessPaused")) {
+                    setAccessPaused(bundle.getBoolean("accessPaused"))
+                }
+                val policyChanged = configManager.updateSecurityPolicy(bundle)
+                if (policyChanged) {
+                    enforceUserPolicyOnActiveClients()
+                    BinderSender.dispatchTask {
+                        sendBinderToClient()
+                    }
+                }
+            }
+            replyParcel.writeNoException()
+            return true
+        } else if (code == ServerConstants.BINDER_TRANSACTION_getDeviceUsers) {
+            val replyParcel = reply!!
+            if (!checkCallerManagerPermission("getDeviceUsers", Binder.getCallingUid(), Binder.getCallingPid())) {
+                replyParcel.writeException(SecurityException("Permission denied"))
+                return true
+            }
+            data.enforceInterface(ShizukuApiConstants.BINDER_DESCRIPTOR)
+            val snapshots = configManager.getDeviceUsersSnapshot()
+            val bundle = Bundle().apply {
+                putIntArray("userIds", snapshots.map { it.userId }.toIntArray())
+                putStringArrayList("userNames", ArrayList(snapshots.map { it.name }))
+                putStringArrayList("userKinds", ArrayList(snapshots.map { it.kind.wireName }))
+                putBooleanArray("userAllowed", snapshots.map { it.allowed }.toBooleanArray())
+            }
+            replyParcel.writeNoException()
+            replyParcel.writeBundle(bundle)
+            return true
         }
         return super.onTransact(code, data, reply, flags)
     }
 
+    internal fun isUserAllowedForBinder(userId: Int): Boolean {
+        return configManager.isUserAllowed(userId)
+    }
+
+    internal fun isLegacyWireAllowed(): Boolean {
+        return configManager.isLegacyWireAllowed()
+    }
+
+    internal fun shouldDeliverBinderForPackage(
+        pi: PackageInfo,
+        wire: ClientRouting.Wire,
+        userId: Int
+    ): Boolean {
+        if (!configManager.isUserAllowed(userId)) {
+            return false
+        }
+        val uid = pi.applicationInfo?.uid ?: return false
+        val isAuthorized = configManager.find(uid)?.isAllowed() == true || isTemporaryGrantActive(uid)
+        return configManager.shouldDeliverBinder(wire, isAuthorized)
+    }
+
+    private fun enforceUserPolicyOnActiveClients() {
+        val paused = configManager.isAccessPaused()
+        for (record in clientManager.getActiveClients()) {
+            val userId = UserHandleCompat.getUserId(record.uid)
+            val userAllowed = configManager.isUserAllowed(userId)
+            if (!userAllowed) {
+                record.allowed = false
+                pushPermissionState(record, true, 0)
+                onPermissionRevokedForUid(record.uid, listOf(record.packageName))
+            } else if (!paused) {
+                val entry = configManager.find(record.uid)
+                val tempGrant = isTemporaryGrantActive(record.uid)
+                val allowed = entry?.isAllowed() == true || tempGrant
+                record.allowed = allowed
+                val caps = TransactGuard.effectiveCapabilities(entry, false, tempGrant)
+                pushPermissionState(record, entry?.isDenied() == true && !tempGrant, caps)
+            }
+        }
+    }
+
     fun sendBinderToClient() {
-        for (userId in UsersCompat.getUserIdsNoThrow()) {
+        for (userId in configManager.getAllowedUserIds()) {
             sendBinderToClient(this, nightEndpoint, userId)
+        }
+    }
+
+    private fun sendBinderToClient(legacyBinder: Binder, nightBinder: Binder, userId: Int) {
+        try {
+            for (pi in InstalledPackagesCompat.getInstalledPackagesNoThrow(
+                PackageManager.GET_PERMISSIONS.toLong(), userId
+            )) {
+                val wire = ClientRouting.route(pi) ?: continue
+                if (!shouldDeliverBinderForPackage(pi, wire, userId)) continue
+                sendBinderToClientPackage(
+                    pi,
+                    wire,
+                    legacyBinder,
+                    nightBinder,
+                    userId,
+                    allowLegacyWire = configManager.isLegacyWireAllowed()
+                )
+            }
+        } catch (tr: Throwable) {
+            Service.LOGGER.e("exception when call getInstalledPackages", tr)
         }
     }
 
@@ -1439,7 +1582,12 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
 
     fun sendBinderToManager() {
         if (!verifyManagerSignature()) return
-        sendBinderToManager(this, nightEndpoint)
+        for (userId in configManager.getAllowedUserIds()) {
+            if (userId != 0 && Android17Compat.getPackageInfo(ManagerIdentity.packageName, 0L, userId) == null) {
+                continue
+            }
+            sendBinderToManager(this, nightEndpoint, userId)
+        }
     }
 
     override fun dispatchPackageChanged(intent: Intent) {
@@ -1492,40 +1640,22 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             return Android17Compat.getApplicationInfo(ManagerIdentity.packageName, 0L, 0)
         }
 
-        private fun sendBinderToClient(legacyBinder: Binder, nightBinder: Binder, userId: Int) {
-            try {
-                for (pi in InstalledPackagesCompat.getInstalledPackagesNoThrow(
-                    PackageManager.GET_PERMISSIONS.toLong(), userId
-                )) {
-                    val wire = ClientRouting.route(pi) ?: continue
-                    sendBinderToClientPackage(pi, wire, legacyBinder, nightBinder, userId)
-                }
-            } catch (tr: Throwable) {
-                Service.LOGGER.e("exception when call getInstalledPackages", tr)
-            }
-        }
-
         @JvmStatic
         internal fun sendBinderToClientPackage(
             pi: PackageInfo,
             primaryWire: ClientRouting.Wire,
             legacyBinder: Binder,
             nightBinder: Binder,
-            userId: Int
+            userId: Int,
+            allowLegacyWire: Boolean = true
         ) {
             if (primaryWire == ClientRouting.Wire.NIGHTZUKU) {
                 sendBinderToUserApp(ClientRouting.Wire.NIGHTZUKU, nightBinder, pi.packageName, userId, true)
-                if (ClientRouting.supportsLegacyWire(pi)) {
+                if (allowLegacyWire && ClientRouting.supportsLegacyWire(pi)) {
                     sendBinderToUserApp(ClientRouting.Wire.SHIZUKU, legacyBinder, pi.packageName, userId, false)
                 }
-            } else {
+            } else if (allowLegacyWire) {
                 sendBinderToUserApp(ClientRouting.Wire.SHIZUKU, legacyBinder, pi.packageName, userId, true)
-            }
-        }
-
-        private fun sendBinderToManager(legacyBinder: Binder, nightBinder: Binder) {
-            for (userId in UsersCompat.getUserIdsNoThrow()) {
-                sendBinderToManager(legacyBinder, nightBinder, userId)
             }
         }
 

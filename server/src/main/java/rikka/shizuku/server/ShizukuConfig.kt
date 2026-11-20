@@ -16,6 +16,24 @@ class ShizukuConfig {
     @SerializedName("accessPaused")
     var accessPaused: Boolean = false
 
+    @SerializedName("blockIsolatedProfiles")
+    var blockIsolatedProfiles: Boolean = true
+
+    @SerializedName("allowWorkProfile")
+    var allowWorkProfile: Boolean = false
+
+    @SerializedName("allowSecondaryUsers")
+    var allowSecondaryUsers: Boolean = false
+
+    @SerializedName("allowedUserIds")
+    var allowedUserIds: MutableList<Int>? = ArrayList()
+
+    @SerializedName("binderDeliveryMode")
+    var binderDeliveryMode: Int = UserAccessPolicy.BINDER_DELIVERY_ALL_DECLARED
+
+    @SerializedName("allowLegacyWire")
+    var allowLegacyWire: Boolean = true
+
     class PackageEntry(
         @SerializedName("uid") val uid: Int,
         @SerializedName("flags") var flags: Int

@@ -1,83 +1,51 @@
-# GitHub Catalog
+# GitHub Module Catalog
 
-Online module discovery system for Nightzuku ADB modules.
+Decentralized online discovery and installation subsystem for Nightzuku ADB Modules using GitHub Topics (`topic:adb-modules`).
 
-## How It Works
+## Discovery & Installation Flow
 
-Modules are discovered via GitHub Topics search (`topic:adb-modules`). Module authors tag their repos with this topic. No central registry required.
+1. Client queries `GET /search/repositories?q=topic:adb-modules` (optionally authenticated via user PAT).
+2. `ModuleValidator` inspects repository roots and subdirectories for valid `module.prop` descriptors.
+3. Discovery results are cached locally in `DiscoveryCache` with a `6 h` TTL.
+4. `ModuleInstaller` installs the selected module via `AdbModuleManager.install()`.
 
-**Flow:**
-1. User enters GitHub PAT (Personal Access Token) on first launch
-2. App searches GitHub: `GET /search/repositories?q=topic:adb-modules`
-3. Each repo is validated — checks for `module.prop` in root or subdirectories
-4. Modules are cached locally (6h TTL)
-5. User browses catalog, selects install mode (sources or release ZIP)
+## Quotas & Rate Limits
 
-## Module Limits
-
-- Max 4 modules per user (across all their repos)
-- Official owner (`kerneldroid`) is exempt from limits
-- Repos from users exceeding the limit are skipped during discovery
+| Constraint | Value |
+| :--- | :--- |
+| Max modules per GitHub account | `4` across all repositories (official owner `kerneldroid` exempt) |
+| Unauthenticated GitHub API quota | `60 req/hour` |
+| Authenticated (PAT) GitHub API quota | `5,000 req/hour` |
+| Conditional requests | ETag / `304 Not Modified` used where supported (`RateLimitTracker`) |
+| Local cache TTL | `6 hours` |
 
 ## Install Modes
 
-**From Sources:**
-- Fetches files from GitHub Contents API
-- Resolves default branch dynamically (not hardcoded)
-- Builds clean ZIP: module.prop, *.sh, banner.*, webui/** (all files)
-- Installs via existing `AdbModuleManager.install()`
+| Mode | Mechanism |
+| :--- | :--- |
+| **From Sources** | Queries GitHub Contents API on the resolved default branch; `SourceZipBuilder` packages `module.prop`, `*.sh`, `banner.*`, and `webui/**` into a clean ZIP |
+| **From Release ZIP** | Queries GitHub Releases API, matches asset by module ID pattern, and installs directly |
 
-**From Release ZIP:**
-- Downloads asset from GitHub Releases
-- Matches asset by module ID pattern
-- Installs directly
+## Token Security
 
-## Security
+- Stored encrypted via AndroidKeyStore (`AES/GCM/NoPadding`) in `TokenStore`; legacy plaintext tokens are migrated on startup.
+- Format-validated for `ghp_` / `github_pat_` prefix (`>= 30` characters).
+- Never written to logcat.
+- Sent exclusively to `api.github.com` and `github.com` (never forwarded to third-party `updateJson` URLs).
 
-- Token stored encrypted with AndroidKeyStore (`AES/GCM/NoPadding`); legacy plaintext tokens are migrated on startup
-- Token validated for `ghp_`/`github_pat_` prefix (30+ chars)
-- Token NOT logged to logcat
-- Token only sent to `api.github.com` / `github.com` domains (not leaked to updateJson URLs)
+## Platform Availability
 
-## Platform Support
+| Platform | Catalog UI | Update & Token Settings | Lab Features |
+| :--- | :--- | :--- | :--- |
+| Phone / Tablet | `CatalogScreen.kt` | `UpdateSettingsScreen.kt` | `LabFeaturesActivity.kt` |
+| Android TV | Excluded | Excluded | `TvLabMenuScreen.kt` |
+| Wear OS | Excluded | Excluded | `LabFeaturesActivity.kt` (Wear layout) |
 
-| Platform | Catalog UI | Token Settings | Lab Menu |
-|----------|-----------|----------------|----------|
-| Phone | CatalogScreen.kt | UpdateSettingsScreen.kt | Via SettingsActivity |
-| Android TV | Not available (modules UI removed) | Not available | TvLabMenuScreen.kt |
-| WearOS | Not available (modules UI removed) | Not available | Via WearSettingsScreen |
+## Source Layout
 
-## API Usage
-
-- Unauthenticated: 60 req/hour (limited)
-- With PAT: 5,000 req/hour
-- Rate limit tracked across all API calls
-- ETag conditional requests used where possible (304 = free)
-
-## Files
-
-```
-module/discovery/
-├── ModuleDiscoveryManager.kt   # Orchestrator: search → validate → cache
-├── ModuleValidator.kt          # module.prop validation + nested dir scan
-├── DiscoveredModule.kt         # Data class for discovered modules
-├── GitHubModels.kt             # GitHub API response models
-├── DiscoveryCache.kt           # SharedPreferences cache (6h TTL)
-└── RateLimitTracker.kt         # GitHub rate limit tracking
-
-module/update/
-├── ModuleInstaller.kt          # Install flow (sources + release)
-├── SourceZipBuilder.kt         # Clean ZIP from source files
-├── UpdateChecker.kt            # Check for module updates
-├── UpdateResult.kt             # Update check result model
-├── UpdateSettingsScreen.kt     # Phone settings for updates
-└── GitHubReleaseModels.kt      # GitHub Release API models
-
-module/catalog/
-├── CatalogScreen.kt            # Phone catalog UI
-├── TvCatalogScreen.kt          # TV catalog UI
-├── TokenStore.kt               # Token storage
-
-settings/
-├── TvLabMenuScreen.kt          # TV Lab Features menu
-```
+| Directory | Key Files |
+| :--- | :--- |
+| `manager/.../module/discovery/` | `ModuleDiscoveryManager.kt`, `ModuleValidator.kt`, `DiscoveredModule.kt`, `GitHubModels.kt`, `DiscoveryCache.kt`, `RateLimitTracker.kt` |
+| `manager/.../module/update/` | `ModuleInstaller.kt`, `ModuleUpdateScheduler.kt`, `SourceZipBuilder.kt`, `UpdateChecker.kt`, `UpdateResult.kt`, `UpdateSettingsScreen.kt`, `GitHubReleaseModels.kt` |
+| `manager/.../module/catalog/` | `CatalogScreen.kt`, `TokenStore.kt` |
+| `manager/.../settings/` | `LabFeaturesActivity.kt`, `TvLabMenuScreen.kt` |

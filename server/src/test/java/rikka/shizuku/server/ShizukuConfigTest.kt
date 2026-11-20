@@ -86,11 +86,25 @@ class ShizukuConfigTest {
         }
 
         val serialized = ShizukuConfigManager.toJson(original)
-        val restored = ShizukuConfigManager.parseReader(StringReader(serialized))
+        original.blockIsolatedProfiles = true
+        original.allowWorkProfile = true
+        original.allowSecondaryUsers = false
+        original.allowedUserIds = mutableListOf(10, 12)
+        original.binderDeliveryMode = UserAccessPolicy.BINDER_DELIVERY_AUTHORIZED_ONLY
+        original.allowLegacyWire = false
+
+        val serializedWithPolicy = ShizukuConfigManager.toJson(original)
+        val restored = ShizukuConfigManager.parseReader(StringReader(serializedWithPolicy))
 
         assertEquals(ShizukuConfig.LATEST_VERSION, restored.version)
         assertFalse(restored.nightDogEnabled)
         assertTrue(restored.accessPaused)
+        assertTrue(restored.blockIsolatedProfiles)
+        assertTrue(restored.allowWorkProfile)
+        assertFalse(restored.allowSecondaryUsers)
+        assertEquals(listOf(10, 12), restored.allowedUserIds)
+        assertEquals(UserAccessPolicy.BINDER_DELIVERY_AUTHORIZED_ONLY, restored.binderDeliveryMode)
+        assertFalse(restored.allowLegacyWire)
         assertEquals(1, restored.packages!!.size)
         assertEquals(10555, restored.packages!![0].uid)
         assertEquals(listOf("1122334455667788"), restored.packages!![0].signers)
