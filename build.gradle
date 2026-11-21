@@ -68,7 +68,8 @@ def resolveVersionCounter = {
         return 62
     }
 }
-def gitCommitCount = resolveVersionCounter()
+def versionOverride = project.findProperty('nightzuku.versionCounter')?.toString()?.trim()
+def gitCommitCount = versionOverride ? Integer.parseInt(versionOverride) : resolveVersionCounter()
 def baseVersionName = "${api_version_major}.7.1"
 ext {
     versionCode = gitCommitCount
