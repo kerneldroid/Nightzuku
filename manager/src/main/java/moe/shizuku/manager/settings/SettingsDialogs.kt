@@ -61,7 +61,8 @@ import moe.shizuku.manager.ui.compose.ShizukuIcon
 internal data class ChoiceOption(
     val title: String,
     val summary: String? = null,
-    @param:androidx.annotation.DrawableRes val icon: Int? = null
+    @param:androidx.annotation.DrawableRes val icon: Int? = null,
+    val enabled: Boolean = true
 )
 
 @Composable
@@ -325,11 +326,13 @@ internal fun ChoiceDialog(
                         title = choice.title,
                         summary = choice.summary,
                         showChevron = false,
-                        onClick = { onSelect(index) },
+                        enabled = choice.enabled,
+                        onClick = { if (choice.enabled) onSelect(index) },
                         trailing = {
                             RadioButton(
                                 selected = index == selectedIndex,
-                                onClick = { onSelect(index) }
+                                enabled = choice.enabled,
+                                onClick = { if (choice.enabled) onSelect(index) }
                             )
                         }
                     )

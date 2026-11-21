@@ -604,10 +604,12 @@ fun SettingsItem(
     showChevron: Boolean = true,
     onClick: (() -> Unit)? = null,
     trailing: @Composable (() -> Unit)? = null,
-    compact: Boolean = false
+    compact: Boolean = false,
+    enabled: Boolean = true
 ) {
     SegmentedListItem(
-        onClick = { onClick?.invoke() },
+        onClick = { if (enabled) onClick?.invoke() },
+        enabled = enabled,
         shapes = ListItemDefaults.segmentedShapes(index = index, count = count),
         colors = ListItemDefaults.segmentedColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh

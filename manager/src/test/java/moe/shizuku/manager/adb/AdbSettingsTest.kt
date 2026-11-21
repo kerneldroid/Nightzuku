@@ -63,4 +63,23 @@ class AdbSettingsTest {
 
         assertTrue(AdbSettings.enableWirelessAdb(context))
     }
+
+    @Test
+    fun `android 17 boot preparation defers to mDNS despite redacted zero settings`() {
+        assertTrue(AdbSettings.isReadRedactedPlatform(37))
+        assertFalse(AdbSettings.isReadRedactedPlatform(36))
+        assertEquals(
+            AdbSettings.BootPrepareResult.REDACTION_DEFER_TO_MDNS,
+            AdbSettings.prepareWirelessAdbForBoot(context, sdkInt = 37)
+        )
+    }
+
+    @Test
+    fun `android 14 boot preparation enables keys when WRITE_SECURE_SETTINGS is held`() {
+        shadowOf(context).grantPermissions(Manifest.permission.WRITE_SECURE_SETTINGS)
+        assertEquals(
+            AdbSettings.BootPrepareResult.ENABLED,
+            AdbSettings.prepareWirelessAdbForBoot(context, sdkInt = 34)
+        )
+    }
 }

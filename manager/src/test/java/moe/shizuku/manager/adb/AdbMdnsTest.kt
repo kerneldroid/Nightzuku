@@ -69,4 +69,9 @@ class AdbMdnsTest {
         mdns.stop()
         idleMainLooper()
     }
+
+    @Test
+    fun `local network permission check returns true on pre-Android 17 SDKs`() {
+        assertTrue(AdbMdns.hasLocalNetworkPermission(context))
+    }
 }

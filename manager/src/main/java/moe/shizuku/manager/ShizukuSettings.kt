@@ -18,6 +18,11 @@ object ShizukuSettings {
     const val LANGUAGE = "language"
     const val KEEP_START_ON_BOOT = "start_on_boot"
     private const val LAST_BOOT_COUNT = "last_boot_count"
+    private const val BOOT_DISCOVERY_TIMEOUT_SECONDS = "boot_discovery_timeout_seconds"
+    private const val BOOT_MAX_RETRIES = "boot_max_retries"
+    private const val BOOT_FALLBACK_NOTIFICATION = "boot_fallback_notification"
+    const val DEFAULT_BOOT_DISCOVERY_TIMEOUT_SECONDS = 25
+    const val DEFAULT_BOOT_MAX_RETRIES = 4
     private const val STUB_NOTICE_COUNT = "stub_notice_count"
     private const val STUB_NOTICE_DONE = "stub_notice_done"
     private const val STUB_NOTICE_LIMIT = 2
@@ -117,6 +122,56 @@ object ShizukuSettings {
     @JvmStatic
     fun setLastHandledBootCount(bootCount: Int) {
         getPreferences().edit().putInt(LAST_BOOT_COUNT, bootCount).apply()
+    }
+
+    @JvmStatic
+    @LaunchMethod
+    fun resolveBootLaunchMethod(isRooted: Boolean): Int {
+        if (!isRooted) {
+            return LaunchMethod.ADB
+        }
+        return when (getLastLaunchMode()) {
+            LaunchMethod.ROOT -> LaunchMethod.ROOT
+            else -> LaunchMethod.ADB
+        }
+    }
+
+    @JvmStatic
+    fun getBootDiscoveryTimeoutSeconds(): Int {
+        return getPreferences()
+            .getInt(BOOT_DISCOVERY_TIMEOUT_SECONDS, DEFAULT_BOOT_DISCOVERY_TIMEOUT_SECONDS)
+            .coerceIn(10, 120)
+    }
+
+    @JvmStatic
+    fun setBootDiscoveryTimeoutSeconds(seconds: Int) {
+        getPreferences().edit()
+            .putInt(BOOT_DISCOVERY_TIMEOUT_SECONDS, seconds.coerceIn(10, 120))
+            .apply()
+    }
+
+    @JvmStatic
+    fun getBootMaxRetries(): Int {
+        return getPreferences()
+            .getInt(BOOT_MAX_RETRIES, DEFAULT_BOOT_MAX_RETRIES)
+            .coerceIn(1, 10)
+    }
+
+    @JvmStatic
+    fun setBootMaxRetries(retries: Int) {
+        getPreferences().edit()
+            .putInt(BOOT_MAX_RETRIES, retries.coerceIn(1, 10))
+            .apply()
+    }
+
+    @JvmStatic
+    fun isBootFallbackNotificationEnabled(): Boolean {
+        return getPreferences().getBoolean(BOOT_FALLBACK_NOTIFICATION, true)
+    }
+
+    @JvmStatic
+    fun setBootFallbackNotificationEnabled(enabled: Boolean) {
+        getPreferences().edit().putBoolean(BOOT_FALLBACK_NOTIFICATION, enabled).apply()
     }
 
     @JvmStatic

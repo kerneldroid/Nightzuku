@@ -1,0 +1,16 @@
+[package]
+name = "nightzuku-lan-starter"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "Apache-2.0"
+description = "External LAN/OpenWrt/PC mDNS auto-starter for Nightzuku over wlan0 (ADB Wi-Fi 2.0 compatible and immune to localhost loopback restrictions)"
+
+[dependencies]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"

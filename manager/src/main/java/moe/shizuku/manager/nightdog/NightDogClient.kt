@@ -18,6 +18,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.shizuku.manager.ShizukuSettings
+import moe.shizuku.manager.adb.AdbSettings
 import moe.shizuku.manager.application
 import moe.shizuku.manager.module.AdbModule
 import moe.shizuku.manager.module.AdbModuleManager
@@ -110,6 +111,7 @@ object NightDogClient {
         refreshWatchdogStatus()
         val ctx = resolveContext() ?: return@OnBinderReceivedListener
         scope.launch {
+            runCatching { AdbSettings.preProvisionForAutostart(ctx) }
             flushPendingPrivilegeUpdates(ctx)
             if (ModuleSettings.isBackgroundCheckEnabled() || isEnabled()) {
                 runBackgroundCheck(

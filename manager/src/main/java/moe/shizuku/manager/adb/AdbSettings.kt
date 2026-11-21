@@ -4,27 +4,38 @@ import android.Manifest
 import android.content.ContentResolver
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import kerneldroid.nightzuku.api.NightClient
 
 /**
- * Writes the debug settings needed to bring up wireless ADB.
+ * Manages the global debug settings needed for wireless ADB startup.
  *
- * Android 17 QPR3 tightened `SettingsProvider`: writing `adb_enabled`,
- * `adb_wifi_enabled` or `adb_allowed_connection_time` now also requires
- * `MANAGE_DEBUGGING`, which is signature|privileged and cannot be held by a
- * normal app even when `WRITE_SECURE_SETTINGS` was granted by Nightzuku's
- * server. Instead of letting the first write throw and abort the flow, this
- * helper:
- *
- * 1. skips keys that already have the desired value;
- * 2. tries the direct write when the app holds `WRITE_SECURE_SETTINGS`;
- * 3. falls back to the Nightzuku server (shell/root UID), where the same
- *    `settings put` command does hold `MANAGE_DEBUGGING`;
- * 4. verifies the resulting values before reporting success.
+ * Platform behavior split:
+ * - Android 11–16 (API 30–36): `WRITE_SECURE_SETTINGS` (granted once by the Nightzuku server)
+ *   is sufficient to write `adb_enabled`, `adb_wifi_enabled`, and `adb_allowed_connection_time`.
+ * - Android 17+ (API 37, verified against Canary ZP11.261016.008):
+ *   1. `SettingsProvider` requires `MANAGE_DEBUGGING` (`signature|privileged`) for writes.
+ *   2. Both `ADB_ENABLED` and `ADB_WIFI_ENABLED` are annotated `@Readable(redactedValue = "0")`
+ *      in `android/provider/Settings.java`, so `Settings.Global.getInt()` always returns `0` to
+ *      normal apps even when wireless debugging is active.
+ *   3. Native ADB Wi-Fi 2.0 automatically re-enables `adbd` on trusted Wi-Fi networks, so boot
+ *      startup must defer directly to mDNS discovery instead of gating on redacted reads.
  */
 object AdbSettings {
 
+    enum class BootPrepareResult {
+        /** Settings are confirmed enabled on API 30–36. */
+        ENABLED,
+        /** Android 17+ redacts reads and restricts writes; proceed directly to mDNS discovery. */
+        REDACTION_DEFER_TO_MDNS,
+        /** Settings could not be enabled on API 30–36. */
+        UNAVAILABLE
+    }
+
+    private const val TAG = "AdbSettings"
+    private const val API_ANDROID_17 = 37
     private const val KEY_WIFI_ADB = "adb_wifi_enabled"
     private const val KEY_ALLOWED_CONNECTION_TIME = "adb_allowed_connection_time"
 
@@ -36,6 +47,73 @@ object AdbSettings {
 
     /** The system disables the ADB connection timer with 0. */
     private const val ALLOWED_CONNECTION_TIME = 0L
+
+    /**
+     * Returns true on Android 17+ where `ADB_ENABLED` and `ADB_WIFI_ENABLED` return redacted `0`.
+     */
+    @JvmStatic
+    fun isReadRedactedPlatform(sdkInt: Int = Build.VERSION.SDK_INT): Boolean =
+        sdkInt >= API_ANDROID_17
+
+    /**
+     * Prepares wireless ADB state for automated boot startup without aborting on Android 17+
+     * read redaction.
+     */
+    @JvmStatic
+    fun prepareWirelessAdbForBoot(
+        context: Context,
+        sdkInt: Int = Build.VERSION.SDK_INT
+    ): BootPrepareResult {
+        if (isReadRedactedPlatform(sdkInt)) {
+            // Do not gate on Settings.Global.getInt() because API 37+ always redacts it to 0.
+            // If the server is somehow already running, best-effort ensure timeout=0; otherwise
+            // defer directly to mDNS so native ADB Wi-Fi 2.0 on trusted Wi-Fi is picked up.
+            if (NightClient.pingBinder()) {
+                writeThroughServer(listOf(KEY_ALLOWED_CONNECTION_TIME to ALLOWED_CONNECTION_TIME.toString()))
+            }
+            return BootPrepareResult.REDACTION_DEFER_TO_MDNS
+        }
+        return if (enableWirelessAdb(context)) {
+            BootPrepareResult.ENABLED
+        } else {
+            BootPrepareResult.UNAVAILABLE
+        }
+    }
+
+    /**
+     * Pre-provisions persistent ADB settings while the Nightzuku server is alive (UID 2000 shell
+     * holds MANAGE_DEBUGGING):
+     * 1. Sets `adb_allowed_connection_time = 0` so paired TLS/RSA keys never expire after 7 days.
+     * 2. On Android 11–16, ensures `WRITE_SECURE_SETTINGS` is granted to the manager package.
+     */
+    @JvmStatic
+    fun preProvisionForAutostart(
+        context: Context,
+        sdkInt: Int = Build.VERSION.SDK_INT
+    ): Boolean {
+        if (!NightClient.pingBinder()) {
+            return false
+        }
+
+        val timeoutOk = writeThroughServer(
+            listOf(KEY_ALLOWED_CONNECTION_TIME to ALLOWED_CONNECTION_TIME.toString())
+        )
+
+        if (sdkInt < API_ANDROID_17 &&
+            context.checkSelfPermission(Manifest.permission.WRITE_SECURE_SETTINGS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            runCatching {
+                NightClient.execFast(
+                    arrayOf("pm", "grant", context.packageName, Manifest.permission.WRITE_SECURE_SETTINGS)
+                )
+            }.onFailure { t ->
+                Log.w(TAG, "Failed to pre-grant WRITE_SECURE_SETTINGS", t)
+            }
+        }
+
+        return timeoutOk
+    }
 
     /**
      * Enables wireless ADB and disables the connection timeout.

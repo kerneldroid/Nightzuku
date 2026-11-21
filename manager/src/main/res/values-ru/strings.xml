@@ -520,4 +520,22 @@
     <string name="settings_security_user_kind_secondary">Дополнительный пользователь</string>
     <string name="settings_security_user_always_allowed">Всегда разрешён</string>
     <string name="settings_security_user_blocked_by_policy">Заблокирован политикой изоляции</string>
+    <string name="boot_adb_local_network_title">Требуется доступ к локальной сети</string>
+    <string name="boot_adb_local_network_message">Выдайте разрешение на локальную сеть в Nightzuku, чтобы поиск беспроводной отладки на Android 17+ работал автоматически.</string>
+    <string name="boot_adb_manual_toggle_title">Включите «Отладку по Wi-Fi» для запуска Nightzuku</string>
+    <string name="boot_adb_manual_toggle_message">Не удалось автоматически найти беспроводную отладку после перезагрузки. Включите плитку «Отладка по Wi-Fi» в шторке или настройках разработчика.</string>
+    <string name="settings_boot_method_title">Способ запуска при старте</string>
+    <string name="settings_boot_method_wireless">Wireless ADB (Отладка по Wi-Fi)</string>
+    <string name="settings_boot_method_wireless_desc">Через Wi-Fi JobScheduler и mDNS (Android 11–16 или ADB Wi-Fi 2.0 на Android 17+)</string>
+    <string name="settings_boot_method_wireless_only_summary">Wireless ADB (Root недоступен на этом устройстве)</string>
+    <string name="settings_boot_method_root">Root</string>
+    <string name="settings_boot_method_root_desc">Запуск сервера сразу при загрузке через su</string>
+    <string name="settings_boot_method_root_unavailable">Недоступно — root (su) не обнаружен на устройстве</string>
+    <string name="settings_startup_wireless_options">Настройки автостарта по Wi-Fi</string>
+    <string name="settings_boot_timeout_title">Таймаут поиска mDNS</string>
+    <string name="settings_boot_timeout_summary">%1$d с</string>
+    <string name="settings_boot_retries_title">Максимум попыток после загрузки</string>
+    <string name="settings_boot_retries_summary">%1$d попыт.</string>
+    <string name="settings_boot_fallback_notification_title">Уведомление при неудаче</string>
+    <string name="settings_boot_fallback_notification_summary">Показывать подсказку включить «Отладку по Wi-Fi», если автозапуск не смог найти порт</string>
 </resources>

@@ -6,10 +6,7 @@ import android.content.Intent
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
-import androidx.annotation.RequiresApi
 import com.topjohnwu.superuser.Shell
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -17,20 +14,17 @@ import kotlinx.coroutines.launch
 import moe.shizuku.manager.AppConstants
 import moe.shizuku.manager.ShizukuSettings
 import moe.shizuku.manager.ShizukuSettings.LaunchMethod
-import moe.shizuku.manager.adb.AdbClient
-import moe.shizuku.manager.adb.AdbKey
-import moe.shizuku.manager.adb.AdbMdns
-import moe.shizuku.manager.adb.AdbSettings
-import moe.shizuku.manager.adb.PreferenceAdbKeyStore
 import moe.shizuku.manager.starter.Starter
+import moe.shizuku.manager.utils.EnvironmentUtils
 import moe.shizuku.manager.utils.UserHandleCompat
 import rikka.shizuku.Shizuku
 
 class BootCompleteReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
-        if (Intent.ACTION_LOCKED_BOOT_COMPLETED != intent.action
-            && Intent.ACTION_BOOT_COMPLETED != intent.action
+        val action = intent.action
+        if (Intent.ACTION_LOCKED_BOOT_COMPLETED != action
+            && Intent.ACTION_BOOT_COMPLETED != action
         ) {
             return
         }
@@ -47,20 +41,25 @@ class BootCompleteReceiver : BroadcastReceiver() {
             return
         }
 
-        if (!bootStartInFlight.compareAndSet(false, true)) {
-            Log.d(AppConstants.TAG, "Boot start already in flight, skipping duplicate broadcast ${intent.action}")
-            return
-        }
-
-        val launchMode = ShizukuSettings.getLastLaunchMode()
+        val launchMode = ShizukuSettings.resolveBootLaunchMethod(EnvironmentUtils.isRooted())
         if (launchMode == LaunchMethod.ROOT) {
+            if (!bootStartInFlight.compareAndSet(false, true)) {
+                Log.d(AppConstants.TAG, "Root boot start already in flight, skipping $action")
+                return
+            }
             rootStart(currentBootCount)
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
             && launchMode == LaunchMethod.ADB
         ) {
-            adbStart(context, currentBootCount)
+            // Wireless ADB requires credential-encrypted keystores and an associated Wi-Fi
+            // network; wait for ACTION_BOOT_COMPLETED and hand off immediately to JobScheduler
+            // instead of blocking inside goAsync().
+            if (Intent.ACTION_BOOT_COMPLETED != action) {
+                Log.d(AppConstants.TAG, "Deferring ADB boot start until ACTION_BOOT_COMPLETED")
+                return
+            }
+            AdbBootStartScheduler.schedule(context, currentBootCount)
         } else {
-            bootStartInFlight.set(false)
             Log.w(AppConstants.TAG, "No support start on boot")
         }
     }
@@ -87,54 +86,7 @@ class BootCompleteReceiver : BroadcastReceiver() {
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.R)
-    private fun adbStart(context: Context, bootCount: Int) {
-        val pending = goAsync()
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                if (!AdbSettings.enableWirelessAdb(context)) {
-                    return@launch
-                }
-
-                val latch = CountDownLatch(1)
-                val handled = AtomicBoolean(false)
-                val adbMdns = AdbMdns(context, AdbMdns.TLS_CONNECT) { (host, port) ->
-                    if (port <= 0 || !handled.compareAndSet(false, true)) return@AdbMdns
-                    CoroutineScope(Dispatchers.IO).launch {
-                        try {
-                            val keystore = PreferenceAdbKeyStore(ShizukuSettings.getPreferences())
-                            val key = AdbKey(keystore, "shizuku")
-                            AdbClient(host, port, key, requireTls = true).use { client ->
-                                client.connect()
-                                client.shellCommand(Starter.internalCommand, null)
-                            }
-                            if (bootCount != -1) {
-                                ShizukuSettings.setLastHandledBootCount(bootCount)
-                            }
-                        } catch (e: Exception) {
-                            Log.w(AppConstants.TAG, "adbStart on boot failed", e)
-                        } finally {
-                            latch.countDown()
-                        }
-                    }
-                }
-                adbMdns.start()
-                try {
-                    latch.await(ADB_BOOT_DISCOVERY_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                } finally {
-                    adbMdns.stop()
-                }
-            } catch (t: Throwable) {
-                Log.w(AppConstants.TAG, "adbStart setup failed", t)
-            } finally {
-                bootStartInFlight.set(false)
-                pending.finish()
-            }
-        }
-    }
-
     companion object {
-        private const val ADB_BOOT_DISCOVERY_TIMEOUT_SECONDS = 10L
         private val bootStartInFlight = AtomicBoolean(false)
     }
 }

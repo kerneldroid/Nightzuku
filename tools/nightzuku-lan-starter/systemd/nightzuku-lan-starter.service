@@ -1,0 +1,13 @@
+[Unit]
+Description=Nightzuku LAN mDNS Auto-Starter (ADB Wi-Fi 2.0)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/nightzuku-lan-starter --adb /usr/bin/adb
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
