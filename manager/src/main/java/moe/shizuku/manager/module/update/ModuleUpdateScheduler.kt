@@ -14,10 +14,12 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -76,18 +78,28 @@ object ModuleUpdateScheduler {
         val scheduler = appCtx.getSystemService(JobScheduler::class.java) ?: return
 
         val freq = ModuleSettings.getUpdateFrequency()
+        val needsPeriodicUpdates =
+            freq != ModuleSettings.UpdateFrequency.MANUAL &&
+                freq != ModuleSettings.UpdateFrequency.ON_START
+        val needsBackgroundCheck =
+            ModuleSettings.isBackgroundCheckEnabled() || NightDogClient.isEnabled()
+
+        if (!needsPeriodicUpdates && !needsBackgroundCheck) {
+            scheduler.cancel(JOB_ID_MODULE_UPDATE_CHECK)
+            return
+        }
+
         val intervalMs = when (freq) {
             ModuleSettings.UpdateFrequency.MANUAL,
-            ModuleSettings.UpdateFrequency.ON_START -> {
-                scheduler.cancel(JOB_ID_MODULE_UPDATE_CHECK)
-                return
-            }
+            ModuleSettings.UpdateFrequency.ON_START -> SIX_HOURS_MS
             ModuleSettings.UpdateFrequency.SIX_HOURS -> SIX_HOURS_MS
             ModuleSettings.UpdateFrequency.DAILY -> DAY_MS
             ModuleSettings.UpdateFrequency.WEEKLY -> WEEK_MS
         }
 
-        val networkType = if (ModuleSettings.isUpdateWifiOnly()) {
+        val networkType = if (!needsPeriodicUpdates) {
+            JobInfo.NETWORK_TYPE_NONE
+        } else if (ModuleSettings.isUpdateWifiOnly()) {
             JobInfo.NETWORK_TYPE_UNMETERED
         } else {
             JobInfo.NETWORK_TYPE_ANY
@@ -350,6 +362,7 @@ class ModuleUpdateJobService : JobService() {
     private var activeJob: Job? = null
 
     override fun onStartJob(params: JobParameters?): Boolean {
+        activeJob?.cancel()
         activeJob = jobScope.launch {
             try {
                 ModuleUpdateScheduler.checkUpdates(
@@ -357,12 +370,22 @@ class ModuleUpdateJobService : JobService() {
                     force = false,
                     onServerStart = false
                 )
+                if (ModuleSettings.isBackgroundCheckEnabled() || NightDogClient.isEnabled()) {
+                    NightDogClient.runBackgroundCheck(
+                        context = applicationContext,
+                        forceUpdateCheck = false,
+                        runServices = true,
+                        forceRunServices = false,
+                        onServerStart = false
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
             } catch (t: Throwable) {
                 LOGGER.w(t, "ModuleUpdateJobService: background update check failed")
-            } finally {
-                if (params != null) {
-                    jobFinished(params, false)
-                }
+            }
+            if (params != null) {
+                jobFinished(params, false)
             }
         }
         return true
@@ -372,5 +395,12 @@ class ModuleUpdateJobService : JobService() {
         activeJob?.cancel()
         activeJob = null
         return true
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        activeJob?.cancel()
+        activeJob = null
+        jobScope.cancel()
     }
 }

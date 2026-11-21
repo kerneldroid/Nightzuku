@@ -1,16 +1,19 @@
 package moe.shizuku.manager.adb
 
 import android.os.Build
+import android.os.Looper
 import android.util.Log
 import androidx.annotation.RequiresApi
 import com.android.org.conscrypt.Conscrypt
 import java.io.Closeable
 import java.io.DataInputStream
 import java.io.DataOutputStream
+import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.SSLSocket
 
 private const val TAG = "AdbPairClient"
@@ -58,7 +61,7 @@ private class PeerInfo(
     }
 
     fun toStringShort(): String {
-        return "type=$type, data=${data.contentToString()}"
+        return "type=$type, dataSize=${data.size}"
     }
 
     companion object {
@@ -192,15 +195,31 @@ class AdbPairingClient(
         Stopped
     }
 
-    private lateinit var socket: Socket
-    private lateinit var inputStream: DataInputStream
-    private lateinit var outputStream: DataOutputStream
+    private val ioLock = Any()
+    private val cancelled = AtomicBoolean(false)
+    private val contextDestroyed = AtomicBoolean(false)
+
+    @Volatile
+    private var socket: Socket? = null
+    @Volatile
+    private var sslSocket: SSLSocket? = null
+    @Volatile
+    private var inputStream: DataInputStream? = null
+    @Volatile
+    private var outputStream: DataOutputStream? = null
 
     private val peerInfo: PeerInfo = PeerInfo(PeerInfo.Type.ADB_RSA_PUB_KEY.value, key.adbPublicKey)
-    private lateinit var pairingContext: PairingContext
+    @Volatile
+    private var pairingContext: PairingContext? = null
+    @Volatile
     private var state: State = State.Ready
 
     fun start(): Boolean {
+        if (cancelled.get()) {
+            state = State.Stopped
+            return false
+        }
+
         setupTlsConnection()
 
         state = State.ExchangingMsgs
@@ -221,31 +240,101 @@ class AdbPairingClient(
         return true
     }
 
+    /**
+     * Thread-safely interrupts any in-flight blocking socket I/O and closes active streams/sockets.
+     * Safe to invoke from another thread (for example, inside coroutine cancellation handlers).
+     */
+    fun cancel() {
+        val currentSocket: Socket?
+        val currentSslSocket: SSLSocket?
+        val currentInput: DataInputStream?
+        val currentOutput: DataOutputStream?
+        synchronized(ioLock) {
+            cancelled.set(true)
+            state = State.Stopped
+            currentSocket = socket
+            currentSslSocket = sslSocket
+            currentInput = inputStream
+            currentOutput = outputStream
+        }
+
+        val closeResources = {
+            // Close sockets first so DataOutputStream.close() cannot block flushing to a live socket.
+            runCatching { currentSslSocket?.close() }
+            runCatching { currentSocket?.close() }
+            runCatching { currentInput?.close() }
+            runCatching { currentOutput?.close() }
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            Thread(Runnable { closeResources() }, "AdbPairingCancel").start()
+        } else {
+            closeResources()
+        }
+    }
+
     private fun setupTlsConnection() {
-        socket = Socket()
-        socket.tcpNoDelay = true
-        socket.soTimeout = PAIRING_SO_TIMEOUT_MS
-        socket.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
+        val rawSocket = Socket()
+        rawSocket.tcpNoDelay = true
+        rawSocket.soTimeout = PAIRING_SO_TIMEOUT_MS
+        synchronized(ioLock) {
+            if (cancelled.get()) {
+                runCatching { rawSocket.close() }
+                throw IOException("Pairing cancelled")
+            }
+            socket = rawSocket
+        }
+        rawSocket.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
 
         val sslContext = key.sslContext
-        val sslSocket = sslContext.socketFactory.createSocket(socket, host, port, true) as SSLSocket
-        sslSocket.soTimeout = PAIRING_SO_TIMEOUT_MS
-        sslSocket.startHandshake()
+        val createdSslSocket = sslContext.socketFactory.createSocket(rawSocket, host, port, true) as SSLSocket
+        createdSslSocket.soTimeout = PAIRING_SO_TIMEOUT_MS
+        synchronized(ioLock) {
+            if (cancelled.get()) {
+                runCatching { createdSslSocket.close() }
+                runCatching { rawSocket.close() }
+                throw IOException("Pairing cancelled")
+            }
+            sslSocket = createdSslSocket
+        }
+        createdSslSocket.startHandshake()
         Log.d(TAG, "Handshake succeeded.")
 
-        inputStream = DataInputStream(sslSocket.inputStream)
-        outputStream = DataOutputStream(sslSocket.outputStream)
+        val createdInput = DataInputStream(createdSslSocket.inputStream)
+        val createdOutput = DataOutputStream(createdSslSocket.outputStream)
+        synchronized(ioLock) {
+            if (cancelled.get()) {
+                runCatching { createdInput.close() }
+                runCatching { createdOutput.close() }
+                runCatching { createdSslSocket.close() }
+                runCatching { rawSocket.close() }
+                throw IOException("Pairing cancelled")
+            }
+            inputStream = createdInput
+            outputStream = createdOutput
+        }
 
-        val pairCodeBytes = pairCode.toByteArray()
-        val keyMaterial = Conscrypt.exportKeyingMaterial(sslSocket, kExportedKeyLabel, null, kExportedKeySize)
-        val passwordBytes = ByteArray(pairCode.length + keyMaterial.size)
+        val pairCodeBytes = pairCode.toByteArray(Charsets.UTF_8)
+        val keyMaterial = Conscrypt.exportKeyingMaterial(createdSslSocket, kExportedKeyLabel, null, kExportedKeySize)
+        val passwordBytes = ByteArray(pairCodeBytes.size + keyMaterial.size)
         pairCodeBytes.copyInto(passwordBytes)
         keyMaterial.copyInto(passwordBytes, pairCodeBytes.size)
 
-        val pairingContext = PairingContext.create(passwordBytes)
-        checkNotNull(pairingContext) { "Unable to create PairingContext." }
-        this.pairingContext = pairingContext
+        if (cancelled.get()) {
+            throw IOException("Pairing cancelled")
+        }
+        val createdContext = PairingContext.create(passwordBytes)
+        checkNotNull(createdContext) { "Unable to create PairingContext." }
+        this.pairingContext = createdContext
     }
+
+    private fun requireInputStream(): DataInputStream =
+        inputStream ?: throw IOException("Pairing input stream is not open")
+
+    private fun requireOutputStream(): DataOutputStream =
+        outputStream ?: throw IOException("Pairing output stream is not open")
+
+    private fun requirePairingContext(): PairingContext =
+        pairingContext ?: throw IllegalStateException("PairingContext is not initialized")
 
     private fun createHeader(type: PairingPacketHeader.Type, payloadSize: Int): PairingPacketHeader {
         return PairingPacketHeader(kCurrentKeyHeaderVersion, type.value, payloadSize)
@@ -253,7 +342,7 @@ class AdbPairingClient(
 
     private fun readHeader(): PairingPacketHeader? {
         val bytes = ByteArray(kPairingPacketHeaderSize)
-        inputStream.readFully(bytes)
+        requireInputStream().readFully(bytes)
         val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN)
         return PairingPacketHeader.readFrom(buffer)
     }
@@ -262,14 +351,16 @@ class AdbPairingClient(
         val buffer = ByteBuffer.allocate(kPairingPacketHeaderSize).order(ByteOrder.BIG_ENDIAN)
         header.writeTo(buffer)
 
-        outputStream.write(buffer.array())
-        outputStream.write(payload)
-        outputStream.flush()
+        val out = requireOutputStream()
+        out.write(buffer.array())
+        out.write(payload)
+        out.flush()
         Log.d(TAG, "write payload, size=${payload.size}")
     }
 
     private fun doExchangeMsgs(): Boolean {
-        val msg = pairingContext.msg
+        val ctx = requirePairingContext()
+        val msg = ctx.msg
         val size = msg.size
 
         val ourHeader = createHeader(PairingPacketHeader.Type.SPAKE2_MSG, size)
@@ -279,17 +370,18 @@ class AdbPairingClient(
         if (theirHeader.type != PairingPacketHeader.Type.SPAKE2_MSG.value) return false
 
         val theirMessage = ByteArray(theirHeader.payload)
-        inputStream.readFully(theirMessage)
+        requireInputStream().readFully(theirMessage)
 
-        if (!pairingContext.initCipher(theirMessage)) return false
+        if (!ctx.initCipher(theirMessage)) return false
         return true
     }
 
     private fun doExchangePeerInfo(): Boolean {
+        val ctx = requirePairingContext()
         val buf = ByteBuffer.allocate(kMaxPeerInfoSize).order(ByteOrder.BIG_ENDIAN)
         peerInfo.writeTo(buf)
 
-        val outbuf = pairingContext.encrypt(buf.array()) ?: return false
+        val outbuf = ctx.encrypt(buf.array()) ?: return false
 
         val ourHeader = createHeader(PairingPacketHeader.Type.PEER_INFO, outbuf.size)
         writeHeader(ourHeader, outbuf)
@@ -298,9 +390,9 @@ class AdbPairingClient(
         if (theirHeader.type != PairingPacketHeader.Type.PEER_INFO.value) return false
 
         val theirMessage = ByteArray(theirHeader.payload)
-        inputStream.readFully(theirMessage)
+        requireInputStream().readFully(theirMessage)
 
-        val decrypted = pairingContext.decrypt(theirMessage) ?: throw AdbInvalidPairingCodeException()
+        val decrypted = ctx.decrypt(theirMessage) ?: throw AdbInvalidPairingCodeException()
         if (decrypted.size != kMaxPeerInfoSize) {
             Log.e(TAG, "Got size=${decrypted.size} PeerInfo.size=$kMaxPeerInfoSize")
             return false
@@ -311,27 +403,11 @@ class AdbPairingClient(
     }
 
     override fun close() {
-        if (::inputStream.isInitialized) {
-            try {
-                inputStream.close()
-            } catch (_: Throwable) {
-            }
-        }
-        if (::outputStream.isInitialized) {
-            try {
-                outputStream.close()
-            } catch (_: Throwable) {
-            }
-        }
-        if (::socket.isInitialized) {
-            try {
-                socket.close()
-            } catch (_: Exception) {
-            }
-        }
+        cancel()
 
-        if (state != State.Ready && ::pairingContext.isInitialized) {
-            pairingContext.destroy()
+        val ctx = pairingContext
+        if (ctx != null && contextDestroyed.compareAndSet(false, true)) {
+            ctx.destroy()
         }
     }
 

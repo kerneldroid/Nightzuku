@@ -97,7 +97,12 @@ class ShellTutorialActivity : AppActivity() {
 
             fun writeToDocument(name: String) {
                 DocumentsContract.createDocument(contentResolver, doc, "application/octet-stream", name)?.runCatching {
-                    cr.openOutputStream(this)?.let { assets.open(name).copyTo(it) }
+                    cr.openOutputStream(this)?.use { output ->
+                        assets.open(name).use { input ->
+                            input.copyTo(output)
+                        }
+                        output.flush()
+                    }
                 }
             }
 

@@ -7,6 +7,8 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.view.MotionEvent
+import android.view.Window
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -19,10 +21,17 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -48,15 +57,87 @@ class RequestPermissionActivity : AppActivity() {
         val pid: Int,
         val requestCode: Int,
         val displayLabel: String,
-        val packageSummary: String,
-        val shownAtElapsedMs: Long
+        val packageSummary: String
     )
+
+    private class ObscuredTouchFilteringWindowCallback(
+        val delegate: Window.Callback,
+        private val isObscured: (MotionEvent) -> Boolean
+    ) : Window.Callback by delegate {
+        override fun dispatchTouchEvent(event: MotionEvent?): Boolean {
+            if (event != null && isObscured(event)) {
+                LOGGER.w("Rejected obscured dialog touch event (flags=0x%x)", event.flags)
+                return true
+            }
+            return delegate.dispatchTouchEvent(event)
+        }
+    }
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var activeRequest by mutableStateOf<PromptRequest?>(null)
+    private var requestGeneration by mutableStateOf(0L)
+    private var buttonsShownAtElapsedMs: Long = 0L
     private var resultDispatched = false
     private var pendingBinderListener: Shizuku.OnBinderReceivedListener? = null
     private var binderTimeoutRunnable: Runnable? = null
+
+    private fun isObscuredTouch(ev: MotionEvent): Boolean {
+        val partialFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            MotionEvent.FLAG_WINDOW_IS_PARTIALLY_OBSCURED
+        } else {
+            FLAG_WINDOW_IS_PARTIALLY_OBSCURED_COMPAT
+        }
+        return (ev.flags and (MotionEvent.FLAG_WINDOW_IS_OBSCURED or partialFlag)) != 0
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
+        if (ev != null && isObscuredTouch(ev)) {
+            LOGGER.w("Rejected obscured touch event (flags=0x%x)", ev.flags)
+            return true
+        }
+        return super.dispatchTouchEvent(ev)
+    }
+
+    @Composable
+    private fun HardenDialogWindow(current: PromptRequest, generation: Long) {
+        val dialogView = LocalView.current
+        val dialogWindow = generateSequence(dialogView.parent) { it.parent }
+            .filterIsInstance<DialogWindowProvider>()
+            .firstOrNull()
+            ?.window
+        SideEffect {
+            dialogView.rootView.filterTouchesWhenObscured = true
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                runCatching { dialogWindow?.setHideOverlayWindows(true) }
+            }
+        }
+        DisposableEffect(dialogWindow) {
+            if (dialogWindow != null) {
+                dialogWindow.decorView.filterTouchesWhenObscured = true
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    runCatching { dialogWindow.setHideOverlayWindows(true) }
+                }
+                val currentCallback = dialogWindow.callback
+                if (currentCallback != null && currentCallback !is ObscuredTouchFilteringWindowCallback) {
+                    val wrapped = ObscuredTouchFilteringWindowCallback(currentCallback, ::isObscuredTouch)
+                    dialogWindow.callback = wrapped
+                    onDispose {
+                        if (dialogWindow.callback === wrapped) {
+                            dialogWindow.callback = wrapped.delegate
+                        }
+                    }
+                } else {
+                    onDispose { }
+                }
+            } else {
+                onDispose { }
+            }
+        }
+        LaunchedEffect(current, generation) {
+            withFrameNanos { }
+            buttonsShownAtElapsedMs = SystemClock.elapsedRealtime()
+        }
+    }
 
     private fun dispatchDecision(
         request: PromptRequest,
@@ -65,7 +146,12 @@ class RequestPermissionActivity : AppActivity() {
         ignoreTapGrace: Boolean = false
     ): Boolean {
         if (!ignoreTapGrace && allowed) {
-            val elapsed = SystemClock.elapsedRealtime() - request.shownAtElapsedMs
+            val shownAt = buttonsShownAtElapsedMs
+            if (shownAt <= 0L) {
+                LOGGER.w("Ignored premature grant tap before action buttons were rendered")
+                return false
+            }
+            val elapsed = SystemClock.elapsedRealtime() - shownAt
             if (elapsed < TAP_GRACE_WINDOW_MS) {
                 LOGGER.w("Ignored premature grant tap (%dms < %dms)", elapsed, TAP_GRACE_WINDOW_MS)
                 return false
@@ -140,8 +226,26 @@ class RequestPermissionActivity : AppActivity() {
             pid = pid,
             requestCode = requestCode,
             displayLabel = fullLabel,
-            packageSummary = packageSummary,
-            shownAtElapsedMs = SystemClock.elapsedRealtime()
+            packageSummary = packageSummary
+        )
+    }
+
+    private fun restoreRequest(savedInstanceState: Bundle?): PromptRequest? {
+        if (savedInstanceState == null) return null
+        val uid = savedInstanceState.getInt(STATE_UID, -1)
+        val pid = savedInstanceState.getInt(STATE_PID, -1)
+        val requestCode = savedInstanceState.getInt(STATE_REQUEST_CODE, -1)
+        val displayLabel = savedInstanceState.getString(STATE_DISPLAY_LABEL)
+        val packageSummary = savedInstanceState.getString(STATE_PACKAGE_SUMMARY)
+        if (uid <= 0 || pid <= 0 || displayLabel.isNullOrEmpty() || packageSummary.isNullOrEmpty()) {
+            return null
+        }
+        return PromptRequest(
+            uid = uid,
+            pid = pid,
+            requestCode = requestCode,
+            displayLabel = displayLabel,
+            packageSummary = packageSummary
         )
     }
 
@@ -153,13 +257,19 @@ class RequestPermissionActivity : AppActivity() {
         }
         window.decorView.filterTouchesWhenObscured = true
 
-        val parsed = parseAndValidateRequest(intent)
+        val parsed = restoreRequest(savedInstanceState) ?: parseAndValidateRequest(intent)
         if (parsed == null) {
             finish()
             return
         }
+        resultDispatched = savedInstanceState?.getBoolean(STATE_RESULT_DISPATCHED, false) == true
+        if (resultDispatched) {
+            finish()
+            return
+        }
+        buttonsShownAtElapsedMs = 0L
         activeRequest = parsed
-        resultDispatched = false
+        requestGeneration += 1L
 
         if (!Shizuku.pingBinder()) {
             val timeout = Runnable {
@@ -185,6 +295,7 @@ class RequestPermissionActivity : AppActivity() {
 
         setContent {
             val current = activeRequest ?: return@setContent
+            val generation = requestGeneration
             val isWatch = moe.shizuku.manager.utils.EnvironmentUtils.isWatch(this@RequestPermissionActivity)
             if (isWatch) {
                 moe.shizuku.manager.ui.compose.WearShizukuTheme {
@@ -201,6 +312,7 @@ class RequestPermissionActivity : AppActivity() {
                             )
                         },
                         title = {
+                            HardenDialogWindow(current, generation)
                             WearText(stringResource(R.string.app_name))
                         },
                         text = {
@@ -281,6 +393,7 @@ class RequestPermissionActivity : AppActivity() {
                             }
                         },
                         confirmButton = {
+                            HardenDialogWindow(current, generation)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 FilledTonalButton(
                                     onClick = {
@@ -334,7 +447,21 @@ class RequestPermissionActivity : AppActivity() {
             return
         }
         resultDispatched = false
+        buttonsShownAtElapsedMs = 0L
         activeRequest = next
+        requestGeneration += 1L
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(STATE_RESULT_DISPATCHED, resultDispatched)
+        activeRequest?.let { req ->
+            outState.putInt(STATE_UID, req.uid)
+            outState.putInt(STATE_PID, req.pid)
+            outState.putInt(STATE_REQUEST_CODE, req.requestCode)
+            outState.putString(STATE_DISPLAY_LABEL, req.displayLabel)
+            outState.putString(STATE_PACKAGE_SUMMARY, req.packageSummary)
+        }
     }
 
     override fun onDestroy() {
@@ -354,5 +481,12 @@ class RequestPermissionActivity : AppActivity() {
     companion object {
         private const val BINDER_WAIT_TIMEOUT_MS = 3_000L
         private const val TAP_GRACE_WINDOW_MS = 400L
+        private const val FLAG_WINDOW_IS_PARTIALLY_OBSCURED_COMPAT = 0x2
+        private const val STATE_UID = "state_uid"
+        private const val STATE_PID = "state_pid"
+        private const val STATE_REQUEST_CODE = "state_request_code"
+        private const val STATE_DISPLAY_LABEL = "state_display_label"
+        private const val STATE_PACKAGE_SUMMARY = "state_package_summary"
+        private const val STATE_RESULT_DISPATCHED = "state_result_dispatched"
     }
 }

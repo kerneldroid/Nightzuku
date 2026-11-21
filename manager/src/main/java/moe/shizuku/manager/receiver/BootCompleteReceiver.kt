@@ -48,7 +48,7 @@ class BootCompleteReceiver : BroadcastReceiver() {
                 return
             }
             rootStart(currentBootCount)
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+        } else if ((Build.VERSION.SDK_INT >= Build.VERSION_CODES.R || EnvironmentUtils.getAdbTcpPort() > 0)
             && launchMode == LaunchMethod.ADB
         ) {
             // Wireless ADB requires credential-encrypted keystores and an associated Wi-Fi

@@ -11,10 +11,13 @@ import android.util.Log
 import androidx.lifecycle.Observer
 import java.net.ConnectException
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import moe.shizuku.manager.R
 import moe.shizuku.manager.ShizukuSettings
@@ -205,6 +208,8 @@ class AdbPairingService : Service() {
             try {
                 val key = try {
                     AdbKey(PreferenceAdbKeyStore(ShizukuSettings.getPreferences()), "shizuku")
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Throwable) {
                     e.printStackTrace()
                     val keyErr = AdbKeyException(e)
@@ -215,12 +220,24 @@ class AdbPairingService : Service() {
 
                 runCatching {
                     AdbPairingClient(host, port, code, key).use { client ->
-                        client.start()
+                        val cancelHandle = coroutineContext.job.invokeOnCompletion { cause ->
+                            if (cause != null) {
+                                client.cancel()
+                            }
+                        }
+                        try {
+                            client.start()
+                        } finally {
+                            cancelHandle.dispose()
+                        }
                     }
                 }.onFailure {
+                    if (it is CancellationException) throw it
+                    if (!coroutineContext.isActive) return@launch
                     SmartLogManager.recordPairingError("AdbPairingService.exchange", host, port, it)
                     handleResult(false, it)
                 }.onSuccess { ok ->
+                    if (!coroutineContext.isActive) return@launch
                     if (!ok) {
                         SmartLogManager.recordPairingError(
                             "AdbPairingService.handshake",

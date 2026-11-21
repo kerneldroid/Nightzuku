@@ -481,22 +481,42 @@ object ModuleRuntimeUtils {
     fun syncBackFromShellRuntime(service: IShizukuService, module: AdbModule) {
         val shellDir = shellModuleDirectory(module.id)
         val shellPath = shellDir.absolutePath
-        val cmd = "cd \"$shellPath\" 2>/dev/null && tar -cf - ."
+        val cmd = "cd \"$shellPath\" 2>/dev/null && tar -cf - . 2>/dev/null"
         val remote = runCatching {
             service.newProcess(arrayOf("sh", "-c", cmd), null, "/data/local/tmp")
         }.getOrNull() ?: return
 
-        runCatching { ParcelFileDescriptor.AutoCloseOutputStream(remote.getOutputStream()).close() }
-        val stderrPfd = remote.getErrorStream()
+        var processFinished = false
+        var stderrPfd: ParcelFileDescriptor? = null
         try {
-            ParcelFileDescriptor.AutoCloseInputStream(remote.getInputStream()).use { rawIn ->
+            runCatching { ParcelFileDescriptor.AutoCloseOutputStream(remote.getOutputStream()).close() }
+            stderrPfd = remote.getErrorStream()
+            val readResult = ParcelFileDescriptor.AutoCloseInputStream(remote.getInputStream()).use { rawIn ->
                 BufferedInputStream(rawIn).use { input ->
                     readTarIntoDirectory(input, module.directory)
                 }
             }
-            remote.waitForTimeout(SYNC_TIMEOUT_SECONDS, TimeUnit.SECONDS.name)
+            val finished = remote.waitForTimeout(SYNC_TIMEOUT_SECONDS, TimeUnit.SECONDS.name)
+            processFinished = finished
+            val exitCode = if (finished) {
+                runCatching { remote.exitValue() }.getOrDefault(-1)
+            } else {
+                runCatching { remote.destroy() }
+                -1
+            }
+            if (finished &&
+                exitCode == 0 &&
+                readResult.validEndOfArchive &&
+                !readResult.limitReached &&
+                !readResult.truncated
+            ) {
+                mirrorDeletedModuleFiles(module.directory, readResult.seenPaths)
+            }
         } catch (_: Throwable) {
         } finally {
+            if (!processFinished) {
+                runCatching { remote.destroy() }
+            }
             runCatching { stderrPfd?.close() }
         }
     }
@@ -628,21 +648,63 @@ object ModuleRuntimeUtils {
         buf[offset + digits] = 0
     }
 
-    private fun readTarIntoDirectory(input: InputStream, targetDir: File) {
+    private data class TarReadResult(
+        val seenPaths: Set<String>,
+        val validEndOfArchive: Boolean,
+        val limitReached: Boolean,
+        val truncated: Boolean
+    )
+
+    private fun readTarIntoDirectory(input: InputStream, targetDir: File): TarReadResult {
         val header = ByteArray(TAR_BLOCK_SIZE)
         var entryCount = 0
         var totalBytes = 0L
         val seenPaths = HashSet<String>()
+        var validEndOfArchive = false
+        var limitReached = false
+        var truncated = false
 
         while (true) {
-            if (!readFully(input, header, TAR_BLOCK_SIZE)) break
-            if (header.all { it.toInt() == 0 }) break
+            if (!readFully(input, header, TAR_BLOCK_SIZE)) {
+                truncated = true
+                break
+            }
+            if (header.all { it.toInt() == 0 }) {
+                val secondZeroBlock = ByteArray(TAR_BLOCK_SIZE)
+                if (readFully(input, secondZeroBlock, TAR_BLOCK_SIZE) &&
+                    secondZeroBlock.all { it.toInt() == 0 }
+                ) {
+                    validEndOfArchive = true
+                    drainRemaining(input)
+                } else {
+                    truncated = true
+                }
+                break
+            }
 
             val name = extractTarString(header, 0, 100)
             val prefix = extractTarString(header, 345, 155)
             val fullName = if (prefix.isNotEmpty()) "$prefix/$name" else name
             val size = parseTarOctal(header, 124, 12)
             val typeFlag = header[156].toInt().toChar()
+
+            if (size < 0L) {
+                // Malformed or GNU base-256 size field; abort framing safely and disable deletion mirroring.
+                limitReached = true
+                truncated = true
+                break
+            }
+
+            if (typeFlag == 'L' || typeFlag == 'x' || typeFlag == 'g') {
+                // Unparsed GNU LongName or PAX extended headers; mark limitReached so
+                // mirrorDeletedModuleFiles is never run on potentially truncated >100-byte paths.
+                limitReached = true
+                if (!skipTarPayload(input, size)) {
+                    truncated = true
+                    break
+                }
+                continue
+            }
 
             val normalized = fullName.replace('\\', '/').trim().removePrefix("./").trim('/')
             val skipEntry = normalized.isEmpty() ||
@@ -655,7 +717,11 @@ object ModuleRuntimeUtils {
 
             entryCount++
             if (entryCount > MAX_SYNC_FILES || totalBytes + size > MAX_SYNC_BYTES) {
-                skipTarPayload(input, size)
+                limitReached = true
+                if (!skipTarPayload(input, size)) {
+                    truncated = true
+                    break
+                }
                 continue
             }
 
@@ -670,7 +736,10 @@ object ModuleRuntimeUtils {
                         dir.mkdirs()
                     }
                 }
-                skipTarPayload(input, size)
+                if (!skipTarPayload(input, size)) {
+                    truncated = true
+                    break
+                }
             } else if (typeFlag == '0' || typeFlag == '\u0000') {
                 val outFile = if (!skipEntry) {
                     seenPaths.add(normalized)
@@ -685,7 +754,10 @@ object ModuleRuntimeUtils {
                 }
 
                 if (outFile == null) {
-                    skipTarPayload(input, size)
+                    if (!skipTarPayload(input, size)) {
+                        truncated = true
+                        break
+                    }
                 } else {
                     outFile.parentFile?.mkdirs()
                     val tmpFile = File.createTempFile(".sync-", ".tmp", outFile.parentFile)
@@ -716,20 +788,34 @@ object ModuleRuntimeUtils {
                     } finally {
                         if (tmpFile.exists()) tmpFile.delete()
                     }
-                    if (!eofReached) {
-                        val pad = ((TAR_BLOCK_SIZE - (size % TAR_BLOCK_SIZE)) % TAR_BLOCK_SIZE)
-                        if (pad > 0L) {
-                            skipExact(input, pad)
-                        }
+                    if (eofReached) {
+                        truncated = true
+                        break
+                    }
+                    val pad = ((TAR_BLOCK_SIZE - (size % TAR_BLOCK_SIZE)) % TAR_BLOCK_SIZE)
+                    if (pad > 0L && !skipExact(input, pad)) {
+                        truncated = true
+                        break
                     }
                 }
             } else {
                 // Ignore symlinks ('2'), hardlinks ('1'), device nodes, or PAX headers for safety
-                skipTarPayload(input, size)
+                if (!skipTarPayload(input, size)) {
+                    truncated = true
+                    break
+                }
             }
         }
 
+        return TarReadResult(
+            seenPaths = seenPaths,
+            validEndOfArchive = validEndOfArchive,
+            limitReached = limitReached,
+            truncated = truncated
+        )
+    }
 
+    private fun mirrorDeletedModuleFiles(targetDir: File, seenPaths: Set<String>) {
         // Mirror deletions made by module scripts back into the manager sandbox.
         runCatching {
             val protected = setOf("module.prop", ".source.prop", ATTESTATION_FILE_NAME, "disable")
@@ -755,22 +841,30 @@ object ModuleRuntimeUtils {
     private fun parseTarOctal(buf: ByteArray, offset: Int, length: Int): Long {
         val raw = extractTarString(buf, offset, length).trim()
         if (raw.isEmpty()) return 0L
-        return raw.toLongOrNull(8) ?: 0L
+        return raw.toLongOrNull(8) ?: -1L
     }
 
-    private fun skipTarPayload(input: InputStream, size: Long) {
-        if (size <= 0L) return
+    private fun skipTarPayload(input: InputStream, size: Long): Boolean {
+        if (size <= 0L) return true
         val pad = (TAR_BLOCK_SIZE - (size % TAR_BLOCK_SIZE)) % TAR_BLOCK_SIZE
-        skipExact(input, size + pad)
+        return skipExact(input, size + pad)
     }
 
-    private fun skipExact(input: InputStream, bytesToSkip: Long) {
+    private fun skipExact(input: InputStream, bytesToSkip: Long): Boolean {
         var remaining = bytesToSkip
         val scratch = ByteArray(1024)
         while (remaining > 0L) {
             val read = input.read(scratch, 0, minOf(scratch.size.toLong(), remaining).toInt())
-            if (read <= 0) break
+            if (read <= 0) return false
             remaining -= read.toLong()
+        }
+        return true
+    }
+
+    private fun drainRemaining(input: InputStream) {
+        val scratch = ByteArray(1024)
+        while (input.read(scratch) >= 0) {
+            // Drain trailing tar record padding so the remote tar process does not hit SIGPIPE.
         }
     }
 
@@ -778,7 +872,7 @@ object ModuleRuntimeUtils {
         var offset = 0
         while (offset < len) {
             val read = input.read(buf, offset, len - offset)
-            if (read < 0) return offset > 0
+            if (read < 0) return false
             offset += read
         }
         return true

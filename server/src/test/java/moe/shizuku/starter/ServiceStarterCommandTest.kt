@@ -17,7 +17,8 @@ class ServiceStarterCommandTest {
         className: String,
         processSuffix: String,
         signers: Set<String> = setOf("aa11", "bb22"),
-        debug: Boolean = false
+        debug: Boolean = false,
+        managerPackage: String = "kerneldroid.nightzuku"
     ): List<String> {
         val argvFile = File(tempFolder.root, "captured_argv.bin")
         val fakeAppProcess = File(tempFolder.root, "fake_app_process").apply {
@@ -34,7 +35,8 @@ class ServiceStarterCommandTest {
             processNameSuffix = processSuffix,
             callingUid = 10234,
             debug = debug,
-            expectedSigners = signers
+            expectedSigners = signers,
+            managerPackage = managerPackage
         )
 
         val proc = ProcessBuilder("/bin/sh", "-c", "$cmd wait")
@@ -57,9 +59,24 @@ class ServiceStarterCommandTest {
                 "--package=com.example.client",
                 "--class=com.example.client.MyUserService",
                 "--uid=10234",
-                "--signers=aa11,bb22"
+                "--signers=aa11,bb22",
+                "--manager=kerneldroid.nightzuku"
             ),
             argv
+        )
+    }
+
+    @Test
+    fun `commandForUserService passes stealth manager package via --manager`() {
+        val argv = captureArgv(
+            className = "com.example.client.MyUserService",
+            processSuffix = "daemon",
+            managerPackage = "com.stealth.randompkg"
+        )
+
+        assertEquals(
+            "--manager=com.stealth.randompkg",
+            argv.single { it.startsWith("--manager=") }
         )
     }
 

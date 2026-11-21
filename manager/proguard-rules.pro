@@ -41,6 +41,11 @@
     public static void main(java.lang.String[]);
 }
 
+# Entrance of ArgvTrampoline for oversized app_process commands
+-keep class moe.shizuku.starter.ArgvTrampoline {
+    public static void main(java.lang.String[]);
+}
+
 # Entrance of shell
 -keep class moe.shizuku.manager.shell.Shell {
     public static void main(java.lang.String[], java.lang.String, android.os.IBinder, android.os.Handler);

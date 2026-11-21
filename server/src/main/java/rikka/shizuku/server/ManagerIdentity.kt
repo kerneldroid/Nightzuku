@@ -1,5 +1,6 @@
 package rikka.shizuku.server
 
+import kerneldroid.nightzuku.util.SmartLogEngine
 import rikka.shizuku.server.util.Android17Compat
 
 /**
@@ -31,6 +32,7 @@ object ManagerIdentity {
         if (!resolved.isNullOrBlank()) {
             packageName = resolved
         }
+        SmartLogEngine.setManagerPackage(packageName)
         return packageName
     }
 }

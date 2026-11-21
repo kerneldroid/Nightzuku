@@ -326,6 +326,11 @@ class ShizukuConfigManager : ConfigManager() {
         return list
     }
 
+    @Synchronized
+    fun packagesForUid(uid: Int): List<String> {
+        return findLocked(uid)?.packages?.toList().orEmpty()
+    }
+
     private fun scheduleWriteLocked() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             if (workerHandler.hasCallbacks(mWriteRunner)) {

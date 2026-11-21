@@ -13,11 +13,15 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Future
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kerneldroid.nightzuku.api.LargeExecCodec
 import kerneldroid.nightzuku.api.NightProtocol
 import moe.shizuku.server.IShizukuApplication
@@ -94,24 +98,54 @@ class NightServiceEndpoint(
     }
 
     private val logger = Logger("NightEndpoint")
-    private val EXEC_POOL_SIZE = 4
+    private val EXEC_DISPATCH_POOL_SIZE = 4
     private val EXEC_QUEUE_CAPACITY = 64
+    private val EXEC_IO_MAX_POOL_SIZE = 64
+    private val execDispatchThreadSeq = AtomicInteger(0)
+    private val execIoThreadSeq = AtomicInteger(0)
     private val nightCallbacks = ConcurrentHashMap<Int, IBinder>()
     private val nightCallbackDeaths = ConcurrentHashMap<Int, IBinder.DeathRecipient>()
     private val callbackUids = ConcurrentHashMap<Int, Int>()
     private val activeExecCalls = ConcurrentHashMap<ExecCallKey, ActiveExecHandle>()
-    private val execPool = ThreadPoolExecutor(
-        EXEC_POOL_SIZE,
-        EXEC_POOL_SIZE,
+
+    /** Dedicated pool for dispatching outer async command tasks (`execAsync` / `execAsyncFd`). */
+    private val execDispatchPool = ThreadPoolExecutor(
+        EXEC_DISPATCH_POOL_SIZE,
+        EXEC_DISPATCH_POOL_SIZE,
         30L,
         TimeUnit.SECONDS,
         ArrayBlockingQueue(EXEC_QUEUE_CAPACITY),
-        { r -> Thread(r, "night-exec").apply { isDaemon = true } },
-        ThreadPoolExecutor.CallerRunsPolicy()
+        { r -> Thread(r, "night-exec-dispatch-${execDispatchThreadSeq.incrementAndGet()}").apply { isDaemon = true } },
+        ThreadPoolExecutor.AbortPolicy()
+    ).apply {
+        allowCoreThreadTimeOut(true)
+    }
+
+    /**
+     * Separate I/O and wait worker pool used inside [executeCommandBoundedPrepared] for draining
+     * stdout/stderr pipes and awaiting child PIDs. Keeping this isolated from [execDispatchPool]
+     * prevents thread-pool starvation deadlocks when all dispatch threads are occupied.
+     */
+    private val execIoPool = ThreadPoolExecutor(
+        0,
+        EXEC_IO_MAX_POOL_SIZE,
+        30L,
+        TimeUnit.SECONDS,
+        SynchronousQueue(),
+        { r -> Thread(r, "night-exec-io-${execIoThreadSeq.incrementAndGet()}").apply { isDaemon = true } }
     )
 
     init {
         attachInterface(null, NightProtocol.DESCRIPTOR)
+    }
+
+    internal fun shutdown() {
+        for ((key, handle) in ArrayList(activeExecCalls.entries)) {
+            activeExecCalls.remove(key, handle)
+            handle.terminate(fromClientDeath = false)
+        }
+        execDispatchPool.shutdownNow()
+        execIoPool.shutdownNow()
     }
 
     override fun getInterfaceDescriptor(): String = NightProtocol.DESCRIPTOR
@@ -640,14 +674,31 @@ class NightServiceEndpoint(
             val stdoutStream = ParcelFileDescriptor.AutoCloseInputStream(spawned.stdoutPfd)
             val stderrStream = ParcelFileDescriptor.AutoCloseInputStream(spawned.stderrPfd)
 
-            val stdoutFuture = execPool.submit {
-                drainStreamIntoBuffer(stdoutStream, stdoutBuffer)
-            }
-            val stderrFuture = execPool.submit {
-                drainStreamIntoBuffer(stderrStream, stderrBuffer)
-            }
-            val waitFuture = execPool.submit<Int> {
-                RishHost.waitForPid(pid)
+            var submittedStdout: Future<*>? = null
+            var submittedStderr: Future<*>? = null
+            val stdoutFuture: Future<*>
+            val stderrFuture: Future<*>
+            val waitFuture: Future<Int>
+            try {
+                submittedStdout = execIoPool.submit {
+                    drainStreamIntoBuffer(stdoutStream, stdoutBuffer)
+                }
+                submittedStderr = execIoPool.submit {
+                    drainStreamIntoBuffer(stderrStream, stderrBuffer)
+                }
+                waitFuture = execIoPool.submit<Int> {
+                    RishHost.waitForPid(pid)
+                }
+                stdoutFuture = submittedStdout
+                stderrFuture = submittedStderr
+            } catch (t: Throwable) {
+                RemoteProcessHolder.killProcessGroup(pid)
+                runCatching { stdoutStream.close() }
+                runCatching { stderrStream.close() }
+                submittedStdout?.cancel(true)
+                submittedStderr?.cancel(true)
+                runCatching { RishHost.waitForPid(pid) }
+                throw t
             }
 
             var timedOut = false
@@ -659,11 +710,13 @@ class NightServiceEndpoint(
                 runCatching { stdoutStream.close() }
                 runCatching { stderrStream.close() }
                 runCatching { waitFuture.get(250, TimeUnit.MILLISECONDS) }
+                waitFuture.cancel(true)
                 124
             } catch (e: InterruptedException) {
                 RemoteProcessHolder.killProcessGroup(pid)
                 runCatching { stdoutStream.close() }
                 runCatching { stderrStream.close() }
+                waitFuture.cancel(true)
                 stdoutFuture.cancel(true)
                 stderrFuture.cancel(true)
                 Thread.currentThread().interrupt()
@@ -672,6 +725,9 @@ class NightServiceEndpoint(
                 RemoteProcessHolder.killProcessGroup(pid)
                 runCatching { stdoutStream.close() }
                 runCatching { stderrStream.close() }
+                waitFuture.cancel(true)
+                stdoutFuture.cancel(true)
+                stderrFuture.cancel(true)
                 throw IllegalStateException("Process execution failed", e)
             }
 
@@ -713,11 +769,26 @@ class NightServiceEndpoint(
         } catch (_: Throwable) {
         }
 
-        val stdoutFuture = execPool.submit {
-            drainStreamIntoBuffer(process.inputStream, stdoutBuffer)
-        }
-        val stderrFuture = execPool.submit {
-            drainStreamIntoBuffer(process.errorStream, stderrBuffer)
+        var submittedStdout: Future<*>? = null
+        var submittedStderr: Future<*>? = null
+        val stdoutFuture: Future<*>
+        val stderrFuture: Future<*>
+        try {
+            submittedStdout = execIoPool.submit {
+                drainStreamIntoBuffer(process.inputStream, stdoutBuffer)
+            }
+            submittedStderr = execIoPool.submit {
+                drainStreamIntoBuffer(process.errorStream, stderrBuffer)
+            }
+            stdoutFuture = submittedStdout
+            stderrFuture = submittedStderr
+        } catch (t: Throwable) {
+            process.destroyCompat()
+            runCatching { process.inputStream.close() }
+            runCatching { process.errorStream.close() }
+            submittedStdout?.cancel(true)
+            submittedStderr?.cancel(true)
+            throw t
         }
 
         var timedOut = false
@@ -836,23 +907,32 @@ class NightServiceEndpoint(
         val handle = ActiveExecHandle(callId, callingUid, callingPid)
         activeExecCalls[callKey] = handle
 
-        execPool.execute {
-            try {
-                val decoded = LargeExecCodec.decodeFromParcelFileDescriptor(pfd)
-                val out = executeCommandBounded(decoded.cmd, decoded.env, decoded.dir, timeoutMs, handle)
-                if (!handle.clientDied.get() && handle.notified.compareAndSet(false, true)) {
-                    val exitCode = if (handle.cancelled.get() && out.exitCode == 0) 137 else out.exitCode
-                    notifyExecResult(callingPid, callId, exitCode, out.timedOut, out.stdout, out.stderr)
+        try {
+            execDispatchPool.execute {
+                try {
+                    val decoded = LargeExecCodec.decodeFromParcelFileDescriptor(pfd)
+                    val out = executeCommandBounded(decoded.cmd, decoded.env, decoded.dir, timeoutMs, handle)
+                    if (!handle.clientDied.get() && handle.notified.compareAndSet(false, true)) {
+                        val exitCode = if (handle.cancelled.get() && out.exitCode == 0) 137 else out.exitCode
+                        notifyExecResult(callingPid, callId, exitCode, out.timedOut, out.stdout, out.stderr)
+                    }
+                } catch (t: Throwable) {
+                    runCatching { pfd.close() }
+                    if (!handle.clientDied.get() && handle.notified.compareAndSet(false, true)) {
+                        val exitCode = if (handle.cancelled.get()) 137 else -1
+                        val errBytes = (t.message ?: "execAsync failed").toByteArray(StandardCharsets.UTF_8)
+                        notifyExecResult(callingPid, callId, exitCode, false, ByteArray(0), errBytes)
+                    }
+                } finally {
+                    activeExecCalls.remove(callKey, handle)
                 }
-            } catch (t: Throwable) {
-                runCatching { pfd.close() }
-                if (!handle.clientDied.get() && handle.notified.compareAndSet(false, true)) {
-                    val exitCode = if (handle.cancelled.get()) 137 else -1
-                    val errBytes = (t.message ?: "execAsync failed").toByteArray(StandardCharsets.UTF_8)
-                    notifyExecResult(callingPid, callId, exitCode, false, ByteArray(0), errBytes)
-                }
-            } finally {
-                activeExecCalls.remove(callKey, handle)
+            }
+        } catch (e: RejectedExecutionException) {
+            runCatching { pfd.close() }
+            activeExecCalls.remove(callKey, handle)
+            if (!handle.clientDied.get() && handle.notified.compareAndSet(false, true)) {
+                val errBytes = (e.message ?: "execAsync queue is full").toByteArray(StandardCharsets.UTF_8)
+                notifyExecResult(callingPid, callId, -1, false, ByteArray(0), errBytes)
             }
         }
     }
@@ -946,21 +1026,29 @@ class NightServiceEndpoint(
         val handle = ActiveExecHandle(callId, callingUid, callingPid)
         activeExecCalls[callKey] = handle
 
-        execPool.execute {
-            try {
-                val out = executeCommandBounded(cmd, env, dir, timeoutMs, handle)
-                if (!handle.clientDied.get() && handle.notified.compareAndSet(false, true)) {
-                    val exitCode = if (handle.cancelled.get() && out.exitCode == 0) 137 else out.exitCode
-                    notifyExecResult(callingPid, callId, exitCode, out.timedOut, out.stdout, out.stderr)
+        try {
+            execDispatchPool.execute {
+                try {
+                    val out = executeCommandBounded(cmd, env, dir, timeoutMs, handle)
+                    if (!handle.clientDied.get() && handle.notified.compareAndSet(false, true)) {
+                        val exitCode = if (handle.cancelled.get() && out.exitCode == 0) 137 else out.exitCode
+                        notifyExecResult(callingPid, callId, exitCode, out.timedOut, out.stdout, out.stderr)
+                    }
+                } catch (t: Throwable) {
+                    if (!handle.clientDied.get() && handle.notified.compareAndSet(false, true)) {
+                        val exitCode = if (handle.cancelled.get()) 137 else -1
+                        val errBytes = (t.message ?: "execAsync failed").toByteArray(StandardCharsets.UTF_8)
+                        notifyExecResult(callingPid, callId, exitCode, false, ByteArray(0), errBytes)
+                    }
+                } finally {
+                    activeExecCalls.remove(callKey, handle)
                 }
-            } catch (t: Throwable) {
-                if (!handle.clientDied.get() && handle.notified.compareAndSet(false, true)) {
-                    val exitCode = if (handle.cancelled.get()) 137 else -1
-                    val errBytes = (t.message ?: "execAsync failed").toByteArray(StandardCharsets.UTF_8)
-                    notifyExecResult(callingPid, callId, exitCode, false, ByteArray(0), errBytes)
-                }
-            } finally {
-                activeExecCalls.remove(callKey, handle)
+            }
+        } catch (e: RejectedExecutionException) {
+            activeExecCalls.remove(callKey, handle)
+            if (!handle.clientDied.get() && handle.notified.compareAndSet(false, true)) {
+                val errBytes = (e.message ?: "execAsync queue is full").toByteArray(StandardCharsets.UTF_8)
+                notifyExecResult(callingPid, callId, -1, false, ByteArray(0), errBytes)
             }
         }
     }

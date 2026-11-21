@@ -305,23 +305,63 @@ class UpdateChecker private constructor() {
     }
 
     internal fun compareSemanticVersions(v1: String, v2: String): Int {
-        val clean1 = normalizeVersionString(v1)
-        val clean2 = normalizeVersionString(v2)
-        val parts1 = clean1.split(".", "-")
-        val parts2 = clean2.split(".", "-")
+        val (core1, pre1) = splitSemVerCoreAndPreRelease(normalizeVersionString(v1))
+        val (core2, pre2) = splitSemVerCoreAndPreRelease(normalizeVersionString(v2))
 
-        for (i in 0 until maxOf(parts1.size, parts2.size)) {
-            val s1 = parts1.getOrNull(i)?.trim().orEmpty()
-            val s2 = parts2.getOrNull(i)?.trim().orEmpty()
-            val p1 = s1.toIntOrNull()
-            val p2 = s2.toIntOrNull()
-            if (p1 != null && p2 != null) {
-                if (p1 != p2) return p1.compareTo(p2)
+        val coreParts1 = core1.split(".")
+        val coreParts2 = core2.split(".")
+        for (i in 0 until maxOf(coreParts1.size, coreParts2.size)) {
+            val s1 = coreParts1.getOrNull(i)?.trim().orEmpty()
+            val s2 = coreParts2.getOrNull(i)?.trim().orEmpty()
+            val n1 = if (s1.isEmpty()) 0L else s1.toSemVerNumericOrNull()
+            val n2 = if (s2.isEmpty()) 0L else s2.toSemVerNumericOrNull()
+            if (n1 != null && n2 != null) {
+                if (n1 != n2) return n1.compareTo(n2)
             } else if (s1 != s2) {
                 return s1.compareTo(s2)
             }
         }
-        return 0
+
+        // SemVer 2.0.0: a normal version has higher precedence than a pre-release version.
+        if (pre1 == null && pre2 == null) return 0
+        if (pre1 == null) return 1
+        if (pre2 == null) return -1
+
+        val preParts1 = pre1.split(".")
+        val preParts2 = pre2.split(".")
+        for (i in 0 until minOf(preParts1.size, preParts2.size)) {
+            val id1 = preParts1[i].trim()
+            val id2 = preParts2[i].trim()
+            if (id1 == id2) continue
+
+            val num1 = id1.toSemVerNumericOrNull()
+            val num2 = id2.toSemVerNumericOrNull()
+            return when {
+                num1 != null && num2 != null -> num1.compareTo(num2)
+                // Numeric identifiers always have lower precedence than non-numeric identifiers.
+                num1 != null -> -1
+                num2 != null -> 1
+                else -> id1.compareTo(id2)
+            }
+        }
+
+        // A larger set of pre-release fields has higher precedence when all preceding identifiers match.
+        return preParts1.size.compareTo(preParts2.size)
+    }
+
+    private fun splitSemVerCoreAndPreRelease(normalized: String): Pair<String, String?> {
+        val dashIdx = normalized.indexOf('-')
+        if (dashIdx < 0) {
+            return normalized to null
+        }
+        val core = normalized.substring(0, dashIdx).trim()
+        val preRelease = normalized.substring(dashIdx + 1).trim().takeIf { it.isNotEmpty() }
+        return core to preRelease
+    }
+
+    private fun String.toSemVerNumericOrNull(): Long? {
+        if (isEmpty() || !all { it in '0'..'9' }) return null
+        return toLongOrNull()
     }
 
     /**

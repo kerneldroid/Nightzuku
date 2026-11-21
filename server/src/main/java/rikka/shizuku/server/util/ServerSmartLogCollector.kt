@@ -31,12 +31,12 @@ object ServerSmartLogCollector {
     private val lock = Any()
     private val snapshots = ArrayList<SmartLogSnapshot>()
 
-    private val spoolFiles = listOf(
+    private fun currentSpoolFiles(): List<File> = listOf(
         File(SmartLogEngine.SPOOL_TMP_PATH),
         File(SmartLogEngine.SPOOL_SHELL_PATH),
-        File(SmartLogEngine.SPOOL_EXT_EMULATED_PATH),
-        File(SmartLogEngine.SPOOL_APP_DE_CACHE_PATH),
-        File(SmartLogEngine.SPOOL_APP_CE_CACHE_PATH)
+        File(SmartLogEngine.spoolExtEmulatedPath()),
+        File(SmartLogEngine.spoolAppDeCachePath()),
+        File(SmartLogEngine.spoolAppCeCachePath())
     )
 
     @Volatile
@@ -65,7 +65,7 @@ object ServerSmartLogCollector {
     @JvmStatic
     fun ingestSpoolFiles() {
         synchronized(lock) {
-            for (file in spoolFiles) {
+            for (file in currentSpoolFiles()) {
                 try {
                     if (file.exists() && file.canRead()) {
                         val raw = file.readText(Charsets.UTF_8)
@@ -265,7 +265,7 @@ object ServerSmartLogCollector {
     fun clearSmartLogs() {
         synchronized(lock) {
             snapshots.clear()
-            for (file in spoolFiles) {
+            for (file in currentSpoolFiles()) {
                 runCatching { if (file.exists()) file.delete() }
             }
         }

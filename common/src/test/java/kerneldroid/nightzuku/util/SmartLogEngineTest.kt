@@ -145,4 +145,27 @@ class SmartLogEngineTest {
         assertTrue(filtered.contains("FATAL EXCEPTION: main"))
         assertTrue(filtered.contains("at kerneldroid.nightzuku.Test.run(Test.kt:12)"))
     }
+
+    @Test
+    fun spoolPathsReflectConfiguredStealthManagerPackage() {
+        val original = SmartLogEngine.getManagerPackage()
+        try {
+            SmartLogEngine.setManagerPackage("com.stealth.custom")
+            assertEquals(
+                "/storage/emulated/0/Android/data/com.stealth.custom/cache/nightzuku_smart.log",
+                SmartLogEngine.spoolExtEmulatedPath()
+            )
+            assertEquals(
+                "/data/user_de/0/com.stealth.custom/cache/nightzuku_smart.log",
+                SmartLogEngine.spoolAppDeCachePath()
+            )
+            assertEquals(
+                "/data/data/com.stealth.custom/cache/nightzuku_smart.log",
+                SmartLogEngine.spoolAppCeCachePath()
+            )
+            assertEquals(SmartLogEngine.spoolExtEmulatedPath(), SmartLogEngine.SPOOL_EXT_EMULATED_PATH)
+        } finally {
+            SmartLogEngine.setManagerPackage(original)
+        }
+    }
 }

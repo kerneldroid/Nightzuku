@@ -287,15 +287,6 @@ class ApplicationManagementActivity : AppActivity() {
                     { row: AppRow -> viewModel.toggle(row.uid, row.packageName) }
                 }
 
-                LaunchedEffect(Unit) {
-                    this@ApplicationManagementActivity.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                        while (true) {
-                            delay(PERMISSION_POLL_MS)
-                            viewModel.refreshGranted()
-                        }
-                    }
-                }
-
                 BackHandler(enabled = activeControlKey != null || searchQuery.isNotEmpty()) {
                     if (activeControlKey != null) {
                         activeControlKey = null

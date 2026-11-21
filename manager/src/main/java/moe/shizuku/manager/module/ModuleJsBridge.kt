@@ -145,32 +145,34 @@ class ModuleJsBridge(
     fun writeText(relativePath: String, content: String): String {
         val result = JSONObject()
         return try {
-            ensureModuleUsableForFileBridge()
-            val clean = ModuleRuntimeUtils.cleanRelativePath(relativePath)
-            require(!isProtectedModuleFile(clean)) { "Cannot overwrite protected module file: $clean" }
-            val bytes = content.toByteArray(Charsets.UTF_8)
-            require(bytes.size <= MAX_TEXT_FILE_BYTES) {
-                "Content exceeds maximum writable size (${MAX_TEXT_FILE_BYTES / 1024} KB)."
+            synchronized(ModuleRuntimeUtils.runtimeLock(module.id)) {
+                ensureModuleUsableForFileBridge()
+                val clean = ModuleRuntimeUtils.cleanRelativePath(relativePath)
+                require(!isProtectedModuleFile(clean)) { "Cannot overwrite protected module file: $clean" }
+                val bytes = content.toByteArray(Charsets.UTF_8)
+                require(bytes.size <= MAX_TEXT_FILE_BYTES) {
+                    "Content exceeds maximum writable size (${MAX_TEXT_FILE_BYTES / 1024} KB)."
+                }
+                val target = File(module.directory, clean)
+                ModuleRuntimeUtils.ensureInside(module.directory, target)
+                require(!target.isDirectory) { "Destination is a directory: $clean" }
+                val parent = target.parentFile ?: error("Destination has no parent directory.")
+                parent.mkdirs()
+                val tmp = File.createTempFile(".write-", ".tmp", parent)
+                try {
+                    tmp.writeBytes(bytes)
+                    if (target.exists()) target.delete()
+                    check(tmp.renameTo(target)) { "Unable to save file: $clean" }
+                } finally {
+                    if (tmp.exists()) tmp.delete()
+                }
+                syncModuleToShellIfRunning()
+                result.apply {
+                    put("ok", true)
+                    put("path", clean)
+                    put("bytesWritten", bytes.size)
+                }.toString()
             }
-            val target = File(module.directory, clean)
-            ModuleRuntimeUtils.ensureInside(module.directory, target)
-            require(!target.isDirectory) { "Destination is a directory: $clean" }
-            val parent = target.parentFile ?: error("Destination has no parent directory.")
-            parent.mkdirs()
-            val tmp = File.createTempFile(".write-", ".tmp", parent)
-            try {
-                tmp.writeBytes(bytes)
-                if (target.exists()) target.delete()
-                check(tmp.renameTo(target)) { "Unable to save file: $clean" }
-            } finally {
-                if (tmp.exists()) tmp.delete()
-            }
-            syncModuleToShellIfRunning()
-            result.apply {
-                put("ok", true)
-                put("path", clean)
-                put("bytesWritten", bytes.size)
-            }.toString()
         } catch (e: Exception) {
             result.apply {
                 put("ok", false)
@@ -241,11 +243,24 @@ class ModuleJsBridge(
     @JavascriptInterface
     fun download(url: String, relativeWebPath: String): String {
         val result = JSONObject()
+        var tmpFile: File? = null
         return try {
             ensureModuleUsableForWebFiles()
             val outFile = resolveWebFile(relativeWebPath)
-            val bytes = downloadHttpsToFile(url, outFile)
-            syncModuleToShellIfRunning()
+            val parent = outFile.parentFile ?: error("Destination has no parent directory.")
+            parent.mkdirs()
+            val (downloadedTmp, bytes) = downloadHttpsToTempFile(url, parent)
+            tmpFile = downloadedTmp
+
+            synchronized(ModuleRuntimeUtils.runtimeLock(module.id)) {
+                ensureModuleUsableForWebFiles()
+                val lockedOutFile = resolveWebFile(relativeWebPath)
+                lockedOutFile.parentFile?.mkdirs()
+                if (lockedOutFile.exists()) lockedOutFile.delete()
+                check(downloadedTmp.renameTo(lockedOutFile)) { "Unable to save downloaded file." }
+                syncModuleToShellIfRunning()
+            }
+
             result.apply {
                 put("ok", true)
                 put("url", url)
@@ -259,6 +274,10 @@ class ModuleJsBridge(
                 put("path", relativeWebPath)
                 put("error", e.message ?: "Download failed.")
             }.toString()
+        } finally {
+            if (tmpFile?.exists() == true) {
+                runCatching { tmpFile.delete() }
+            }
         }
     }
 
@@ -295,81 +314,95 @@ class ModuleJsBridge(
 
         val result = JSONObject()
         return try {
-            val targetDir = resolveModuleDirectory(options.cwd)
-            val service = IShizukuService.Stub.asInterface(binder)
-            val ctx = runCatching { application.applicationContext }.getOrNull()
-            val env = ModuleRuntimeUtils.buildModuleEnvironment(
-                ctx,
-                module,
-                targetDir,
-                options.extraEnv,
-                useShellRuntimeDir = true
-            )
-            val shellDir = ModuleRuntimeUtils.syncModuleToShellRuntime(service, module)
-            val shellCwd = ModuleRuntimeUtils.resolveShellCwd(module, targetDir)
-            // Pass the target working directory via environment variable ($SHIZUKU_MODULE_CWD)
-            // inside the SELinux-accessible /data/local/tmp/kerneldroid.nightzuku/adb_modules/<id> workspace.
-            val wrappedCommand = "cd \"\$SHIZUKU_MODULE_CWD\" 2>/dev/null || cd \"\$MODDIR\" 2>/dev/null || true\n$command"
-            val remote = service.newProcess(
-                arrayOf("sh", "-c", wrappedCommand),
-                env,
-                shellCwd.ifBlank { shellDir.absolutePath }
-            )
+            synchronized(ModuleRuntimeUtils.runtimeLock(module.id)) {
+                val targetDir = resolveModuleDirectory(options.cwd)
+                val service = IShizukuService.Stub.asInterface(binder)
+                val ctx = runCatching { application.applicationContext }.getOrNull()
+                val env = ModuleRuntimeUtils.buildModuleEnvironment(
+                    ctx,
+                    module,
+                    targetDir,
+                    options.extraEnv,
+                    useShellRuntimeDir = true
+                )
+                val shellDir = ModuleRuntimeUtils.syncModuleToShellRuntime(service, module)
+                val shellCwd = ModuleRuntimeUtils.resolveShellCwd(module, targetDir)
+                // Pass the target working directory via environment variable ($SHIZUKU_MODULE_CWD)
+                // inside the SELinux-accessible /data/local/tmp/kerneldroid.nightzuku/adb_modules/<id> workspace.
+                val wrappedCommand = "cd \"\$SHIZUKU_MODULE_CWD\" 2>/dev/null || cd \"\$MODDIR\" 2>/dev/null || true\n$command"
+                val remote = service.newProcess(
+                    arrayOf("sh", "-c", wrappedCommand),
+                    env,
+                    shellCwd.ifBlank { shellDir.absolutePath }
+                )
 
-            val stdoutPfd = remote.getInputStream()
-            val stderrPfd = remote.getErrorStream()
-            var stdout = ""
-            var stderr = ""
-            val stdoutThread = Thread {
+                val stdoutPfd = remote.getInputStream()
+                val stderrPfd = remote.getErrorStream()
+                var stdout = ""
+                var stderr = ""
+                val stdoutThread = Thread {
+                    try {
+                        stdout = ModuleRuntimeUtils.readStreamTail(stdoutPfd, MAX_OUTPUT_CHARS)
+                    } catch (_: Exception) {
+                    }
+                }
+                val stderrThread = Thread {
+                    try {
+                        stderr = ModuleRuntimeUtils.readStreamTail(stderrPfd, MAX_OUTPUT_CHARS)
+                    } catch (_: Exception) {
+                    }
+                }
+                stdoutThread.start()
+                stderrThread.start()
+
+                var processFinished = false
                 try {
-                    stdout = ModuleRuntimeUtils.readStreamTail(stdoutPfd, MAX_OUTPUT_CHARS)
-                } catch (_: Exception) {
+                    runCatching {
+                        ParcelFileDescriptor.AutoCloseOutputStream(remote.getOutputStream()).use { output ->
+                            if (options.stdin.isNotEmpty()) {
+                                output.write(options.stdin.toByteArray(Charsets.UTF_8))
+                                output.flush()
+                            }
+                        }
+                    }
+
+                    val finished = remote.waitForTimeout(options.timeoutSeconds, TimeUnit.SECONDS.name)
+                    processFinished = finished
+                    val exitCode = if (finished) {
+                        remote.exitValue()
+                    } else {
+                        remote.destroy()
+                        runCatching { stdoutPfd.close() }
+                        runCatching { stderrPfd.close() }
+                        EXIT_TIMEOUT
+                    }
+                    stdoutThread.join(500)
+                    if (stdoutThread.isAlive) {
+                        runCatching { stdoutPfd.close() }
+                        stdoutThread.join(250)
+                    }
+                    stderrThread.join(500)
+                    if (stderrThread.isAlive) {
+                        runCatching { stderrPfd.close() }
+                        stderrThread.join(250)
+                    }
+                    runCatching { ModuleRuntimeUtils.syncBackFromShellRuntime(service, module) }
+
+                    result.apply {
+                        put("ok", finished && exitCode == 0)
+                        put("exitCode", exitCode)
+                        put("stdout", stdout)
+                        put("stderr", stderr)
+                        put("timedOut", !finished)
+                    }.toString()
+                } finally {
+                    if (!processFinished) {
+                        runCatching { remote.destroy() }
+                    }
+                    runCatching { stdoutPfd.close() }
+                    runCatching { stderrPfd.close() }
                 }
             }
-            val stderrThread = Thread {
-                try {
-                    stderr = ModuleRuntimeUtils.readStreamTail(stderrPfd, MAX_OUTPUT_CHARS)
-                } catch (_: Exception) {
-                }
-            }
-            stdoutThread.start()
-            stderrThread.start()
-
-            ParcelFileDescriptor.AutoCloseOutputStream(remote.getOutputStream()).use { output ->
-                if (options.stdin.isNotEmpty()) {
-                    output.write(options.stdin.toByteArray(Charsets.UTF_8))
-                    output.flush()
-                }
-            }
-
-            val finished = remote.waitForTimeout(options.timeoutSeconds, TimeUnit.SECONDS.name)
-            val exitCode = if (finished) {
-                remote.exitValue()
-            } else {
-                remote.destroy()
-                runCatching { stdoutPfd.close() }
-                runCatching { stderrPfd.close() }
-                EXIT_TIMEOUT
-            }
-            stdoutThread.join(500)
-            if (stdoutThread.isAlive) {
-                runCatching { stdoutPfd.close() }
-                stdoutThread.join(250)
-            }
-            stderrThread.join(500)
-            if (stderrThread.isAlive) {
-                runCatching { stderrPfd.close() }
-                stderrThread.join(250)
-            }
-            runCatching { ModuleRuntimeUtils.syncBackFromShellRuntime(service, module) }
-
-            result.apply {
-                put("ok", finished && exitCode == 0)
-                put("exitCode", exitCode)
-                put("stdout", stdout)
-                put("stderr", stderr)
-                put("timedOut", !finished)
-            }.toString()
         } catch (e: Exception) {
             shellError(e.message ?: "Unknown error")
         }
@@ -490,7 +523,7 @@ class ModuleJsBridge(
         return file
     }
 
-    private fun downloadHttpsToFile(rawUrl: String, outFile: File): Long {
+    private fun downloadHttpsToTempFile(rawUrl: String, parentDir: File): Pair<File, Long> {
         var current = parseHttpsUrl(rawUrl)
         var redirects = 0
 
@@ -515,9 +548,8 @@ class ModuleJsBridge(
                 }
 
                 require(code in 200..299) { "HTTP $code while downloading $current" }
-                val parent = outFile.parentFile ?: error("Destination has no parent directory.")
-                parent.mkdirs()
-                val tmp = File.createTempFile("download-", ".tmp", parent)
+                parentDir.mkdirs()
+                val tmp = File.createTempFile("download-", ".tmp", parentDir)
                 var total = 0L
                 try {
                     BufferedInputStream(connection.inputStream).use { input ->
@@ -532,11 +564,10 @@ class ModuleJsBridge(
                             }
                         }
                     }
-                    if (outFile.exists()) outFile.delete()
-                    check(tmp.renameTo(outFile)) { "Unable to save downloaded file." }
-                    return total
-                } finally {
-                    if (tmp.exists()) tmp.delete()
+                    return tmp to total
+                } catch (t: Throwable) {
+                    if (tmp.exists()) runCatching { tmp.delete() }
+                    throw t
                 }
             } finally {
                 connection.disconnect()

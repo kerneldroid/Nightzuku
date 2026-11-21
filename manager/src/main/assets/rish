@@ -1,24 +1,92 @@
 #!/system/bin/sh
-BASEDIR=$(dirname "$0")
-DEX="$BASEDIR"/rish_shizuku.dex
+resolve_canonical_path() {
+  _target="$1"
+  if command -v readlink >/dev/null 2>&1; then
+    _resolved=$(readlink -f "$_target" 2>/dev/null)
+    if [ -n "$_resolved" ]; then
+      printf '%s\n' "$_resolved"
+      return 0
+    fi
+  fi
+  if [ -d "$_target" ]; then
+    (cd -P -- "$_target" 2>/dev/null && pwd -P) || return 1
+  else
+    if [ -L "$_target" ]; then
+      return 1
+    fi
+    _dir=$(dirname -- "$_target")
+    _base=$(basename -- "$_target")
+    _resolved_dir=$(cd -P -- "$_dir" 2>/dev/null && pwd -P)
+    if [ -n "$_resolved_dir" ]; then
+      printf '%s/%s\n' "$_resolved_dir" "$_base"
+    else
+      printf '%s\n' "$_target"
+    fi
+  fi
+}
 
-if [ ! -f "$DEX" ]; then
-  echo "Cannot find $DEX, please check the tutorial in Shizuku app"
+is_shared_storage_path() {
+  case "$1" in
+    /sdcard|/sdcard/*|/storage|/storage/*|/mnt/runtime|/mnt/runtime/*|/data/media|/data/media/*|/mnt/sdcard|/mnt/sdcard/*|/mnt/user|/mnt/user/*|/mnt/pass_through|/mnt/pass_through/*|/mnt/androidwritable|/mnt/androidwritable/*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+BASEDIR=$(dirname -- "$0")
+RESOLVED_BASEDIR=$(resolve_canonical_path "$BASEDIR") || {
+  echo "Cannot resolve canonical path for $BASEDIR." >&2
+  exit 1
+}
+
+if is_shared_storage_path "$RESOLVED_BASEDIR"; then
+  echo "Refusing to run rish from shared storage ($RESOLVED_BASEDIR)." >&2
+  echo "Move rish and rish_shizuku.dex to your terminal app's private directory (e.g. /data/data/<package>/files) and try again." >&2
   exit 1
 fi
 
-if [ $(getprop ro.build.version.sdk) -ge 34 ]; then
-  if [ -w $DEX ]; then
-    echo "On Android 14+, app_process cannot load writable dex."
-    echo "Attempting to remove the write permission..."
-    chmod 400 $DEX
-  fi
-  if [ -w $DEX ]; then
-    echo "Cannot remove the write permission of $DEX."
-    echo "You can copy to file to terminal app's private directory (/data/data/<package>, so that remove write permission is possible"
-    exit 1
-  fi
+DEX="$RESOLVED_BASEDIR"/rish_shizuku.dex
+
+if [ ! -f "$DEX" ]; then
+  echo "Cannot find $DEX, please check the tutorial in Shizuku app" >&2
+  exit 1
 fi
+
+RESOLVED_DEX=$(resolve_canonical_path "$DEX") || {
+  echo "Cannot resolve canonical path for $DEX." >&2
+  exit 1
+}
+
+if is_shared_storage_path "$RESOLVED_DEX"; then
+  echo "Refusing to load rish_shizuku.dex from shared storage ($RESOLVED_DEX)." >&2
+  echo "Move rish and rish_shizuku.dex to your terminal app's private directory (e.g. /data/data/<package>/files) and try again." >&2
+  exit 1
+fi
+
+DEX="$RESOLVED_DEX"
+
+SDK_INT=$(getprop ro.build.version.sdk 2>/dev/null)
+case "$SDK_INT" in
+  ''|*[!0-9]*)
+    ;;
+  *)
+    if [ "$SDK_INT" -ge 34 ]; then
+      if [ -w "$DEX" ]; then
+        echo "On Android 14+, app_process cannot load writable dex."
+        echo "Attempting to remove the write permission..."
+        chmod 400 "$DEX"
+      fi
+      if [ -w "$DEX" ]; then
+        echo "Cannot remove the write permission of $DEX."
+        echo "You can copy the file to terminal app's private directory (/data/data/<package>), so that removing write permission is possible"
+        exit 1
+      fi
+    fi
+    ;;
+esac
 
 # Replace "PKG" with the application id of your terminal app
 [ -z "$RISH_APPLICATION_ID" ] && export RISH_APPLICATION_ID="PKG"

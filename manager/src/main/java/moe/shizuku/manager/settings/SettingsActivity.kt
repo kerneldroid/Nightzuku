@@ -295,6 +295,15 @@ class SettingsActivity : AppActivity() {
                 backgroundCheckEnabled = ModuleSettings.isBackgroundCheckEnabled()
             }
 
+            fun updateStartOnBoot(enabled: Boolean) {
+                packageManager.setComponentEnabled(componentName, enabled)
+                ShizukuSettings.setStartOnBootEnabled(enabled)
+                if (!enabled) {
+                    AdbBootStartScheduler.cancel(this@SettingsActivity)
+                }
+                startOnBoot = packageManager.isComponentEnabled(componentName)
+            }
+
             androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize()) {
                 if (isWatch) {
                     BackHandler(enabled = secondarySubscreen != SecondarySubscreen.ROOT) {
@@ -311,10 +320,7 @@ class SettingsActivity : AppActivity() {
                                 else -> {
                                     WearSettingsScreen(
                                         startOnBoot = startOnBoot,
-                                        onStartOnBootChange = { enabled ->
-                                            packageManager.setComponentEnabled(componentName, enabled)
-                                            startOnBoot = packageManager.isComponentEnabled(componentName)
-                                        },
+                                        onStartOnBootChange = { updateStartOnBoot(it) },
                                         languageSummary = languageSummary,
                                         onLanguageClick = { showLanguageDialog = true },
                                         nightModeSummary = nightSummary,
@@ -365,10 +371,7 @@ class SettingsActivity : AppActivity() {
                                     TvSettingsScreen(
                                         onNavigateUp = { finish() },
                                         startOnBoot = startOnBoot,
-                                        onStartOnBootChange = { enabled ->
-                                            packageManager.setComponentEnabled(componentName, enabled)
-                                            startOnBoot = packageManager.isComponentEnabled(componentName)
-                                        },
+                                        onStartOnBootChange = { updateStartOnBoot(it) },
                                         languageSummary = languageSummary,
                                         onLanguageClick = { showLanguageDialog = true },
                                         nightSummary = nightSummary,
@@ -515,14 +518,7 @@ class SettingsActivity : AppActivity() {
                                                             title = stringResource(R.string.settings_start_on_boot),
                                                             summary = stringResource(R.string.settings_start_on_boot_summary),
                                                             checked = startOnBoot,
-                                                            onCheckedChange = { enabled ->
-                                                                packageManager.setComponentEnabled(componentName, enabled)
-                                                                ShizukuSettings.setStartOnBootEnabled(enabled)
-                                                                if (!enabled) {
-                                                                    AdbBootStartScheduler.cancel(this@SettingsActivity)
-                                                                }
-                                                                startOnBoot = packageManager.isComponentEnabled(componentName)
-                                                            }
+                                                            onCheckedChange = { updateStartOnBoot(it) }
                                                         )
                                                         SettingsItem(
                                                             index = 1,

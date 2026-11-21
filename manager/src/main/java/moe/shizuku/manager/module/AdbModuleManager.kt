@@ -366,56 +366,72 @@ object AdbModuleManager {
             env,
             shellDir.absolutePath
         )
-        runCatching {
-            ParcelFileDescriptor.AutoCloseOutputStream(remote.getOutputStream()).use { out ->
-                out.write(wrappedScript.toByteArray(Charsets.UTF_8))
+        var stdoutPfd: ParcelFileDescriptor? = null
+        var stderrPfd: ParcelFileDescriptor? = null
+        var processFinished = false
+        try {
+            val inPfd = remote.getInputStream()
+            stdoutPfd = inPfd
+            val errPfd = remote.getErrorStream()
+            stderrPfd = errPfd
+            var stdout = ""
+            var stderr = ""
+            val stdoutThread = Thread {
+                try {
+                    stdout = ModuleRuntimeUtils.readStreamTail(inPfd, MAX_OUTPUT_CHARS)
+                } catch (_: Exception) {
+                }
             }
-        }
-        val stdoutPfd = remote.getInputStream()
-        val stderrPfd = remote.getErrorStream()
-        var stdout = ""
-        var stderr = ""
-        val stdoutThread = Thread {
-            try {
-                stdout = ModuleRuntimeUtils.readStreamTail(stdoutPfd, MAX_OUTPUT_CHARS)
-            } catch (_: Exception) {
+            val stderrThread = Thread {
+                try {
+                    stderr = ModuleRuntimeUtils.readStreamTail(errPfd, MAX_OUTPUT_CHARS)
+                } catch (_: Exception) {
+                }
             }
-        }
-        val stderrThread = Thread {
-            try {
-                stderr = ModuleRuntimeUtils.readStreamTail(stderrPfd, MAX_OUTPUT_CHARS)
-            } catch (_: Exception) {
+            stdoutThread.start()
+            stderrThread.start()
+
+            runCatching {
+                ParcelFileDescriptor.AutoCloseOutputStream(remote.getOutputStream()).use { out ->
+                    out.write(wrappedScript.toByteArray(Charsets.UTF_8))
+                    out.flush()
+                }
             }
+            val finished = remote.waitForTimeout(MAX_SCRIPT_SECONDS, TimeUnit.SECONDS.name)
+            processFinished = finished
+            val exitCode = if (finished) {
+                remote.exitValue()
+            } else {
+                remote.destroy()
+                runCatching { inPfd.close() }
+                runCatching { errPfd.close() }
+                124
+            }
+            stdoutThread.join(500)
+            if (stdoutThread.isAlive) {
+                runCatching { inPfd.close() }
+                stdoutThread.join(250)
+            }
+            stderrThread.join(500)
+            if (stderrThread.isAlive) {
+                runCatching { errPfd.close() }
+                stderrThread.join(250)
+            }
+            runCatching { ModuleRuntimeUtils.syncBackFromShellRuntime(service, module) }
+            val result = ModuleActionResult(
+                exitCode = exitCode,
+                stdout = stdout,
+                stderr = stderr
+            )
+            writeLastLog(logFile, module, script, result, finished)
+            result
+        } finally {
+            if (!processFinished) {
+                runCatching { remote.destroy() }
+            }
+            runCatching { stdoutPfd?.close() }
+            runCatching { stderrPfd?.close() }
         }
-        stdoutThread.start()
-        stderrThread.start()
-        val finished = remote.waitForTimeout(MAX_SCRIPT_SECONDS, TimeUnit.SECONDS.name)
-        val exitCode = if (finished) {
-            remote.exitValue()
-        } else {
-            remote.destroy()
-            runCatching { stdoutPfd.close() }
-            runCatching { stderrPfd.close() }
-            124
-        }
-        stdoutThread.join(500)
-        if (stdoutThread.isAlive) {
-            runCatching { stdoutPfd.close() }
-            stdoutThread.join(250)
-        }
-        stderrThread.join(500)
-        if (stderrThread.isAlive) {
-            runCatching { stderrPfd.close() }
-            stderrThread.join(250)
-        }
-        runCatching { ModuleRuntimeUtils.syncBackFromShellRuntime(service, module) }
-        val result = ModuleActionResult(
-            exitCode = exitCode,
-            stdout = stdout,
-            stderr = stderr
-        )
-        writeLastLog(logFile, module, script, result, finished)
-        result
         }
     }
 

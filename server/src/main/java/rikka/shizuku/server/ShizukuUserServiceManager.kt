@@ -201,7 +201,8 @@ class ShizukuUserServiceManager : UserServiceManager() {
             processNameSuffix,
             callingUid,
             debug,
-            baseline.certDigests
+            baseline.certDigests,
+            ManagerIdentity.packageName
         )
     }
 

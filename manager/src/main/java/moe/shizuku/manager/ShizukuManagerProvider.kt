@@ -17,8 +17,11 @@ import kerneldroid.nightzuku.api.NightProvider
 import moe.shizuku.api.BinderContainer
 import moe.shizuku.manager.module.ModuleRuntimeUtils
 import kerneldroid.nightzuku.util.SmartLogEngine
+import moe.shizuku.manager.settings.SecurityPolicyClient
+import moe.shizuku.manager.settings.SecurityPolicyState
 import moe.shizuku.manager.utils.Logger.LOGGER
 import moe.shizuku.manager.utils.SmartLogManager
+import moe.shizuku.manager.utils.UserHandleCompat
 import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuApiConstants
 import rikka.shizuku.ShizukuApiConstants.USER_SERVICE_ARG_TOKEN
@@ -38,10 +41,39 @@ class ShizukuManagerProvider : NightProvider() {
                 return null
             }
 
-            triggerServerBinderPush(callingUid, callingPid)
+            val isPrivilegedCaller = callingUid == Process.myUid() || callingUid == 0 || callingUid == 2000
+            val isLegacyMethod = method == NightProtocol.LEGACY_METHOD_REQUEST_BINDER
+            val policy = SecurityPolicyClient.getSecurityPolicy()
+
+            // Reject legacy binder requests immediately when legacy wire is disabled.
+            if (isLegacyMethod && policy?.allowLegacyWire == false) {
+                return null
+            }
+
+            // Ask the server to evaluate shouldDeliverBinderForPackage / user access policy
+            // and push the appropriate binder to the caller if permitted.
+            if (!isPrivilegedCaller) {
+                triggerServerBinderPush(callingUid, callingPid)
+            }
+
+            // Do not hand out the binder directly when delivery is restricted to authorized apps,
+            // when the server policy cannot be queried (fail closed), or for non-primary users;
+            // rely on the server push above to enforce server policy. Privileged callers (manager,
+            // root, shell) are exempt from the authorized-only direct-return restriction.
+            if (policy == null ||
+                (!isPrivilegedCaller &&
+                    (policy.binderDeliveryMode == SecurityPolicyState.BINDER_DELIVERY_AUTHORIZED_ONLY ||
+                        UserHandleCompat.getUserId(callingUid) != 0))
+            ) {
+                return null
+            }
 
             val nightBinder = NightClient.getBinder()?.takeIf { it.pingBinder() }
-            val legacyBinder = Shizuku.getBinder()?.takeIf { it.pingBinder() }
+            val legacyBinder = if (policy.allowLegacyWire) {
+                Shizuku.getBinder()?.takeIf { it.pingBinder() }
+            } else {
+                null
+            }
             if (nightBinder == null && legacyBinder == null) {
                 return null
             }
@@ -51,7 +83,9 @@ class ShizukuManagerProvider : NightProvider() {
                     val primary = nightBinder ?: legacyBinder
                     if (primary != null) {
                         putBinder(NightProtocol.EXTRA_BINDER, primary)
-                        putParcelable(LegacyParcelCodec.LEGACY_BINDER_EXTRA_KEY, BinderContainer(primary))
+                        if (policy.allowLegacyWire) {
+                            putParcelable(LegacyParcelCodec.LEGACY_BINDER_EXTRA_KEY, BinderContainer(primary))
+                        }
                     }
                 } else {
                     val primary = legacyBinder ?: nightBinder

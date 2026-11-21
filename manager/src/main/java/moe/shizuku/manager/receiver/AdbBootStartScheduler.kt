@@ -1,5 +1,6 @@
 package moe.shizuku.manager.receiver
 
+import android.app.KeyguardManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -7,9 +8,11 @@ import android.app.job.JobInfo
 import android.app.job.JobParameters
 import android.app.job.JobScheduler
 import android.app.job.JobService
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.os.Build
@@ -18,12 +21,17 @@ import android.provider.Settings
 import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
+import kotlin.coroutines.coroutineContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.shizuku.manager.AppConstants
@@ -36,6 +44,7 @@ import moe.shizuku.manager.adb.AdbMdns
 import moe.shizuku.manager.adb.AdbSettings
 import moe.shizuku.manager.adb.PreferenceAdbKeyStore
 import moe.shizuku.manager.starter.Starter
+import moe.shizuku.manager.utils.EnvironmentUtils
 import rikka.shizuku.Shizuku
 
 /**
@@ -44,8 +53,11 @@ import rikka.shizuku.Shizuku
  *
  * Advantages over the legacy BroadcastReceiver flow:
  * - Waits for `TRANSPORT_WIFI` via OS network constraints instead of racing Wi-Fi association.
- * - Eliminates the 10-second BroadcastReceiver ANR ceiling with a 25-second discovery window.
+ * - Eliminates the 10-second BroadcastReceiver ANR ceiling with a configurable discovery window.
  * - Uses OS-managed exponential backoff retries and `setPersisted(true)` across process restarts.
+ * - Supports direct `adb tcpip` startup when `service.adb.tcp.port` / `persist.adb.tcp.port` is set.
+ * - Waits for `ACTION_USER_PRESENT` on Android 11–16 when the keyguard is locked so the system
+ *   does not reset `adb_wifi_enabled` to `0` mid-discovery.
  * - Supports Android 17+ native ADB Wi-Fi 2.0 zero-touch startup without gating on redacted
  *   `Settings.Global.getInt("adb_wifi_enabled")` reads.
  */
@@ -57,7 +69,8 @@ object AdbBootStartScheduler {
 
     @JvmStatic
     fun schedule(context: Context, bootCount: Int): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+        val hasTcpPort = EnvironmentUtils.getAdbTcpPort() in 1..65535
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R && !hasTcpPort) {
             return false
         }
         val appCtx = context.applicationContext ?: context
@@ -75,7 +88,10 @@ object AdbBootStartScheduler {
             .setExtras(extras)
             .setBackoffCriteria(BACKOFF_INITIAL_MS, JobInfo.BACKOFF_POLICY_EXPONENTIAL)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        if (hasTcpPort) {
+            // Direct loopback adb tcpip startup (127.0.0.1:$tcpPort) does not require Wi-Fi.
+            builder.setRequiredNetworkType(JobInfo.NETWORK_TYPE_NONE)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             val wifiRequest = NetworkRequest.Builder()
                 .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
                 .build()
@@ -107,7 +123,7 @@ class AdbBootStartJobService : JobService() {
     private var activeJob: Job? = null
 
     override fun onStartJob(params: JobParameters): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R && EnvironmentUtils.getAdbTcpPort() <= 0) {
             return false
         }
 
@@ -116,6 +132,8 @@ class AdbBootStartJobService : JobService() {
         activeJob = scope.launch {
             val outcome = try {
                 executeAdbStart(bootCount)
+            } catch (e: CancellationException) {
+                throw e
             } catch (t: Throwable) {
                 Log.w(AppConstants.TAG, "AdbBootStartJobService failed unexpectedly", t)
                 Outcome.RETRY
@@ -132,7 +150,13 @@ class AdbBootStartJobService : JobService() {
         return !Shizuku.pingBinder()
     }
 
-    @RequiresApi(Build.VERSION_CODES.R)
+    override fun onDestroy() {
+        super.onDestroy()
+        activeJob?.cancel()
+        activeJob = null
+        scope.cancel()
+    }
+
     private suspend fun executeAdbStart(bootCount: Int): Outcome {
         if (Shizuku.pingBinder()) {
             markBootHandled(bootCount)
@@ -146,10 +170,42 @@ class AdbBootStartJobService : JobService() {
             return Outcome.DONE
         }
 
+        // Prefer direct TCP connection when `adb tcpip` is active (no TLS or mDNS required).
+        val tcpPort = EnvironmentUtils.getAdbTcpPort()
+        if (tcpPort in 1..65535) {
+            if (connectAndStartServer("127.0.0.1", tcpPort, requireTls = false)) {
+                markBootHandled(bootCount)
+                clearFallbackNotification()
+                Log.i(AppConstants.TAG, "Nightzuku server started via ADB TCP on boot (127.0.0.1:$tcpPort)")
+                return Outcome.DONE
+            }
+            Log.w(AppConstants.TAG, "Direct ADB TCP boot start on port $tcpPort failed")
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                return handleAttemptFailure(bootCount, "ADB TCP boot start on port $tcpPort failed")
+            }
+        }
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return Outcome.DONE
+        }
+
         if (!AdbMdns.hasLocalNetworkPermission(this)) {
             Log.w(AppConstants.TAG, "ACCESS_LOCAL_NETWORK not granted; cannot discover ADB mDNS")
             showLocalNetworkPermissionNotification()
             return Outcome.DONE
+        }
+
+        // On Android 11–16 (API 30–36), the system resets `adb_wifi_enabled` to 0 while the
+        // screen is locked. Wait for unlock before enabling wireless ADB and running discovery.
+        if (!AdbSettings.isReadRedactedPlatform() && isKeyguardLocked()) {
+            Log.d(
+                AppConstants.TAG,
+                "Device is locked on API ${Build.VERSION.SDK_INT}; waiting for ACTION_USER_PRESENT"
+            )
+            if (!waitForUserPresent(KEYGUARD_UNLOCK_TIMEOUT_MS)) {
+                Log.d(AppConstants.TAG, "Timed out waiting for device unlock; deferring ADB boot start")
+                return Outcome.RETRY
+            }
         }
 
         val prepare = AdbSettings.prepareWirelessAdbForBoot(this)
@@ -168,17 +224,7 @@ class AdbBootStartJobService : JobService() {
         }
 
         val (host, port) = endpoint
-        val started = runCatching {
-            val keystore = PreferenceAdbKeyStore(ShizukuSettings.getPreferences())
-            val key = AdbKey(keystore, "shizuku")
-            AdbClient(host, port, key, requireTls = true).use { client ->
-                client.connect()
-                client.shellCommand(Starter.internalCommand, null)
-            }
-            waitForServerBinder(BINDER_WAIT_TIMEOUT_MS)
-        }.onFailure { e ->
-            Log.w(AppConstants.TAG, "ADB boot start connection to $host:$port failed", e)
-        }.getOrDefault(false)
+        val started = connectAndStartServer(host, port, requireTls = true)
 
         return if (started) {
             markBootHandled(bootCount)
@@ -187,6 +233,70 @@ class AdbBootStartJobService : JobService() {
             Outcome.DONE
         } else {
             handleAttemptFailure(bootCount, "ADB starter command did not bring up binder")
+        }
+    }
+
+    private suspend fun connectAndStartServer(
+        host: String,
+        port: Int,
+        requireTls: Boolean
+    ): Boolean {
+        return try {
+            val keystore = PreferenceAdbKeyStore(ShizukuSettings.getPreferences())
+            val key = AdbKey(keystore, "shizuku")
+            AdbClient(host, port, key, requireTls = requireTls).use { client ->
+                val cancelHandle = coroutineContext.job.invokeOnCompletion { cause ->
+                    if (cause != null) {
+                        runCatching { client.close() }
+                    }
+                }
+                try {
+                    client.connect()
+                    client.shellCommand(Starter.internalCommand, null)
+                } finally {
+                    cancelHandle.dispose()
+                }
+            }
+            waitForServerBinder(BINDER_WAIT_TIMEOUT_MS)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            Log.w(AppConstants.TAG, "ADB boot start connection to $host:$port failed", e)
+            false
+        }
+    }
+
+    private fun isKeyguardLocked(): Boolean {
+        val km = getSystemService(KeyguardManager::class.java) ?: return false
+        return km.isDeviceLocked || km.isKeyguardLocked
+    }
+
+    private suspend fun waitForUserPresent(timeoutMs: Long): Boolean {
+        if (!isKeyguardLocked()) {
+            return true
+        }
+        val unlocked = CompletableDeferred<Unit>()
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (Intent.ACTION_USER_PRESENT == intent.action && !isKeyguardLocked()) {
+                    unlocked.complete(Unit)
+                }
+            }
+        }
+        ContextCompat.registerReceiver(
+            this,
+            receiver,
+            IntentFilter(Intent.ACTION_USER_PRESENT),
+            ContextCompat.RECEIVER_EXPORTED
+        )
+        return try {
+            // Re-check after registration to avoid racing an unlock that occurred beforehand.
+            if (!isKeyguardLocked()) {
+                return true
+            }
+            withTimeoutOrNull(timeoutMs) { unlocked.await() } != null
+        } finally {
+            runCatching { unregisterReceiver(receiver) }
         }
     }
 
@@ -319,9 +429,8 @@ class AdbBootStartJobService : JobService() {
     }
 
     companion object {
-        private const val DISCOVERY_TIMEOUT_MS = 25_000L
         private const val BINDER_WAIT_TIMEOUT_MS = 5_000L
-        private const val MAX_BOOT_RETRIES = 4
+        private const val KEYGUARD_UNLOCK_TIMEOUT_MS = 120_000L
         private const val CHANNEL_ID = "adb_boot_start_status"
         private const val NOTIFICATION_ID_BOOT_FALLBACK = 4211
         private const val PREF_RETRY_BOOT_COUNT = "adb_boot_retry_boot_count"

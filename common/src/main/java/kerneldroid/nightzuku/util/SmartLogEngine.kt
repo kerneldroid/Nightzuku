@@ -27,26 +27,71 @@ object SmartLogEngine {
 
     const val METHOD_PUSH_SMART_LOG = "pushSmartLog"
     const val EXTRA_SMART_LOG_PAYLOAD = "smartLogPayload"
+    const val DEFAULT_MANAGER_PACKAGE = "kerneldroid.nightzuku"
     const val MANAGER_PROVIDER_AUTHORITY = "kerneldroid.nightzuku.shizuku"
 
     /** Server-to-server spool paths (readable by UID 0 / UID 2000). */
     const val SPOOL_TMP_PATH = "/data/local/tmp/nightzuku_smart.log"
     const val SPOOL_SHELL_PATH = "/data/user_de/0/com.android.shell/nightzuku_smart.log"
+    const val SPOOL_FILE_NAME = "nightzuku_smart.log"
+
+    @Volatile
+    private var activeManagerPackage: String = DEFAULT_MANAGER_PACKAGE
 
     /**
-     * App-owned external cache spool paths accessible to both UID 0 / UID 2000 AND the
-     * `untrusted_app` Manager (`kerneldroid.nightzuku`) under Android 10+ SELinux / FUSE rules,
-     * even when `shizuku_server` is dead.
+     * Configures the active manager package name used to derive app-owned spool paths in stealth
+     * builds. Defaults to [DEFAULT_MANAGER_PACKAGE].
      */
-    const val SPOOL_EXT_EMULATED_PATH = "/storage/emulated/0/Android/data/kerneldroid.nightzuku/cache/nightzuku_smart.log"
+    @JvmStatic
+    fun setManagerPackage(packageName: String?) {
+        val trimmed = packageName?.trim()
+        if (!trimmed.isNullOrEmpty()) {
+            activeManagerPackage = trimmed
+        }
+    }
+
+    @JvmStatic
+    fun getManagerPackage(): String = activeManagerPackage
 
     /**
-     * App-owned internal DE/CE cache spool paths written by UID 0 (root) with matching app UID/GID
+     * App-owned external cache spool path accessible to both UID 0 / UID 2000 AND the
+     * `untrusted_app` Manager under Android 10+ SELinux / FUSE rules, even when `shizuku_server`
+     * is dead.
+     */
+    @JvmStatic
+    @JvmOverloads
+    fun spoolExtEmulatedPath(managerPackage: String = activeManagerPackage): String =
+        "/storage/emulated/0/Android/data/$managerPackage/cache/$SPOOL_FILE_NAME"
+
+    /**
+     * App-owned internal DE cache spool path written by UID 0 (root) with matching app UID/GID
      * and inherited `app_data_file` SELinux label.
      */
-    const val SPOOL_APP_DE_CACHE_PATH = "/data/user_de/0/kerneldroid.nightzuku/cache/nightzuku_smart.log"
-    const val SPOOL_APP_CE_CACHE_PATH = "/data/data/kerneldroid.nightzuku/cache/nightzuku_smart.log"
-    const val SPOOL_FILE_NAME = "nightzuku_smart.log"
+    @JvmStatic
+    @JvmOverloads
+    fun spoolAppDeCachePath(managerPackage: String = activeManagerPackage): String =
+        "/data/user_de/0/$managerPackage/cache/$SPOOL_FILE_NAME"
+
+    /**
+     * App-owned internal CE cache spool path written by UID 0 (root) with matching app UID/GID
+     * and inherited `app_data_file` SELinux label.
+     */
+    @JvmStatic
+    @JvmOverloads
+    fun spoolAppCeCachePath(managerPackage: String = activeManagerPackage): String =
+        "/data/data/$managerPackage/cache/$SPOOL_FILE_NAME"
+
+    @JvmStatic
+    val SPOOL_EXT_EMULATED_PATH: String
+        get() = spoolExtEmulatedPath()
+
+    @JvmStatic
+    val SPOOL_APP_DE_CACHE_PATH: String
+        get() = spoolAppDeCachePath()
+
+    @JvmStatic
+    val SPOOL_APP_CE_CACHE_PATH: String
+        get() = spoolAppCeCachePath()
 
     const val MAX_SNAPSHOTS_RETAINED = 25
     private const val MAX_SPOOL_FILE_BYTES = 128 * 1024L
@@ -318,10 +363,10 @@ object SmartLogEngine {
             appendSnapshotToFile(File(SPOOL_SHELL_PATH), snapshot)
         }
         // /sdcard is a symlink to /storage/emulated/0; writing both would duplicate the entry.
-        appendSnapshotToFile(File(SPOOL_EXT_EMULATED_PATH), snapshot)
+        appendSnapshotToFile(File(spoolExtEmulatedPath()), snapshot)
         if (uid == 0) {
-            appendSnapshotToFile(File(SPOOL_APP_DE_CACHE_PATH), snapshot, inheritParentOwnerAndSeContext = true)
-            appendSnapshotToFile(File(SPOOL_APP_CE_CACHE_PATH), snapshot, inheritParentOwnerAndSeContext = true)
+            appendSnapshotToFile(File(spoolAppDeCachePath()), snapshot, inheritParentOwnerAndSeContext = true)
+            appendSnapshotToFile(File(spoolAppCeCachePath()), snapshot, inheritParentOwnerAndSeContext = true)
         }
     }
 
@@ -523,6 +568,10 @@ object SmartLogEngine {
     }
 
     private fun containsRelevantKeyword(text: String): Boolean {
+        val pkg = activeManagerPackage
+        if (pkg != DEFAULT_MANAGER_PACKAGE && text.contains(pkg, ignoreCase = true)) {
+            return true
+        }
         return RELEVANT_MESSAGE_KEYWORDS.any { text.contains(it, ignoreCase = true) }
     }
 

@@ -21,7 +21,12 @@ import rikka.shizuku.server.util.IContentProviderUtils
 object ServiceStarter {
 
     private const val TAG = "ShizukuServiceStarter"
-    private const val MANAGER_PACKAGE = "kerneldroid.nightzuku"
+    private const val DEFAULT_MANAGER_PACKAGE = "kerneldroid.nightzuku"
+    /**
+     * Fixed provider authority base shared by default and stealth builds so starter and clients
+     * can reach the manager ContentProvider regardless of the randomized applicationId.
+     */
+    private const val MANAGER_PROVIDER_AUTHORITY_BASE = "kerneldroid.nightzuku"
     private const val LAUNCH_TOKEN_TIMEOUT_MS = 5_000L
     private const val LAUNCH_TOKEN_RETRY_MS = 250L
 
@@ -55,7 +60,8 @@ object ServiceStarter {
         processNameSuffix: String,
         callingUid: Int,
         debug: Boolean,
-        expectedSigners: Set<String> = emptySet()
+        expectedSigners: Set<String> = emptySet(),
+        managerPackage: String = DEFAULT_MANAGER_PACKAGE
     ): String {
         val processName = String.format("%s:%s", packageName, processNameSuffix)
         val signersArg = if (expectedSigners.isNotEmpty()) {
@@ -63,11 +69,16 @@ object ServiceStarter {
         } else {
             ""
         }
+        val managerArg = if (managerPackage.isNotBlank()) {
+            " --manager=" + escapeShellArg(managerPackage)
+        } else {
+            ""
+        }
         return String.format(
             Locale.ENGLISH,
             "(CLASSPATH=%s %s%s /system/bin " +
                 "--nice-name=%s moe.shizuku.starter.ServiceStarter " +
-                "--token=%s --package=%s --class=%s --uid=%d%s%s)&",
+                "--token=%s --package=%s --class=%s --uid=%d%s%s%s)&",
             escapeShellArg(managerApkPath),
             appProcess,
             if (debug) " $DEBUG_ARGS" else "",
@@ -77,6 +88,7 @@ object ServiceStarter {
             escapeShellArg(classname),
             callingUid,
             signersArg,
+            managerArg,
             if (debug) " --debug-name=" + escapeShellArg(processName) else ""
         )
     }
@@ -107,12 +119,19 @@ object ServiceStarter {
         var targetPackage: String? = null
         var targetUid: Int = -1
         var expectedSigners: Set<String> = emptySet()
+        var managerPackage: String = DEFAULT_MANAGER_PACKAGE
 
         for (arg in effectiveArgs) {
             when {
                 arg.startsWith("--token=") -> launchToken = arg.substring("--token=".length)
                 arg.startsWith("--package=") -> targetPackage = arg.substring("--package=".length)
                 arg.startsWith("--uid=") -> targetUid = arg.substring("--uid=".length).toIntOrNull() ?: -1
+                arg.startsWith("--manager=") -> {
+                    val value = arg.substring("--manager=".length).trim()
+                    if (value.isNotEmpty()) {
+                        managerPackage = value
+                    }
+                }
                 arg.startsWith("--signers=") -> {
                     expectedSigners = arg.substring("--signers=".length)
                         .split(',')
@@ -146,7 +165,7 @@ object ServiceStarter {
         val service = result.first
         val token = result.second
 
-        if (!sendBinder(service, token)) {
+        if (!sendBinder(service, token, managerPackage)) {
             System.exit(1)
         }
 
@@ -191,7 +210,7 @@ object ServiceStarter {
 
     private fun isLaunchTokenLive(token: String?): Boolean {
         if (token.isNullOrEmpty()) return false
-        val authority = MANAGER_PACKAGE + NightProtocol.PROVIDER_SUFFIX
+        val authority = MANAGER_PROVIDER_AUTHORITY_BASE + NightProtocol.PROVIDER_SUFFIX
         val started = SystemClock.uptimeMillis()
         while (SystemClock.uptimeMillis() - started < LAUNCH_TOKEN_TIMEOUT_MS) {
             var provider: IContentProvider? = null
@@ -254,8 +273,13 @@ object ServiceStarter {
         }
     }
 
-    private fun sendBinder(binder: IBinder, token: String, retry: Boolean = true): Boolean {
-        val name = MANAGER_PACKAGE + NightProtocol.PROVIDER_SUFFIX
+    private fun sendBinder(
+        binder: IBinder,
+        token: String,
+        managerPackage: String = DEFAULT_MANAGER_PACKAGE,
+        retry: Boolean = true
+    ): Boolean {
+        val name = MANAGER_PROVIDER_AUTHORITY_BASE + NightProtocol.PROVIDER_SUFFIX
         val userId = 0
         var provider: IContentProvider? = null
 
@@ -276,10 +300,10 @@ object ServiceStarter {
                         Log.w(TAG, "removeContentProviderExternal", tr)
                     }
                     provider = null
-                    ActivityManagerApis.forceStopPackageNoThrow(MANAGER_PACKAGE, userId)
-                    Log.e(TAG, String.format("kill %s in user %d and try again", MANAGER_PACKAGE, userId))
+                    ActivityManagerApis.forceStopPackageNoThrow(managerPackage, userId)
+                    Log.e(TAG, String.format("kill %s in user %d and try again", managerPackage, userId))
                     Thread.sleep(1000)
-                    return sendBinder(binder, token, false)
+                    return sendBinder(binder, token, managerPackage, false)
                 }
                 return false
             }
@@ -304,7 +328,7 @@ object ServiceStarter {
             )
 
             if (reply != null) {
-                Log.i(TAG, String.format("send binder to %s in user %d", MANAGER_PACKAGE, userId))
+                Log.i(TAG, String.format("send binder to %s in user %d", managerPackage, userId))
                 val serverBinder = LegacyParcelCodec.extractBinderFromBundle(reply)
 
                 if (serverBinder != null && serverBinder.pingBinder()) {
@@ -321,7 +345,7 @@ object ServiceStarter {
 
             return false
         } catch (tr: Throwable) {
-            Log.e(TAG, String.format("failed send binder to %s in user %d", MANAGER_PACKAGE, userId), tr)
+            Log.e(TAG, String.format("failed send binder to %s in user %d", managerPackage, userId), tr)
             return false
         } finally {
             if (provider != null) {

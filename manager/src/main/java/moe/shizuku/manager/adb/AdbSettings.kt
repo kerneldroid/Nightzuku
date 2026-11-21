@@ -116,13 +116,16 @@ object AdbSettings {
     }
 
     /**
-     * Enables wireless ADB and disables the connection timeout.
+     * Enables wireless ADB and disables the connection timeout on a best-effort basis.
      *
-     * @return true when every key holds the expected value afterwards.
+     * @return true when all required wireless ADB keys (`adb_wifi_enabled` and `adb_enabled`)
+     * hold their expected values afterwards.
      */
     fun enableWirelessAdb(context: Context): Boolean {
         val resolver = context.contentResolver
-        if (isWirelessAdbEnabled(resolver)) {
+        if (isWirelessAdbEnabled(resolver) &&
+            readLong(resolver, KEY_ALLOWED_CONNECTION_TIME) == ALLOWED_CONNECTION_TIME
+        ) {
             return true
         }
 
@@ -143,6 +146,9 @@ object AdbSettings {
             }
         }
 
+        // Best-effort: disable the ADB connection timeout without failing the overall check
+        // if writing it fails (e.g. at boot when the server is not yet running and the app
+        // does not hold WRITE_SECURE_SETTINGS).
         if (readLong(resolver, KEY_ALLOWED_CONNECTION_TIME) != ALLOWED_CONNECTION_TIME) {
             if (directAllowed) {
                 runCatching {
@@ -166,8 +172,7 @@ object AdbSettings {
     }
 
     fun isWirelessAdbEnabled(resolver: ContentResolver): Boolean =
-        INT_KEYS.all { (key, value) -> readInt(resolver, key) == value } &&
-            readLong(resolver, KEY_ALLOWED_CONNECTION_TIME) == ALLOWED_CONNECTION_TIME
+        INT_KEYS.all { (key, value) -> readInt(resolver, key) == value }
 
     /**
      * Runs `settings put global <key> <value>` through the Nightzuku server.

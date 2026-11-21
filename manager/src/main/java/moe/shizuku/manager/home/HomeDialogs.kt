@@ -45,7 +45,10 @@ import androidx.wear.compose.material3.Button as WearButton
 import androidx.wear.compose.material3.FilledTonalButton as WearFilledTonalButton
 import androidx.wear.compose.material3.MaterialTheme as WearMaterialTheme
 import androidx.wear.compose.material3.Text as WearText
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import moe.shizuku.manager.R
 import moe.shizuku.manager.ShizukuSettings
@@ -666,9 +669,19 @@ fun HomeAdbPairDialog(onDismiss: () -> Unit) {
                     val host = if (p == discoveredPort && discoveredHost.isNotEmpty()) discoveredHost else "127.0.0.1"
                     runCatching {
                         AdbPairingClient(host, p, pairingCode, key).use { client ->
-                            client.start()
+                            val cancelHandle = coroutineContext.job.invokeOnCompletion { cause ->
+                                if (cause != null) {
+                                    client.cancel()
+                                }
+                            }
+                            try {
+                                client.start()
+                            } finally {
+                                cancelHandle.dispose()
+                            }
                         }
                     }.onSuccess { ok ->
+                        if (!coroutineContext.isActive) return@launch
                         if (ok) {
                             result.postValue(PairingStatus.Success)
                         } else {
@@ -677,10 +690,15 @@ fun HomeAdbPairDialog(onDismiss: () -> Unit) {
                             result.postValue(PairingStatus.Error(err))
                         }
                     }.onFailure {
+                        if (it is CancellationException) throw it
+                        if (!coroutineContext.isActive) return@launch
                         SmartLogManager.recordPairingError("HomeAdbPairDialog.exchange", host, p, it)
                         result.postValue(PairingStatus.Error(it))
                     }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Throwable) {
+                    if (!coroutineContext.isActive) return@launch
                     val keyErr = AdbKeyException(e)
                     SmartLogManager.recordPairingError("HomeAdbPairDialog.keyInit", "127.0.0.1", p, keyErr)
                     result.postValue(PairingStatus.Error(keyErr))

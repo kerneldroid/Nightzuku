@@ -21,6 +21,11 @@ import android.os.RemoteException
 import android.os.ServiceManager
 import android.os.SystemClock
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kerneldroid.nightzuku.api.LegacyParcelCodec
 import kerneldroid.nightzuku.api.NightProtocol
 import kerneldroid.nightzuku.util.HiddenApiIntrospector
@@ -52,7 +57,14 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
     private val managerBaseline: PackageSignatureVerifier.Baseline
     val nightEndpoint: NightServiceEndpoint
     private var heartbeatRunnable: Runnable? = null
-    private var packageReconcileRunnable: Runnable? = null
+    private val packageReconcilerExecutor: ScheduledExecutorService =
+        Executors.newSingleThreadScheduledExecutor { r ->
+            Thread(r, "shizuku-pkg-reconciler").apply { isDaemon = true }
+        }
+
+    @Volatile
+    private var packageReconcileTask: ScheduledFuture<*>? = null
+    private val managerAbsentRecheckPending = AtomicBoolean(false)
 
     /** Tracks active permission prompts by (uid, pid, requestCode) -> elapsedRealtimeMs to block forged/expired replies. */
     private val openPrompts = ConcurrentHashMap<Triple<Int, Int, Int>, Long>()
@@ -70,6 +82,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
 
         waitSystemService("package")
         ManagerIdentity.resolve()
+        ServerSmartLogCollector.ingestSpoolFiles()
         waitSystemService(Context.ACTIVITY_SERVICE)
         waitSystemService(Context.USER_SERVICE)
         waitSystemService(Context.APP_OPS_SERVICE)
@@ -286,15 +299,8 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         return false
     }
 
-    /**
-     * Verifies that the installed manager package in user 0 still matches the cryptographic
-     * signing baseline captured when `shizuku_server` started.
-     *
-     * Returns `true` if verified or if PackageManager failed transiently; exits the server immediately
-     * if the manager package was positively uninstalled or replaced with a different key.
-     */
-    internal fun verifyManagerSignature(): Boolean {
-        val probe = try {
+    private fun probeManagerPackage(): PackageSignatureVerifier.ProbeResult {
+        return try {
             val pi = Android17Compat.getPackageInfoOrThrow(
                 ManagerIdentity.packageName,
                 PackageSignatureVerifier.signatureLookupFlags(),
@@ -304,8 +310,55 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         } catch (t: Throwable) {
             PackageSignatureVerifier.ProbeResult.LookupError(t)
         }
+    }
 
-        return when (probe) {
+    private fun scheduleManagerAbsentRecheck() {
+        if (packageReconcilerExecutor.isShutdown) return
+        if (!managerAbsentRecheckPending.compareAndSet(false, true)) return
+        try {
+            packageReconcilerExecutor.schedule({
+                try {
+                    when (val retryProbe = probeManagerPackage()) {
+                        is PackageSignatureVerifier.ProbeResult.Present -> {
+                            if (!managerBaseline.matches(retryProbe.snapshot)) {
+                                Service.LOGGER.e("Manager package identity changed (appId/signer mismatch), terminating server")
+                                System.exit(ServerConstants.MANAGER_APP_NOT_FOUND)
+                            }
+                        }
+                        is PackageSignatureVerifier.ProbeResult.Absent -> {
+                            Service.LOGGER.w(
+                                "Manager app is still uninstalled in user 0 after %dms grace period (%s), exiting...",
+                                MANAGER_ABSENT_GRACE_MS,
+                                retryProbe.reason
+                            )
+                            System.exit(ServerConstants.MANAGER_APP_NOT_FOUND)
+                        }
+                        is PackageSignatureVerifier.ProbeResult.LookupError -> {
+                            Service.LOGGER.w(retryProbe.cause, "Transient error re-probing manager package after grace period")
+                        }
+                    }
+                } catch (t: Throwable) {
+                    Service.LOGGER.w(t, "Manager absent grace-period re-check failed")
+                } finally {
+                    managerAbsentRecheckPending.set(false)
+                }
+            }, MANAGER_ABSENT_GRACE_MS, TimeUnit.MILLISECONDS)
+        } catch (_: Throwable) {
+            managerAbsentRecheckPending.set(false)
+        }
+    }
+
+    /**
+     * Verifies that the installed manager package in user 0 still matches the cryptographic
+     * signing baseline captured when `shizuku_server` started.
+     *
+     * Returns `true` if verified; exits immediately if the manager package was replaced with a
+     * different signing key. When the package is reported absent, re-verifies after a grace period
+     * ([MANAGER_ABSENT_GRACE_MS]) before terminating so normal in-place manager updates do not
+     * kill the server.
+     */
+    internal fun verifyManagerSignature(allowGraceRetry: Boolean = false): Boolean {
+        return when (val probe = probeManagerPackage()) {
             is PackageSignatureVerifier.ProbeResult.Present -> {
                 if (managerBaseline.matches(probe.snapshot)) {
                     true
@@ -316,9 +369,51 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                 }
             }
             is PackageSignatureVerifier.ProbeResult.Absent -> {
-                Service.LOGGER.w("Manager app is uninstalled in user 0 (%s), exiting...", probe.reason)
-                System.exit(ServerConstants.MANAGER_APP_NOT_FOUND)
-                false
+                if (allowGraceRetry) {
+                    Service.LOGGER.w(
+                        "Manager app appears absent in user 0 (%s), re-verifying in %dms...",
+                        probe.reason,
+                        MANAGER_ABSENT_GRACE_MS
+                    )
+                    try {
+                        Thread.sleep(MANAGER_ABSENT_GRACE_MS)
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        return false
+                    }
+                    when (val retryProbe = probeManagerPackage()) {
+                        is PackageSignatureVerifier.ProbeResult.Present -> {
+                            if (managerBaseline.matches(retryProbe.snapshot)) {
+                                true
+                            } else {
+                                Service.LOGGER.e("Manager package identity changed (appId/signer mismatch), terminating server")
+                                System.exit(ServerConstants.MANAGER_APP_NOT_FOUND)
+                                false
+                            }
+                        }
+                        is PackageSignatureVerifier.ProbeResult.Absent -> {
+                            Service.LOGGER.w(
+                                "Manager app is still uninstalled in user 0 after %dms grace period (%s), exiting...",
+                                MANAGER_ABSENT_GRACE_MS,
+                                retryProbe.reason
+                            )
+                            System.exit(ServerConstants.MANAGER_APP_NOT_FOUND)
+                            false
+                        }
+                        is PackageSignatureVerifier.ProbeResult.LookupError -> {
+                            Service.LOGGER.w(retryProbe.cause, "Transient error re-probing manager package after grace period")
+                            false
+                        }
+                    }
+                } else {
+                    Service.LOGGER.w(
+                        "Manager app appears absent in user 0 (%s), scheduling %dms grace-period re-check",
+                        probe.reason,
+                        MANAGER_ABSENT_GRACE_MS
+                    )
+                    scheduleManagerAbsentRecheck()
+                    false
+                }
             }
             is PackageSignatureVerifier.ProbeResult.LookupError -> {
                 Service.LOGGER.w(probe.cause, "Transient error probing manager package")
@@ -329,27 +424,28 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
 
     /**
      * Periodically reconciles manager identity, active UserService host packages, and runtime
-     * permission revocations. Crucial under ADB (`u:r:shell:s0`), where SELinux blocks `inotify`
-     * on `/data/app`.
+     * permission revocations on a dedicated background daemon thread so synchronous PMS Binder
+     * calls never stall `mainHandler` or `NightDog.beat()`. Crucial under ADB (`u:r:shell:s0`),
+     * where SELinux blocks `inotify` on `/data/app`.
      */
     private fun startPackageReconciler() {
-        val runnable = object : Runnable {
-            override fun run() {
+        packageReconcileTask?.cancel(false)
+        packageReconcileTask = packageReconcilerExecutor.scheduleWithFixedDelay(
+            {
                 try {
                     reconcileManagerAndClients()
                 } catch (t: Throwable) {
                     Service.LOGGER.w(t, "Package reconciliation cycle failed")
-                } finally {
-                    mainHandler.postDelayed(this, RECONCILE_INTERVAL_MS)
                 }
-            }
-        }
-        packageReconcileRunnable = runnable
-        mainHandler.postDelayed(runnable, RECONCILE_INTERVAL_MS)
+            },
+            RECONCILE_INTERVAL_MS,
+            RECONCILE_INTERVAL_MS,
+            TimeUnit.MILLISECONDS
+        )
     }
 
     internal fun reconcileManagerAndClients() {
-        verifyManagerSignature()
+        verifyManagerSignature(allowGraceRetry = true)
         userServiceManager.reconcileUserServicePackages()
         reconcileRuntimePermissionRevocations()
     }
@@ -361,8 +457,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
      */
     private fun reconcileRuntimePermissionRevocations() {
         for (uid in configManager.allowedUids()) {
-            val entry = configManager.find(uid) ?: continue
-            val packages = entry.packages?.toList().orEmpty()
+            val packages = configManager.packagesForUid(uid)
             if (packages.isEmpty()) continue
 
             val userId = UserHandleCompat.getUserId(uid)
@@ -505,8 +600,10 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         Service.LOGGER.i("exit")
         heartbeatRunnable?.let { mainHandler.removeCallbacks(it) }
         heartbeatRunnable = null
-        packageReconcileRunnable?.let { mainHandler.removeCallbacks(it) }
-        packageReconcileRunnable = null
+        packageReconcileTask?.cancel(true)
+        packageReconcileTask = null
+        packageReconcilerExecutor.shutdownNow()
+        nightEndpoint.shutdown()
         NightDog.stop()
         System.exit(0)
     }
@@ -1538,7 +1635,17 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                                     BinderSender.register(this@ShizukuService, nightEndpoint)
                                 }
                                 if (name == Context.ACTIVITY_SERVICE || name == "package" || name == Context.USER_SERVICE) {
-                                    reconcileManagerAndClients()
+                                    if (!packageReconcilerExecutor.isShutdown) {
+                                        runCatching {
+                                            packageReconcilerExecutor.execute {
+                                                try {
+                                                    reconcileManagerAndClients()
+                                                } catch (t: Throwable) {
+                                                    Service.LOGGER.w(t, "Post-recovery reconciliation failed")
+                                                }
+                                            }
+                                        }
+                                    }
                                     BinderSender.dispatchTask {
                                         sendBinderToManager()
                                         sendBinderToClient()
@@ -1601,6 +1708,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
 
         private const val HEARTBEAT_INTERVAL_MS = 5_000L
         private const val RECONCILE_INTERVAL_MS = 3_000L
+        private const val MANAGER_ABSENT_GRACE_MS = 2_000L
         private const val PROMPT_ANSWER_WINDOW_MS = 5 * 60 * 1000L
 
         @JvmStatic
