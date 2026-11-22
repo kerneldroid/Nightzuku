@@ -11,7 +11,7 @@ Thank you for contributing to the Nightzuku repository. Please follow these guid
 ## Pull Requests
 - **Scope:** Keep PRs focused on a single issue or feature.
 - **Compile and Test:** Ensure your code compiles (`./gradlew assembleRelease`) without new warnings.
-- **Architecture:** Follow the existing architecture. This fork uses Jetpack Compose, Material 3 Expressive, and targets Android 16/17 SDKs. Use `enableEdgeToEdge()` for window insets.
+- **Architecture:** Follow the existing architecture. This fork uses Jetpack Compose and Material 3 Expressive, with `minSdk = 25` and `compileSdk`/`targetSdk = 37` (Android 17). Use `enableEdgeToEdge()` for window insets.
 - **UI Changes:** Include before and after screenshots (or a video) for UI changes.
 - **Git History:** Squash commits into logical units with clear messages.
 

@@ -15,7 +15,7 @@ Technical summary of Wear OS support in `:manager` and `:server`.
 
 | Area | Implementation |
 | :--- | :--- |
-| **Manifest declaration** | `<uses-feature android:name="android.hardware.type.watch" android:required="false" />` enables standalone APK installation on watch form factors |
+| **Form-factor detection** | Runtime-only via `EnvironmentUtils.isWatch(context)` (`UiModeManager.currentModeType`); no `android.hardware.type.watch` manifest declaration |
 | **UI framework** | Native `androidx.wear.compose:compose-material3` (`WearShizukuTheme`, `TransformingLazyColumn`, `SurfaceTransformation`, `WearAlertDialog`) routed via `EnvironmentUtils.isWatch(context)` |
 | **Screens** | `WearHomeScreen.kt`, `WearApplicationManagementScreen.kt`, `WearSettingsScreen.kt`, `WearStarterScreen.kt`, `LabFeaturesActivity.kt` (Wear branch) |
 | **Theming** | Dynamic color (`WearDynamicColorScheme`) on API 31+ with optional true-black (`#000000`) OLED background |

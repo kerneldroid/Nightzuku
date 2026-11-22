@@ -60,8 +60,9 @@ Nightzuku operates two concurrent Binder wires and routes each client package vi
 | [Nightzuku Connectors](docs/nightzuku-connectors.md) | Local `ContentProvider` (`content://kerneldroid.nightzuku.connector`) for third-party activators |
 | [Android 17 Compatibility](docs/android-17-compatibility.md) | Verified hidden API signatures (`IPermissionManager`, `IPackageManager`, `IUserManager`) and `Android17Compat` |
 | [Android TV Support](docs/android-tv-support.md) | TV Compose architecture, D-pad focus model, and theming |
-| [Wear OS Compatibility](docs/wearos-compatibility.md) | Watch manifest flags, Wear Material 3 components, and SDK compatibility |
+| [Wear OS Compatibility](docs/wearos-compatibility.md) | Runtime watch detection, Wear Material 3 components, and SDK compatibility |
 | [Wear OS Pairing Guide](docs/wearos-pairing.md) | Wireless ADB pairing procedure and troubleshooting matrix for Wear OS 5+ |
+| [ADB Loopback Restriction Memo](docs/adb-loopback-restriction-memo.md) | Why plain `adb tcpip` loopback startup is unreliable on Android 17+ |
 
 ## Developer & Build Reference
 
@@ -136,7 +137,7 @@ Run unit tests:
 Licensed under **Apache License 2.0** (`LICENSE`).
 
 - **Launcher assets**: `manager/src/main/res/mipmap*/ic_launcher*.png` may only be used to represent Nightzuku.
-- **Package identity**: Derived works must not use the name `Shizuku` or the application ID `moe.shizuku.privileged.api`. This fork uses `kerneldroid.nightzuku`.
+- **Package identity**: The main app uses `kerneldroid.nightzuku`. Official releases also publish a compatibility stub under `moe.shizuku.privileged.api` and optional stealth-ID builds (`com.*`). Derived/unofficial works must not use the name `Shizuku` or that stub application ID.
 
 ## Credits
 

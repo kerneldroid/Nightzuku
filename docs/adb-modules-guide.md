@@ -32,7 +32,7 @@ description=Short technical description
 usesShellBridge=true
 requireNightzuku=true
 minNightzukuApi=1
-minNightzukuVersion=13
+minNightzukuVersion=63
 ```
 
 `action.sh`:
@@ -62,7 +62,7 @@ cd my-module && zip -r ../my-module.zip .
 
 | Requirement | Hook | Policy Gate |
 | :--- | :--- | :--- |
-| On-demand user command | `action.sh` | Allowed in all modes |
+| On-demand user command | `action.sh` | Blocked in Safe mode unless the module has Full Trust; allowed in Custom/Full |
 | Per-session initialization | `service.sh` | Blocked in Safe mode; requires Full/Custom+Service + Background Actions (or Full Trust) |
 | Interactive configuration UI | `webui/index.html` | Served on isolated `https://mod-<hash>.appassets.androidplatform.net/`; set `usesShellBridge=true` for shell bridge |
 

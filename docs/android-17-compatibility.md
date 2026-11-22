@@ -57,10 +57,13 @@ ApplicationInfo getApplicationInfo(String, long, int)     unchanged on 17; see t
                 getInstalledApplications(long, int)       unchanged
 ```
 
-`getInstalledPackages` changed by **return type**. A JVM method descriptor
-includes the return type, so the old descriptor no longer resolves and the call
-fails with `NoSuchMethodError`. `getPackageInfo` and `getApplicationInfo` did
-*not* change in Android 17, but they are not stable across older releases.
+`getInstalledPackages` changed by **return type** (`ParceledListSlice` -> a
+`PackageInfoList`-named class on 17). A JVM method descriptor includes the return
+type, so an exact descriptor no longer resolves. `InstalledPackagesCompat`
+resolves the method by name and parameter types and normalizes both shapes via
+`getList()` instead of relying on a single hardcoded descriptor.
+`getPackageInfo` and `getApplicationInfo` did *not* change in Android 17, but
+they are not stable across older releases.
 
 ### The API 33 flag-width change
 
@@ -74,9 +77,11 @@ API 33+    ApplicationInfo getApplicationInfo(String, long, int)
 API <= 32  ApplicationInfo getApplicationInfo(String, int, int)
 ```
 
-`Android17Compat` resolves methods by exact `Class` equality, so a candidate
-list that only contains `(String, long, int)` matches API 33 and later, but
-finds nothing on Android 12L and older. That failure is not local: on such a
+`Android17Compat` resolves methods by exact `Class` equality for
+`getPackageInfo`/`getApplicationInfo`; `InstalledPackagesCompat` resolves
+`getInstalledPackages` by name and parameter types. A candidate list that only
+contains `(String, long, int)` matches API 33 and later, but finds nothing on
+Android 12L and older. That failure is not local: on such a
 device `getApplicationInfo` returns `null`, `ShizukuService` cannot resolve the
 manager package and exits with `MANAGER_APP_NOT_FOUND` (50); the starter treats
 exit code 50 as "the manager was uninstalled", stops restarting the server, and
@@ -128,9 +133,10 @@ startup:
 - **`BootCompleteReceiver` + `AdbBootStartScheduler` (`JobScheduler`):**
   For `LaunchMethod.ADB`, `BootCompleteReceiver` ignores `LOCKED_BOOT_COMPLETED`
   and immediately schedules a persisted `JobInfo` (`JOB_ID_ADB_BOOT_START = 4210`)
-  requiring `NetworkCapabilities.TRANSPORT_WIFI` with exponential backoff,
-  eliminating both the Wi-Fi association race and the 10-second `goAsync()` ANR
-  ceiling.
+  with exponential backoff. The Wi-Fi transport constraint is applied when no
+  ADB TCP port is configured; with a TCP port set the job uses no network
+  constraint. This eliminates the Wi-Fi association race and the 10-second
+  `goAsync()` ANR ceiling.
 - **Hardened `AdbMdns`:**
   Uses `NsdManager.registerServiceInfoCallback()` on API 34+ (avoiding deprecated
   `resolveService()`), serializes legacy `resolveService()` calls on API 30–33 to

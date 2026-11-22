@@ -16,14 +16,14 @@ Decentralized online discovery and installation subsystem for Nightzuku ADB Modu
 | Max modules per GitHub account | `4` across all repositories (official owner `kerneldroid` exempt) |
 | Unauthenticated GitHub API quota | `60 req/hour` |
 | Authenticated (PAT) GitHub API quota | `5,000 req/hour` |
-| Conditional requests | ETag / `304 Not Modified` used where supported (`RateLimitTracker`) |
+| Conditional requests | Not implemented; `RateLimitTracker` reads only `x-ratelimit-remaining` / `x-ratelimit-reset` |
 | Local cache TTL | `6 hours` |
 
 ## Install Modes
 
 | Mode | Mechanism |
 | :--- | :--- |
-| **From Sources** | Queries GitHub Contents API on the resolved default branch; `SourceZipBuilder` packages `module.prop`, `*.sh`, `banner.*`, and `webui/**` into a clean ZIP |
+| **From Sources** | Queries GitHub Contents API on the resolved default branch; `SourceZipBuilder` packages all source files except `.git/`, `.github/` and root license/ignore files, honoring the resolved `subPath` |
 | **From Release ZIP** | Queries GitHub Releases API, matches asset by module ID pattern, and installs directly |
 
 ## Token Security
@@ -31,7 +31,7 @@ Decentralized online discovery and installation subsystem for Nightzuku ADB Modu
 - Stored encrypted via AndroidKeyStore (`AES/GCM/NoPadding`) in `TokenStore`; legacy plaintext tokens are migrated on startup.
 - Format-validated for `ghp_` / `github_pat_` prefix (`>= 30` characters).
 - Never written to logcat.
-- Sent exclusively to `api.github.com` and `github.com` (never forwarded to third-party `updateJson` URLs).
+- Sent only to GitHub-owned hosts: `api.github.com`, `raw.githubusercontent.com`, `github.com` and their subdomains; never forwarded to third-party `updateJson` URLs.
 
 ## Platform Availability
 
