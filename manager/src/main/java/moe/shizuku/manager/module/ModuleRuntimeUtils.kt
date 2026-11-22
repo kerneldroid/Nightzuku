@@ -11,8 +11,11 @@ import java.io.BufferedOutputStream
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
-import java.nio.charset.StandardCharsets
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
 import java.security.MessageDigest
+import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import javax.crypto.Mac
@@ -42,7 +45,6 @@ object ModuleRuntimeUtils {
     private const val HMAC_ALGORITHM = "HmacSHA256"
     private const val ATTESTATION_KEY_PREFIX = "nightzuku-host-attestation-v2:"
     private const val MAX_OUTPUT_CHARS_DEFAULT = 64 * 1024
-    private const val TAR_BLOCK_SIZE = 512
     private const val MAX_SYNC_FILES = 2048
     private const val MAX_SYNC_BYTES = 100L * 1024L * 1024L
     private const val SYNC_TIMEOUT_SECONDS = 30L
@@ -541,7 +543,11 @@ object ModuleRuntimeUtils {
         }
     }
 
-    private fun writeDirectoryAsTar(rootDir: File, out: OutputStream) {
+    internal fun writeDirectoryAsTar(rootDir: File, out: OutputStream) {
+        val tarOut = TarArchiveOutputStream(out)
+        // Keep the original ustar wire format: no PAX/GNU long-name records, which the
+        // shell-side tar and the sync-back reader do not consume.
+        tarOut.setLongFileMode(TarArchiveOutputStream.LONGFILE_TRUNCATE)
         var fileCount = 0
         var totalBytes = 0L
 
@@ -554,8 +560,12 @@ object ModuleRuntimeUtils {
             if (fileCount > MAX_SYNC_FILES) return@forEach
 
             if (file.isDirectory) {
-                val dirName = if (relPath.endsWith("/")) relPath else "$relPath/"
-                writeTarHeader(out, dirName, 0L, 493, '5', file.lastModified() / 1000L)
+                val entry = TarArchiveEntry("$relPath/")
+                entry.mode = 493 // 0755
+                entry.modTime = Date(file.lastModified())
+                entry.size = 0L
+                tarOut.putArchiveEntry(entry)
+                tarOut.closeArchiveEntry()
             } else if (file.isFile) {
                 val size = file.length()
                 if (size < 0L || totalBytes + size > MAX_SYNC_BYTES) return@forEach
@@ -563,8 +573,11 @@ object ModuleRuntimeUtils {
                 val isExec = file.canExecute() ||
                     file.extension.equals("sh", ignoreCase = true) ||
                     relPath.startsWith("bin/")
-                val mode = if (isExec) 493 else 420 // 0755 or 0644
-                writeTarHeader(out, relPath, size, mode, '0', file.lastModified() / 1000L)
+                val entry = TarArchiveEntry(relPath)
+                entry.mode = if (isExec) 493 else 420 // 0755 or 0644
+                entry.modTime = Date(file.lastModified())
+                entry.size = size
+                tarOut.putArchiveEntry(entry)
                 file.inputStream().use { input ->
                     val buf = ByteArray(DEFAULT_BUFFER_SIZE)
                     var remaining = size
@@ -572,91 +585,29 @@ object ModuleRuntimeUtils {
                         val toRead = minOf(buf.size.toLong(), remaining).toInt()
                         val read = input.read(buf, 0, toRead)
                         if (read <= 0) break
-                        out.write(buf, 0, read)
+                        tarOut.write(buf, 0, read)
                         remaining -= read.toLong()
                     }
                     while (remaining > 0L) {
-                        out.write(0)
+                        tarOut.write(0)
                         remaining--
                     }
                 }
-                val pad = ((TAR_BLOCK_SIZE - (size % TAR_BLOCK_SIZE)) % TAR_BLOCK_SIZE).toInt()
-                if (pad > 0) {
-                    out.write(ByteArray(pad))
-                }
+                tarOut.closeArchiveEntry()
             }
         }
-        // Two 512-byte zero blocks mark end-of-archive
-        out.write(ByteArray(TAR_BLOCK_SIZE * 2))
+        tarOut.finish()
     }
 
-    private fun writeTarHeader(
-        out: OutputStream,
-        rawName: String,
-        size: Long,
-        mode: Int,
-        typeFlag: Char,
-        mtimeSeconds: Long
-    ) {
-        val header = ByteArray(TAR_BLOCK_SIZE)
-        val nameBytes = rawName.toByteArray(StandardCharsets.UTF_8)
-        if (nameBytes.size <= 100) {
-            System.arraycopy(nameBytes, 0, header, 0, nameBytes.size)
-        } else {
-            val slashIdx = rawName.lastIndexOf('/')
-            val prefix = if (slashIdx > 0) rawName.substring(0, slashIdx) else ""
-            val base = if (slashIdx > 0) rawName.substring(slashIdx + 1) else rawName
-            val prefixBytes = prefix.toByteArray(StandardCharsets.UTF_8)
-            val baseBytes = base.toByteArray(StandardCharsets.UTF_8)
-            System.arraycopy(baseBytes, 0, header, 0, minOf(baseBytes.size, 100))
-            System.arraycopy(prefixBytes, 0, header, 345, minOf(prefixBytes.size, 155))
-        }
-
-        writeOctal(header, 100, 8, mode.toLong())
-        writeOctal(header, 108, 8, 0L)
-        writeOctal(header, 116, 8, 0L)
-        writeOctal(header, 124, 12, size)
-        writeOctal(header, 136, 12, mtimeSeconds.coerceAtLeast(0L))
-
-        // Fill checksum field with spaces (0x20) before computing sum
-        for (i in 148 until 156) {
-            header[i] = ' '.code.toByte()
-        }
-        header[156] = typeFlag.code.toByte()
-
-        val magic = "ustar\u000000".toByteArray(StandardCharsets.US_ASCII)
-        System.arraycopy(magic, 0, header, 257, magic.size)
-
-        var sum = 0L
-        for (b in header) {
-            sum += (b.toInt() and 0xFF).toLong()
-        }
-        val chk = String.format(Locale.US, "%06o", sum).toByteArray(StandardCharsets.US_ASCII)
-        System.arraycopy(chk, 0, header, 148, minOf(chk.size, 6))
-        header[154] = 0
-        header[155] = ' '.code.toByte()
-
-        out.write(header)
-    }
-
-    private fun writeOctal(buf: ByteArray, offset: Int, length: Int, value: Long) {
-        val digits = length - 1
-        val formatted = String.format(Locale.US, "%0${digits}o", value)
-        val bytes = formatted.toByteArray(StandardCharsets.US_ASCII)
-        val copyLen = minOf(bytes.size, digits)
-        System.arraycopy(bytes, bytes.size - copyLen, buf, offset, copyLen)
-        buf[offset + digits] = 0
-    }
-
-    private data class TarReadResult(
+    internal data class TarReadResult(
         val seenPaths: Set<String>,
         val validEndOfArchive: Boolean,
         val limitReached: Boolean,
         val truncated: Boolean
     )
 
-    private fun readTarIntoDirectory(input: InputStream, targetDir: File): TarReadResult {
-        val header = ByteArray(TAR_BLOCK_SIZE)
+    internal fun readTarIntoDirectory(input: InputStream, targetDir: File): TarReadResult {
+        val tarIn = TarArchiveInputStream(BufferedInputStream(input))
         var entryCount = 0
         var totalBytes = 0L
         val seenPaths = HashSet<String>()
@@ -665,48 +616,35 @@ object ModuleRuntimeUtils {
         var truncated = false
 
         while (true) {
-            if (!readFully(input, header, TAR_BLOCK_SIZE)) {
+            val entry = try {
+                tarIn.nextEntry
+            } catch (_: Throwable) {
                 truncated = true
                 break
             }
-            if (header.all { it.toInt() == 0 }) {
-                val secondZeroBlock = ByteArray(TAR_BLOCK_SIZE)
-                if (readFully(input, secondZeroBlock, TAR_BLOCK_SIZE) &&
-                    secondZeroBlock.all { it.toInt() == 0 }
-                ) {
-                    validEndOfArchive = true
-                    drainRemaining(input)
-                } else {
-                    truncated = true
-                }
+            if (entry == null) {
+                validEndOfArchive = true
+                runCatching { drainRemaining(tarIn) }
                 break
             }
 
-            val name = extractTarString(header, 0, 100)
-            val prefix = extractTarString(header, 345, 155)
-            val fullName = if (prefix.isNotEmpty()) "$prefix/$name" else name
-            val size = parseTarOctal(header, 124, 12)
-            val typeFlag = header[156].toInt().toChar()
-
+            val name = entry.name.orEmpty()
+            val size = entry.size
             if (size < 0L) {
-                // Malformed or GNU base-256 size field; abort framing safely and disable deletion mirroring.
                 limitReached = true
                 truncated = true
                 break
             }
 
-            if (typeFlag == 'L' || typeFlag == 'x' || typeFlag == 'g') {
-                // Unparsed GNU LongName or PAX extended headers; mark limitReached so
-                // mirrorDeletedModuleFiles is never run on potentially truncated >100-byte paths.
+            if (entry.isPaxHeader || entry.isGlobalPaxHeader ||
+                entry.isGNULongNameEntry || entry.isGNULongLinkEntry || entry.isExtended
+            ) {
+                // Deletion mirroring must never run on a partially understood archive.
                 limitReached = true
-                if (!skipTarPayload(input, size)) {
-                    truncated = true
-                    break
-                }
                 continue
             }
 
-            val normalized = fullName.replace('\\', '/').trim().removePrefix("./").trim('/')
+            val normalized = name.replace('\\', '/').trim().removePrefix("./").trim('/')
             val skipEntry = normalized.isEmpty() ||
                 normalized == "." ||
                 normalized == ATTESTATION_FILE_NAME ||
@@ -718,17 +656,12 @@ object ModuleRuntimeUtils {
             entryCount++
             if (entryCount > MAX_SYNC_FILES || totalBytes + size > MAX_SYNC_BYTES) {
                 limitReached = true
-                if (!skipTarPayload(input, size)) {
-                    truncated = true
-                    break
-                }
                 continue
             }
 
-            if (typeFlag == '5' || fullName.endsWith("/")) {
+            if (entry.isDirectory || name.endsWith("/")) {
                 if (!skipEntry) {
                     seenPaths.add(normalized)
-
                     runCatching {
                         val clean = cleanRelativePath(normalized)
                         val dir = File(targetDir, clean)
@@ -736,11 +669,7 @@ object ModuleRuntimeUtils {
                         dir.mkdirs()
                     }
                 }
-                if (!skipTarPayload(input, size)) {
-                    truncated = true
-                    break
-                }
-            } else if (typeFlag == '0' || typeFlag == '\u0000') {
+            } else if (entry.isFile) {
                 val outFile = if (!skipEntry) {
                     seenPaths.add(normalized)
                     runCatching {
@@ -753,22 +682,17 @@ object ModuleRuntimeUtils {
                     null
                 }
 
-                if (outFile == null) {
-                    if (!skipTarPayload(input, size)) {
-                        truncated = true
-                        break
-                    }
-                } else {
+                if (outFile != null) {
                     outFile.parentFile?.mkdirs()
                     val tmpFile = File.createTempFile(".sync-", ".tmp", outFile.parentFile)
                     var eofReached = false
                     try {
                         tmpFile.outputStream().use { fileOut ->
-                            var remaining = size
                             val buf = ByteArray(DEFAULT_BUFFER_SIZE)
+                            var remaining = size
                             while (remaining > 0L) {
                                 val toRead = minOf(buf.size.toLong(), remaining).toInt()
-                                val read = input.read(buf, 0, toRead)
+                                val read = tarIn.read(buf, 0, toRead)
                                 if (read <= 0) {
                                     eofReached = true
                                     break
@@ -792,19 +716,9 @@ object ModuleRuntimeUtils {
                         truncated = true
                         break
                     }
-                    val pad = ((TAR_BLOCK_SIZE - (size % TAR_BLOCK_SIZE)) % TAR_BLOCK_SIZE)
-                    if (pad > 0L && !skipExact(input, pad)) {
-                        truncated = true
-                        break
-                    }
-                }
-            } else {
-                // Ignore symlinks ('2'), hardlinks ('1'), device nodes, or PAX headers for safety
-                if (!skipTarPayload(input, size)) {
-                    truncated = true
-                    break
                 }
             }
+            // Links, devices and other non-regular entries are skipped without extraction.
         }
 
         return TarReadResult(
@@ -829,38 +743,6 @@ object ModuleRuntimeUtils {
         }
     }
 
-    private fun extractTarString(buf: ByteArray, offset: Int, length: Int): String {
-        var end = offset
-        val limit = offset + length
-        while (end < limit && buf[end].toInt() != 0) {
-            end++
-        }
-        return String(buf, offset, end - offset, StandardCharsets.UTF_8).trim()
-    }
-
-    private fun parseTarOctal(buf: ByteArray, offset: Int, length: Int): Long {
-        val raw = extractTarString(buf, offset, length).trim()
-        if (raw.isEmpty()) return 0L
-        return raw.toLongOrNull(8) ?: -1L
-    }
-
-    private fun skipTarPayload(input: InputStream, size: Long): Boolean {
-        if (size <= 0L) return true
-        val pad = (TAR_BLOCK_SIZE - (size % TAR_BLOCK_SIZE)) % TAR_BLOCK_SIZE
-        return skipExact(input, size + pad)
-    }
-
-    private fun skipExact(input: InputStream, bytesToSkip: Long): Boolean {
-        var remaining = bytesToSkip
-        val scratch = ByteArray(1024)
-        while (remaining > 0L) {
-            val read = input.read(scratch, 0, minOf(scratch.size.toLong(), remaining).toInt())
-            if (read <= 0) return false
-            remaining -= read.toLong()
-        }
-        return true
-    }
-
     private fun drainRemaining(input: InputStream) {
         val scratch = ByteArray(1024)
         while (input.read(scratch) >= 0) {
@@ -868,13 +750,5 @@ object ModuleRuntimeUtils {
         }
     }
 
-    private fun readFully(input: InputStream, buf: ByteArray, len: Int): Boolean {
-        var offset = 0
-        while (offset < len) {
-            val read = input.read(buf, offset, len - offset)
-            if (read < 0) return false
-            offset += read
-        }
-        return true
-    }
+
 }

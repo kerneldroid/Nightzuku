@@ -3,6 +3,8 @@ package moe.shizuku.manager.module
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry
+import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -158,4 +160,50 @@ class AdbModuleArchiveTest {
         assertNull(ModuleRuntimeUtils.relativePathOrNull(root, sibling))
         assertNull(ModuleRuntimeUtils.relativePathOrNull(root, File(root.parentFile, "root-other/outside.txt")))
     }
+
+    @Test
+    fun `tar sync round trip preserves files and executable bits`() {
+        val source = tempFolder.newFolder("module-src")
+        val target = tempFolder.newFolder("module-target")
+        File(source, "module.prop").writeText("id=test\n")
+        File(source, "script.sh").apply {
+            writeText("#!/system/bin/sh\necho ok\n")
+            setExecutable(true, true)
+        }
+        File(source, "logs").mkdirs()
+        File(source, "logs/action-last.log").writeText("skip me")
+
+        val archive = ByteArrayOutputStream()
+        ModuleRuntimeUtils.writeDirectoryAsTar(source, archive)
+        val result = ModuleRuntimeUtils.readTarIntoDirectory(ByteArrayInputStream(archive.toByteArray()), target)
+
+        assertTrue(result.validEndOfArchive)
+        assertFalse(result.limitReached)
+        assertFalse(result.truncated)
+        assertEquals("#!/system/bin/sh\necho ok\n", File(target, "script.sh").readText())
+        assertTrue(File(target, "script.sh").canExecute())
+        assertFalse(File(target, "logs/action-last.log").exists())
+        assertTrue(result.seenPaths.contains("script.sh"))
+        assertFalse(result.seenPaths.contains("module.prop"))
+    }
+
+    @Test
+    fun `tar sync never extracts paths outside the target directory`() {
+        val target = tempFolder.newFolder("sync-target")
+        val outside = File(target.parentFile, "evil.txt")
+        val archive = ByteArrayOutputStream()
+        val tarOut = TarArchiveOutputStream(archive)
+        val entry = TarArchiveEntry("../evil.txt")
+        entry.size = 5L
+        tarOut.putArchiveEntry(entry)
+        tarOut.write("evil!".toByteArray())
+        tarOut.closeArchiveEntry()
+        tarOut.finish()
+
+        val result = ModuleRuntimeUtils.readTarIntoDirectory(ByteArrayInputStream(archive.toByteArray()), target)
+
+        assertFalse(outside.exists())
+        assertFalse(result.truncated)
+    }
+
 }

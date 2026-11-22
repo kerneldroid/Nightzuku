@@ -233,6 +233,7 @@ tasks.matching { it.name.startsWith('lintAnalyze') && it.name.endsWith('UnitTest
 dependencies {
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0'
+    implementation 'org.apache.commons:commons-compress:1.28.0'
 
     implementation project(':server')
     implementation project(':rish')
