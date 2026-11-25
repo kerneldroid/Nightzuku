@@ -4,7 +4,9 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.content.pm.ProviderInfo
+import android.os.DeadObjectException
 import android.os.IBinder
+import android.os.IInterface
 import android.os.RemoteException
 import android.os.ServiceManager
 import java.lang.reflect.InvocationTargetException
@@ -94,23 +96,53 @@ object Android17Compat {
         if (backend == Backend.PACKAGE) packageManagerHolder else permissionManagerHolder
 
     @Synchronized
+    private fun clearCachedProxy(backend: Backend) {
+        managerHolder(backend).value = null
+    }
+
     private fun obtain(backend: Backend): Any? {
-        val holder = managerHolder(backend)
-        holder.value?.let { return it }
-        if (holder.failure != null) {
-            return null
+        val holder = if (backend == Backend.PACKAGE) packageManagerHolder else permissionManagerHolder
+        val existing: Any? = synchronized(this) {
+            val cached = holder.value
+            if (cached == null && holder.failure != null) {
+                return null
+            }
+            cached
+        }
+        if (existing != null) {
+            if ((existing as? IInterface)?.asBinder()?.pingBinder() == true) {
+                return existing
+            }
+            synchronized(this) {
+                if (holder.value === existing) {
+                    holder.value = null
+                } else if (holder.value != null) {
+                    return holder.value
+                }
+                if (holder.failure != null) {
+                    return null
+                }
+            }
         }
         return try {
             val binder = ServiceManager.getService(backend.serviceName)
-                ?: throw IllegalStateException("${backend.serviceName} service is not available")
+            if (binder == null) {
+                LOGGER.w("%s: service is currently unavailable", backend.serviceName)
+                return null
+            }
             val stub = Class.forName(backend.interfaceName + "\$Stub")
             val asInterface = stub.getDeclaredMethod("asInterface", IBinder::class.java)
             val value = asInterface.invoke(null, binder)
                 ?: throw IllegalStateException("asInterface of ${backend.interfaceName} returned null")
-            holder.value = value
+            synchronized(this) {
+                holder.value = value
+                holder.failure = null
+            }
             value
         } catch (t: Throwable) {
-            holder.failure = t
+            synchronized(this) {
+                holder.failure = t
+            }
             LOGGER.w(t, "%s: resolving %s failed", backend.serviceName, backend.interfaceName)
             ServerSmartLogCollector.recordQprCompatFailure(
                 operationName = "RESOLVE_${backend.name}",
@@ -236,7 +268,7 @@ object Android17Compat {
         }
     }
 
-    fun checkPermission(permissionName: String, packageName: String, userId: Int): Int {
+    fun checkPermissionOrNull(permissionName: String, packageName: String, userId: Int): Int? {
         val outcome = invoke(
             Operation.CHECK_PERMISSION_PACKAGE,
             listOf(
@@ -249,18 +281,32 @@ object Android17Compat {
                 Candidate(
                     Backend.PERMISSION,
                     "checkPermission",
+                    listOf(STRING, STRING, INT, INT),
+                    listOf(packageName, permissionName, DEVICE_ID_DEFAULT, userId)
+                ),
+                Candidate(
+                    Backend.PERMISSION,
+                    "checkPermission",
+                    listOf(STRING, STRING, INT),
+                    listOf(permissionName, packageName, userId)
+                ),
+                Candidate(
+                    Backend.PACKAGE,
+                    "checkPermission",
                     listOf(STRING, STRING, INT),
                     listOf(permissionName, packageName, userId)
                 )
             )
         )
-        if (outcome.reached && outcome.failure == null) {
-            val result = outcome.value
-            if (result is Int) {
-                return result
-            }
+        if (!outcome.reached || outcome.failure != null) {
+            return null
         }
-        return PackageManager.PERMISSION_DENIED
+        return outcome.value as? Int
+    }
+
+    fun checkPermission(permissionName: String, packageName: String, userId: Int): Int {
+        return checkPermissionOrNull(permissionName, packageName, userId)
+            ?: PackageManager.PERMISSION_DENIED
     }
 
     fun checkPermission(permissionName: String, uid: Int): Int {
@@ -303,6 +349,18 @@ object Android17Compat {
                 Candidate(
                     Backend.PERMISSION,
                     "grantRuntimePermission",
+                    listOf(STRING, STRING, INT, INT),
+                    listOf(packageName, permissionName, DEVICE_ID_DEFAULT, userId)
+                ),
+                Candidate(
+                    Backend.PERMISSION,
+                    "grantRuntimePermission",
+                    listOf(STRING, STRING, INT),
+                    listOf(packageName, permissionName, userId)
+                ),
+                Candidate(
+                    Backend.PACKAGE,
+                    "grantRuntimePermission",
                     listOf(STRING, STRING, INT),
                     listOf(packageName, permissionName, userId)
                 )
@@ -329,6 +387,30 @@ object Android17Compat {
                 ),
                 Candidate(
                     Backend.PERMISSION,
+                    "revokeRuntimePermission",
+                    listOf(STRING, STRING, INT, INT, STRING),
+                    listOf(packageName, permissionName, DEVICE_ID_DEFAULT, userId, REVOKE_REASON)
+                ),
+                Candidate(
+                    Backend.PERMISSION,
+                    "revokeRuntimePermission",
+                    listOf(STRING, STRING, INT, INT),
+                    listOf(packageName, permissionName, DEVICE_ID_DEFAULT, userId)
+                ),
+                Candidate(
+                    Backend.PERMISSION,
+                    "revokeRuntimePermission",
+                    listOf(STRING, STRING, INT, STRING),
+                    listOf(packageName, permissionName, userId, REVOKE_REASON)
+                ),
+                Candidate(
+                    Backend.PERMISSION,
+                    "revokeRuntimePermission",
+                    listOf(STRING, STRING, INT),
+                    listOf(packageName, permissionName, userId)
+                ),
+                Candidate(
+                    Backend.PACKAGE,
                     "revokeRuntimePermission",
                     listOf(STRING, STRING, INT),
                     listOf(packageName, permissionName, userId)
@@ -366,7 +448,12 @@ object Android17Compat {
         }
         val target = obtain(cached.backend)
         if (target == null) {
-            return Outcome(false, null, lookupFailure(cached.backend))
+            return Outcome(
+                false,
+                null,
+                lookupFailure(cached.backend)
+                    ?: IllegalStateException("${cached.backend.serviceName} service is not available")
+            )
         }
         val outcome = attempt(operation, candidate, target, cached.method)
         if (outcome.reached) {
@@ -381,12 +468,13 @@ object Android17Compat {
     }
 
     private fun search(operation: Operation, candidates: List<Candidate>): Outcome {
-        val triedShapes = LinkedHashSet<List<Class<*>>>()
+        val triedShapes = LinkedHashSet<Triple<Backend, String, List<Class<*>>>>()
         var rejection: Throwable? = null
         var lookup: Throwable? = null
 
         for ((index, candidate) in candidates.withIndex()) {
-            if (!triedShapes.add(candidate.parameterTypes)) {
+            val shapeKey = Triple(candidate.backend, candidate.methodName, candidate.parameterTypes)
+            if (!triedShapes.add(shapeKey)) {
                 LOGGER.w(
                     "%s: candidate %d rejected, parameter shape (%s) is a duplicate",
                     operation.name,
@@ -401,6 +489,7 @@ object Android17Compat {
             val target = obtain(candidate.backend)
             if (target == null) {
                 lookup = lookupFailure(candidate.backend)
+                    ?: IllegalStateException("${candidate.backend.serviceName} service is not available")
                 continue
             }
             val method = findMethod(target, candidate) ?: continue
@@ -417,7 +506,9 @@ object Android17Compat {
             return outcome
         }
 
-        markUnresolved(operation)
+        if (lookup == null) {
+            markUnresolved(operation)
+        }
         val triedShapesSummary = candidates.joinToString("; ") { "${it.methodName}(${shape(it.parameterTypes)})" }
         LOGGER.w(
             "%s: no candidate shape was accepted, candidates were (%s)",
@@ -437,13 +528,34 @@ object Android17Compat {
         return Outcome(false, null, rejection ?: lookup)
     }
 
-    private fun attempt(operation: Operation, candidate: Candidate, target: Any, method: Method): Outcome {
+    private fun attempt(
+        operation: Operation,
+        candidate: Candidate,
+        target: Any,
+        method: Method,
+        allowDeadRetry: Boolean = true
+    ): Outcome {
         return try {
             Outcome(true, method.invoke(target, *candidate.arguments.toTypedArray()), null)
         } catch (e: IllegalArgumentException) {
             Outcome(false, null, e)
         } catch (e: InvocationTargetException) {
             val cause = e.targetException
+            if (allowDeadRetry && (cause is DeadObjectException || cause?.cause is DeadObjectException)) {
+                LOGGER.w(cause, "%s: %s hit DeadObjectException, refreshing proxy and retrying once", operation.name, candidate.methodName)
+                clearCachedProxy(candidate.backend)
+                val refreshed = obtain(candidate.backend)
+                if (refreshed != null) {
+                    val refreshedMethod = if (refreshed.javaClass == target.javaClass) {
+                        method
+                    } else {
+                        findMethod(refreshed, candidate)
+                    }
+                    if (refreshedMethod != null) {
+                        return attempt(operation, candidate, refreshed, refreshedMethod, allowDeadRetry = false)
+                    }
+                }
+            }
             LOGGER.w(cause, "%s: %s refused the request", operation.name, candidate.methodName)
             Outcome(true, null, cause)
         } catch (t: Throwable) {
