@@ -93,7 +93,6 @@ unsafe extern "C" fn default_setfilecon(path: *const c_char, context: *const c_c
         )
     };
     if rc != 0 {
-        errno_set(-(rc as c_int));
         return -1;
     }
     0

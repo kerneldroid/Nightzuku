@@ -10,7 +10,7 @@ use jni::objects::{JByteArray, JClass, JObjectArray, JString};
 use jni::sys::{jbyte, jint, jintArray, jlong};
 use log::{debug, error, warn};
 
-use crate::pts::{self, AttyFlags, CStrBytes, PipePair};
+use crate::pts::{self, AttyFlags, PipePair};
 
 const SHELL: &CStr = c"/system/bin/sh";
 
@@ -107,6 +107,22 @@ fn int_array_4(
     array.into_raw()
 }
 
+/// Relocates an `OwnedFd` to a descriptor `>= 3` (with `O_CLOEXEC`) when it occupies a stdio slot
+/// (`0..=2`), closing the original descriptor so subsequent `dup2(..., 0/1/2)` calls cannot clobber
+/// it or preserve `O_CLOEXEC` via a no-op `dup2(fd, fd)`.
+fn relocate_owned_above_stdio(fd: OwnedFd) -> Option<OwnedFd> {
+    let raw = fd.as_raw_fd();
+    if raw >= 3 {
+        return Some(fd);
+    }
+    let relocated = unsafe { libc::fcntl(raw, libc::F_DUPFD_CLOEXEC, 3) };
+    if relocated < 0 {
+        return None;
+    }
+    drop(fd);
+    Some(unsafe { OwnedFd::from_raw_fd(relocated) })
+}
+
 /// Spawns a non-PTY child process in its own session and process group (`setsid`, so `pgid == pid`)
 /// with three `O_CLOEXEC` stdio pipes and an `O_CLOEXEC` exec-status pipe.
 pub(crate) fn spawn_process_group_raw(
@@ -147,21 +163,39 @@ pub(crate) fn spawn_process_group_raw(
 
     if pid == 0 {
         // Child process: only async-signal-safe calls below.
-        let report_and_exit = |code: i32| -> ! {
+        let report_and_exit = |err_fd: RawFd, code: i32| -> ! {
             let errno_val: i32 = pts::current_errno();
             let bytes = errno_val.to_ne_bytes();
             unsafe {
-                let _ = libc::write(
-                    exec_err_pipe.write.as_raw_fd(),
-                    bytes.as_ptr().cast(),
-                    bytes.len(),
-                );
+                let _ = libc::write(err_fd, bytes.as_ptr().cast(), bytes.len());
                 libc::_exit(code);
             }
         };
 
+        // Close unused parent ends before relocating/duping onto 0/1/2 so dropping them
+        // cannot close a freshly installed stdio descriptor.
+        drop(stdin_pipe.write);
+        drop(stdout_pipe.read);
+        drop(stderr_pipe.read);
+        drop(exec_err_pipe.read);
+
+        let exec_err_write = {
+            let raw = exec_err_pipe.write.as_raw_fd();
+            if raw < 3 {
+                let relocated = unsafe { libc::fcntl(raw, libc::F_DUPFD_CLOEXEC, 3) };
+                if relocated < 0 {
+                    report_and_exit(raw, 126);
+                }
+                drop(exec_err_pipe.write);
+                unsafe { OwnedFd::from_raw_fd(relocated) }
+            } else {
+                exec_err_pipe.write
+            }
+        };
+        let err_fd = exec_err_write.as_raw_fd();
+
         if unsafe { libc::setsid() } < 0 {
-            report_and_exit(126);
+            report_and_exit(err_fd, 126);
         }
 
         unsafe {
@@ -170,24 +204,33 @@ pub(crate) fn spawn_process_group_raw(
 
         if let Some(dir) = directory {
             if unsafe { libc::chdir(dir.as_ptr()) } == -1 {
-                report_and_exit(126);
+                report_and_exit(err_fd, 126);
             }
         }
 
-        if unsafe { libc::dup2(stdin_pipe.read.as_raw_fd(), libc::STDIN_FILENO) } == -1 {
-            report_and_exit(126);
+        let Some(stdin_read) = relocate_owned_above_stdio(stdin_pipe.read) else {
+            report_and_exit(err_fd, 126);
+        };
+        let Some(stdout_write) = relocate_owned_above_stdio(stdout_pipe.write) else {
+            report_and_exit(err_fd, 126);
+        };
+        let Some(stderr_write) = relocate_owned_above_stdio(stderr_pipe.write) else {
+            report_and_exit(err_fd, 126);
+        };
+
+        if unsafe { libc::dup2(stdin_read.as_raw_fd(), libc::STDIN_FILENO) } == -1 {
+            report_and_exit(err_fd, 126);
         }
-        if unsafe { libc::dup2(stdout_pipe.write.as_raw_fd(), libc::STDOUT_FILENO) } == -1 {
-            report_and_exit(126);
+        if unsafe { libc::dup2(stdout_write.as_raw_fd(), libc::STDOUT_FILENO) } == -1 {
+            report_and_exit(err_fd, 126);
         }
-        if unsafe { libc::dup2(stderr_pipe.write.as_raw_fd(), libc::STDERR_FILENO) } == -1 {
-            report_and_exit(126);
+        if unsafe { libc::dup2(stderr_write.as_raw_fd(), libc::STDERR_FILENO) } == -1 {
+            report_and_exit(err_fd, 126);
         }
 
-        drop(stdin_pipe);
-        drop(stdout_pipe);
-        drop(stderr_pipe);
-        drop(exec_err_pipe.read);
+        drop(stdin_read);
+        drop(stdout_write);
+        drop(stderr_write);
 
         if environment.is_some() {
             unsafe {
@@ -199,7 +242,7 @@ pub(crate) fn spawn_process_group_raw(
             }
         }
 
-        report_and_exit(127);
+        report_and_exit(err_fd, 127);
     }
 
     // Parent process: close child ends and check whether exec succeeded.
@@ -272,8 +315,14 @@ pub(crate) extern "system" fn native_spawn_group<'local>(
             let stderr_fd = stderr_read.into_raw_fd();
             let array = int_array_4(&mut env, pid, stdin_fd, stdout_fd, stderr_fd);
             if array.is_null() {
+                if unsafe { libc::kill(-pid, libc::SIGKILL) } == -1
+                    && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+                {
+                    unsafe { libc::kill(pid, libc::SIGKILL) };
+                }
+                let mut status: libc::c_int = 0;
+                let _ = pts::retry(|| unsafe { libc::waitpid(pid, &raw mut status, 0) });
                 unsafe {
-                    libc::kill(-pid, libc::SIGKILL);
                     libc::close(stdin_fd);
                     libc::close(stdout_fd);
                     libc::close(stderr_fd);
@@ -337,8 +386,27 @@ struct CallerStreams {
 }
 
 impl CallerStreams {
-    unsafe fn from_raw(stdin_read: RawFd, stdout_write: RawFd, stderr_write: RawFd) -> Self {
-        Self {
+    unsafe fn from_raw(
+        stdin_read: RawFd,
+        stdout_write: RawFd,
+        stderr_write: RawFd,
+    ) -> Option<Self> {
+        let has_alias = stdin_read == stdout_write
+            || (stderr_write >= 0 && (stderr_write == stdin_read || stderr_write == stdout_write));
+        if stdin_read < 0 || stdout_write < 0 || has_alias {
+            if stdin_read >= 0 {
+                unsafe { libc::close(stdin_read) };
+            }
+            if stdout_write >= 0 && stdout_write != stdin_read {
+                unsafe { libc::close(stdout_write) };
+            }
+            if stderr_write >= 0 && stderr_write != stdin_read && stderr_write != stdout_write {
+                unsafe { libc::close(stderr_write) };
+            }
+            return None;
+        }
+
+        Some(Self {
             stdin_read: unsafe { OwnedFd::from_raw_fd(stdin_read) },
             stdout_write: unsafe { OwnedFd::from_raw_fd(stdout_write) },
             stderr_write: if stderr_write >= 0 {
@@ -346,7 +414,7 @@ impl CallerStreams {
             } else {
                 None
             },
-        }
+        })
     }
 }
 
@@ -365,7 +433,14 @@ pub(crate) extern "system" fn native_start<'local>(
     stderr_write: jint,
 ) -> jintArray {
     // Take RAII ownership of caller descriptors immediately so any early return closes them cleanly.
-    let caller = unsafe { CallerStreams::from_raw(stdin_read, stdout_write, stderr_write) };
+    let Some(caller) = (unsafe { CallerStreams::from_raw(stdin_read, stdout_write, stderr_write) })
+    else {
+        error!(
+            "Invalid caller stream file descriptors: stdin_read={stdin_read} stdout_write={stdout_write} stderr_write={stderr_write}"
+        );
+        fail(&mut env, "Invalid caller stream file descriptors");
+        return ptr::null_mut();
+    };
     let flags = AttyFlags::from_bits(tty);
 
     let Some(arguments) = decode_vector(&env, &arg_block, argc) else {
@@ -579,32 +654,56 @@ pub(crate) extern "system" fn native_start<'local>(
         }
 
         let master_ptmx_fd = ptmx.map_or(-1, OwnedFd::into_raw_fd);
-        return int_array(&mut env, pid, master_ptmx_fd);
+        let array = int_array(&mut env, pid, master_ptmx_fd);
+        if array.is_null() {
+            if unsafe { libc::kill(-pid, libc::SIGKILL) } == -1
+                && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+            {
+                unsafe { libc::kill(pid, libc::SIGKILL) };
+            }
+            let mut status: libc::c_int = 0;
+            let _ = pts::retry(|| unsafe { libc::waitpid(pid, &raw mut status, 0) });
+            if master_ptmx_fd >= 0 {
+                unsafe { libc::close(master_ptmx_fd) };
+            }
+        }
+        return array;
     }
 
     // Child process branch: only async-signal-safe operations below.
     if unsafe { libc::setsid() } < 0 {
-        pts::ploge_child(format_args!("setsid"));
         unsafe { libc::_exit(1) };
     }
 
     if let Some(directory) = &directory {
-        pts::debug_child(format_args!("attempt to chdir {}", CStrBytes(directory.as_c_str())));
-
         if unsafe { libc::access(directory.as_ptr(), libc::X_OK) } == 0 {
-            if unsafe { libc::chdir(directory.as_ptr()) } == -1 {
-                pts::ploge_child(format_args!("chdir {}", CStrBytes(directory.as_c_str())));
-            } else {
-                pts::debug_child(format_args!("chdir {}", CStrBytes(directory.as_c_str())));
-            }
-        } else {
-            pts::ploge_child(format_args!("access {}", CStrBytes(directory.as_c_str())));
+            let _ = unsafe { libc::chdir(directory.as_ptr()) };
         }
     }
 
+    // Close unused parent-side descriptors before relocating/duping onto 0/1/2 so dropping
+    // them cannot close a freshly installed stdio descriptor.
+    drop(ptmx_in);
+    drop(ptmx_out);
+    drop(dev_null);
+    drop(caller);
+
+    let stdin_child = stdin_pipe.map(|pipe| {
+        drop(pipe.write);
+        pipe.read
+    });
+    let stdout_child = stdout_pipe.map(|pipe| {
+        drop(pipe.read);
+        pipe.write
+    });
+    let stderr_child = stderr_pipe.map(|pipe| {
+        drop(pipe.read);
+        pipe.write
+    });
+
     let mut pts_fd: RawFd = -1;
 
-    if let Some(ref master) = ptmx {
+    if let Some(master) = ptmx {
         let mut slave = [0 as c_char; libc::PATH_MAX as usize];
 
         if unsafe {
@@ -615,68 +714,89 @@ pub(crate) extern "system" fn native_start<'local>(
             )
         } == -1
         {
-            pts::ploge_child(format_args!("ptsname_r"));
             unsafe { libc::_exit(1) };
         }
 
         pts_fd = unsafe { libc::open(slave.as_ptr(), libc::O_RDWR | libc::O_CLOEXEC) };
 
         if pts_fd == -1 {
-            pts::ploge_child(format_args!("open"));
             unsafe { libc::_exit(1) };
+        }
+
+        if pts_fd < 3 {
+            let relocated = unsafe { libc::fcntl(pts_fd, libc::F_DUPFD_CLOEXEC, 3) };
+            if relocated < 0 {
+                unsafe { libc::_exit(1) };
+            }
+            unsafe { libc::close(pts_fd) };
+            pts_fd = relocated;
         }
 
         unsafe {
             libc::ioctl(pts_fd, libc::TIOCSCTTY as _, 0);
         }
 
-        pts::debug_child(format_args!("pts {pts_fd}"));
-    } else {
-        pts::debug_child(format_args!("no need pts"));
+        drop(master);
     }
 
+    let stdin_child = match stdin_child {
+        Some(fd) => match relocate_owned_above_stdio(fd) {
+            Some(relocated) => Some(relocated),
+            None => unsafe { libc::_exit(1) },
+        },
+        None => None,
+    };
+    let stdout_child = match stdout_child {
+        Some(fd) => match relocate_owned_above_stdio(fd) {
+            Some(relocated) => Some(relocated),
+            None => unsafe { libc::_exit(1) },
+        },
+        None => None,
+    };
+    let stderr_child = match stderr_child {
+        Some(fd) => match relocate_owned_above_stdio(fd) {
+            Some(relocated) => Some(relocated),
+            None => unsafe { libc::_exit(1) },
+        },
+        None => None,
+    };
+
     if flags.has_in() {
-        unsafe { libc::dup2(pts_fd, libc::STDIN_FILENO) };
-        pts::debug_child(format_args!("pts -> in"));
-    } else if let Some(ref pipe) = stdin_pipe {
-        unsafe { libc::dup2(pipe.read.as_raw_fd(), libc::STDIN_FILENO) };
-        pts::debug_child(format_args!("pipe -> in"));
+        if unsafe { libc::dup2(pts_fd, libc::STDIN_FILENO) } == -1 {
+            unsafe { libc::_exit(1) };
+        }
+    } else if let Some(ref fd) = stdin_child {
+        if unsafe { libc::dup2(fd.as_raw_fd(), libc::STDIN_FILENO) } == -1 {
+            unsafe { libc::_exit(1) };
+        }
     }
 
     if flags.has_out() {
-        unsafe { libc::dup2(pts_fd, libc::STDOUT_FILENO) };
-        pts::debug_child(format_args!("pts -> out"));
-    } else if let Some(ref pipe) = stdout_pipe {
-        unsafe { libc::dup2(pipe.write.as_raw_fd(), libc::STDOUT_FILENO) };
-        pts::debug_child(format_args!("pipe -> out"));
+        if unsafe { libc::dup2(pts_fd, libc::STDOUT_FILENO) } == -1 {
+            unsafe { libc::_exit(1) };
+        }
+    } else if let Some(ref fd) = stdout_child {
+        if unsafe { libc::dup2(fd.as_raw_fd(), libc::STDOUT_FILENO) } == -1 {
+            unsafe { libc::_exit(1) };
+        }
     }
 
     if flags.has_err() {
-        unsafe { libc::dup2(pts_fd, libc::STDERR_FILENO) };
-        pts::debug_child(format_args!("pts -> err"));
-    } else if let Some(ref pipe) = stderr_pipe {
-        unsafe { libc::dup2(pipe.write.as_raw_fd(), libc::STDERR_FILENO) };
-        pts::debug_child(format_args!("pipe -> err"));
+        if unsafe { libc::dup2(pts_fd, libc::STDERR_FILENO) } == -1 {
+            unsafe { libc::_exit(1) };
+        }
+    } else if let Some(ref fd) = stderr_child {
+        if unsafe { libc::dup2(fd.as_raw_fd(), libc::STDERR_FILENO) } == -1 {
+            unsafe { libc::_exit(1) };
+        }
     }
 
-    pts::debug_child(format_args!(
-        "istty stdin {} stdout {} stderr {}",
-        unsafe { libc::isatty(libc::STDIN_FILENO) },
-        unsafe { libc::isatty(libc::STDOUT_FILENO) },
-        unsafe { libc::isatty(libc::STDERR_FILENO) }
-    ));
-
-    if pts_fd != -1 {
+    if pts_fd > 2 {
         unsafe { libc::close(pts_fd) };
     }
-    drop(stdin_pipe);
-    drop(stdout_pipe);
-    drop(stderr_pipe);
-    drop(ptmx);
-    drop(ptmx_in);
-    drop(ptmx_out);
-    drop(dev_null);
-    drop(caller);
+    drop(stdin_child);
+    drop(stdout_child);
+    drop(stderr_child);
 
     if environment.is_some() {
         unsafe { libc::execvpe(SHELL.as_ptr(), argv_ptrs.as_ptr(), env_ptrs.as_ptr()) };
@@ -684,7 +804,6 @@ pub(crate) extern "system" fn native_start<'local>(
         unsafe { libc::execvp(SHELL.as_ptr(), argv_ptrs.as_ptr()) };
     }
 
-    pts::ploge_child(format_args!("execv"));
     unsafe { libc::_exit(1) };
 }
 

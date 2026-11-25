@@ -2,12 +2,15 @@ use std::collections::{HashMap, HashSet};
 use std::env;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
 const DEFAULT_PACKAGE: &str = "kerneldroid.nightzuku";
 const DEFAULT_POLL_INTERVAL_SECS: u64 = 10;
 const DEFAULT_COOLDOWN_SECS: u64 = 120;
+const FAILURE_RETRY_BACKOFF: Duration = Duration::from_secs(15);
+const MAX_IN_FLIGHT_WORKERS: usize = 8;
 const TLS_CONNECT_SERVICE: &str = "_adb-tls-connect._tcp";
 
 #[derive(Debug, Clone)]
@@ -28,9 +31,42 @@ struct MdnsEndpoint {
     host: String,
 }
 
+#[derive(Debug, Default)]
+struct HostState {
+    next_allowed: HashMap<String, Instant>,
+    in_flight: HashSet<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EndpointOutcome {
+    Started,
+    Failed,
+}
+
+struct InFlightGuard {
+    tracker: Arc<Mutex<HostState>>,
+    host: String,
+    cooldown: Duration,
+    outcome: EndpointOutcome,
+}
+
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        let mut state = self.tracker.lock().unwrap_or_else(|e| e.into_inner());
+        state.in_flight.remove(&self.host);
+        let delay = match self.outcome {
+            EndpointOutcome::Started => self.cooldown,
+            EndpointOutcome::Failed => self.cooldown.min(FAILURE_RETRY_BACKOFF),
+        };
+        state
+            .next_allowed
+            .insert(self.host.clone(), Instant::now() + delay);
+    }
+}
+
 fn main() {
     let config = match parse_args(env::args().skip(1)) {
-        Ok(Some(cfg)) => cfg,
+        Ok(Some(cfg)) => Arc::new(cfg),
         Ok(None) => return,
         Err(msg) => {
             eprintln!("error: {msg}");
@@ -50,25 +86,36 @@ fn main() {
         }
     );
 
-    let mut last_attempt: HashMap<String, Instant> = HashMap::new();
+    let tracker = Arc::new(Mutex::new(HostState::default()));
 
     if config.once {
-        poll_once(&config, &mut last_attempt);
+        poll_once(&config, &tracker);
         return;
     }
 
     loop {
-        if !run_track_services(&config, &mut last_attempt) {
+        if !run_track_services(&config, &tracker) {
             eprintln!(
                 "[nightzuku-lan-starter] adb mdns track-services unavailable or exited; polling every {}s",
                 config.poll_interval.as_secs()
             );
-            poll_once(&config, &mut last_attempt);
+            poll_once(&config, &tracker);
             thread::sleep(config.poll_interval);
         } else {
             thread::sleep(Duration::from_secs(2));
         }
     }
+}
+
+fn is_valid_android_package(pkg: &str) -> bool {
+    !pkg.is_empty()
+        && pkg.contains('.')
+        && !pkg.starts_with('.')
+        && !pkg.ends_with('.')
+        && !pkg.contains("..")
+        && pkg
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'_')
 }
 
 fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<Option<Config>, String> {
@@ -134,6 +181,12 @@ fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<Option<Config>,
         }
     }
 
+    if !is_valid_android_package(&package_name) {
+        return Err(format!(
+            "invalid Android package name '{package_name}': must use only [a-zA-Z0-9._], contain '.', and have no leading, trailing, or consecutive dots"
+        ));
+    }
+
     Ok(Some(Config {
         adb_bin,
         package_name,
@@ -153,7 +206,7 @@ fn print_usage() {
          \t--adb <PATH>         Path to adb binary (env: NIGHTZUKU_ADB_BIN, default: adb)\n\
          \t--package <PKG>      Nightzuku manager package (env: NIGHTZUKU_PACKAGE, default: {DEFAULT_PACKAGE})\n\
          \t--interval <SECS>    Fallback polling interval when track-services is unavailable (default: {DEFAULT_POLL_INTERVAL_SECS})\n\
-         \t--cooldown <SECS>    Minimum seconds between launch attempts per host (default: {DEFAULT_COOLDOWN_SECS})\n\
+         \t--cooldown <SECS>    Minimum seconds between successful starts per host (default: {DEFAULT_COOLDOWN_SECS})\n\
          \t--allow <HOST>       Allow only this device IP/host (repeatable; env: NIGHTZUKU_ALLOW_HOSTS)\n\
          \t--once               Run a single discovery pass and exit\n\
          \t-h, --help           Show this help message"
@@ -162,7 +215,7 @@ fn print_usage() {
 
 /// Streams `adb mdns track-services` (ADB 37.0.0+) and launches Nightzuku whenever a paired
 /// Android device advertises `_adb-tls-connect._tcp` on the LAN.
-fn run_track_services(config: &Config, last_attempt: &mut HashMap<String, Instant>) -> bool {
+fn run_track_services(config: &Arc<Config>, tracker: &Arc<Mutex<HostState>>) -> bool {
     let mut child = match Command::new(&config.adb_bin)
         .args(["mdns", "track-services"])
         .stdout(Stdio::piped())
@@ -190,7 +243,7 @@ fn run_track_services(config: &Config, last_attempt: &mut HashMap<String, Instan
     for line in reader.lines().map_while(Result::ok) {
         saw_any_line = true;
         if let Some(ep) = parse_mdns_line(&line) {
-            handle_endpoint(config, &ep, last_attempt);
+            let _ = dispatch_endpoint(config, ep, tracker);
         }
     }
 
@@ -198,7 +251,7 @@ fn run_track_services(config: &Config, last_attempt: &mut HashMap<String, Instan
     saw_any_line && status.map(|s| s.success()).unwrap_or(false)
 }
 
-fn poll_once(config: &Config, last_attempt: &mut HashMap<String, Instant>) {
+fn poll_once(config: &Arc<Config>, tracker: &Arc<Mutex<HostState>>) {
     let output = match Command::new(&config.adb_bin)
         .args(["mdns", "services"])
         .output()
@@ -217,40 +270,87 @@ fn poll_once(config: &Config, last_attempt: &mut HashMap<String, Instant>) {
         }
     };
 
+    let mut handles = Vec::new();
     for line in String::from_utf8_lossy(&output).lines() {
         if let Some(ep) = parse_mdns_line(line) {
-            handle_endpoint(config, &ep, last_attempt);
+            if let Some(handle) = dispatch_endpoint(config, ep, tracker) {
+                handles.push(handle);
+            }
+        }
+    }
+
+    for handle in handles {
+        let _ = handle.join();
+    }
+}
+
+fn try_reserve_host(
+    tracker: &Arc<Mutex<HostState>>,
+    host: &str,
+    now: Instant,
+    max_workers: usize,
+) -> bool {
+    let mut state = tracker.lock().unwrap_or_else(|e| e.into_inner());
+    if state.in_flight.contains(host) || state.in_flight.len() >= max_workers {
+        return false;
+    }
+    if let Some(&until) = state.next_allowed.get(host) {
+        if now < until {
+            return false;
+        }
+    }
+    state.in_flight.insert(host.to_string());
+    true
+}
+
+fn dispatch_endpoint(
+    config: &Arc<Config>,
+    ep: MdnsEndpoint,
+    tracker: &Arc<Mutex<HostState>>,
+) -> Option<thread::JoinHandle<()>> {
+    if ep.service_type != TLS_CONNECT_SERVICE {
+        return None;
+    }
+    if !config.allow_hosts.is_empty() && !config.allow_hosts.contains(&ep.host) {
+        return None;
+    }
+
+    if !try_reserve_host(tracker, &ep.host, Instant::now(), MAX_IN_FLIGHT_WORKERS) {
+        return None;
+    }
+
+    let mut guard = InFlightGuard {
+        tracker: Arc::clone(tracker),
+        host: ep.host.clone(),
+        cooldown: config.cooldown,
+        outcome: EndpointOutcome::Failed,
+    };
+    let worker_config = Arc::clone(config);
+    let target_for_log = ep.target.clone();
+
+    match thread::Builder::new()
+        .name("lan-starter-worker".to_string())
+        .spawn(move || {
+            guard.outcome = handle_endpoint(&worker_config, &ep);
+        }) {
+        Ok(handle) => Some(handle),
+        Err(err) => {
+            eprintln!(
+                "[nightzuku-lan-starter] failed to spawn worker for {target_for_log}: {err}"
+            );
+            None
         }
     }
 }
 
-fn handle_endpoint(
-    config: &Config,
-    ep: &MdnsEndpoint,
-    last_attempt: &mut HashMap<String, Instant>,
-) {
-    if ep.service_type != TLS_CONNECT_SERVICE {
-        return;
-    }
-    if !config.allow_hosts.is_empty() && !config.allow_hosts.contains(&ep.host) {
-        return;
-    }
-
-    let now = Instant::now();
-    if let Some(prev) = last_attempt.get(&ep.host) {
-        if now.duration_since(*prev) < config.cooldown {
-            return;
-        }
-    }
-    last_attempt.insert(ep.host.clone(), now);
-
+fn handle_endpoint(config: &Config, ep: &MdnsEndpoint) -> EndpointOutcome {
     eprintln!(
         "[nightzuku-lan-starter] discovered {} at {}",
         ep.instance, ep.target
     );
 
     if !adb_connect(&config.adb_bin, &ep.target) {
-        return;
+        return EndpointOutcome::Failed;
     }
 
     if is_server_running(&config.adb_bin, &ep.target) {
@@ -258,18 +358,24 @@ fn handle_endpoint(
             "[nightzuku-lan-starter] shizuku_server already running on {}",
             ep.target
         );
-        return;
+        return EndpointOutcome::Started;
     }
 
     match launch_nightzuku(&config.adb_bin, &ep.target, &config.package_name) {
-        Ok(()) => eprintln!(
-            "[nightzuku-lan-starter] started Nightzuku server on {}",
-            ep.target
-        ),
-        Err(err) => eprintln!(
-            "[nightzuku-lan-starter] failed to start Nightzuku on {}: {err}",
-            ep.target
-        ),
+        Ok(()) => {
+            eprintln!(
+                "[nightzuku-lan-starter] started Nightzuku server on {}",
+                ep.target
+            );
+            EndpointOutcome::Started
+        }
+        Err(err) => {
+            eprintln!(
+                "[nightzuku-lan-starter] failed to start Nightzuku on {}: {err}",
+                ep.target
+            );
+            EndpointOutcome::Failed
+        }
     }
 }
 
@@ -302,7 +408,52 @@ fn is_server_running(adb_bin: &str, target: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn select_base_apk_path(pm_stdout: &str) -> Option<String> {
+    let mut first_apk: Option<&str> = None;
+    for line in pm_stdout.lines() {
+        let Some(path) = line.trim().strip_prefix("package:").map(str::trim) else {
+            continue;
+        };
+        if path.is_empty() {
+            continue;
+        }
+        if path.ends_with("/base.apk") {
+            return Some(path.to_string());
+        }
+        if first_apk.is_none() {
+            first_apk = Some(path);
+        }
+    }
+    first_apk.map(str::to_string)
+}
+
+fn map_android_abi_to_lib_dir(abi: &str) -> Option<&'static str> {
+    match abi.trim() {
+        "arm64-v8a" => Some("arm64"),
+        "armeabi-v7a" => Some("arm"),
+        "x86_64" => Some("x86_64"),
+        "x86" => Some("x86"),
+        _ => None,
+    }
+}
+
+fn detect_primary_lib_dir(adb_bin: &str, target: &str) -> Option<&'static str> {
+    let out = Command::new(adb_bin)
+        .args(["-s", target, "shell", "getprop", "ro.product.cpu.abi"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let abi = String::from_utf8_lossy(&out.stdout);
+    map_android_abi_to_lib_dir(&abi)
+}
+
 fn launch_nightzuku(adb_bin: &str, target: &str, package_name: &str) -> Result<(), String> {
+    if !is_valid_android_package(package_name) {
+        return Err(format!("invalid Android package name: {package_name}"));
+    }
+
     let pm_out = Command::new(adb_bin)
         .args(["-s", target, "shell", "pm", "path", package_name])
         .output()
@@ -315,22 +466,24 @@ fn launch_nightzuku(adb_bin: &str, target: &str, package_name: &str) -> Result<(
         ));
     }
 
-    let apk_path = String::from_utf8_lossy(&pm_out.stdout)
-        .lines()
-        .find_map(|line| line.trim().strip_prefix("package:"))
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| format!("no APK path returned for {package_name}"))?
-        .to_string();
+    let pm_stdout = String::from_utf8_lossy(&pm_out.stdout);
+    let apk_path = select_base_apk_path(&pm_stdout)
+        .ok_or_else(|| format!("no APK path returned for {package_name}"))?;
 
-    // Resolve libshizuku.so relative to the installed APK directory so ABI differences
-    // (arm64 / arm / x86_64) are handled automatically on the device.
+    let primary_lib_dir = detect_primary_lib_dir(adb_bin, target).unwrap_or("");
+
+    // Resolve libshizuku.so using the device's primary ABI first, then fall back to globbing.
     let shell_cmd = format!(
-        "APK='{apk}'; DIR=$(dirname \"$APK\"); \
-         STARTER=$(ls \"$DIR\"/lib/*/libshizuku.so 2>/dev/null | head -n 1); \
+        "APK='{apk}'; DIR=$(dirname \"$APK\"); STARTER=''; \
+         if [ -n '{abi_dir}' ] && [ -x \"$DIR/lib/{abi_dir}/libshizuku.so\" ]; then \
+           STARTER=\"$DIR/lib/{abi_dir}/libshizuku.so\"; \
+         else \
+           STARTER=$(ls \"$DIR\"/lib/*/libshizuku.so 2>/dev/null | head -n 1); \
+         fi; \
          if [ -z \"$STARTER\" ]; then echo 'libshizuku.so not found' >&2; exit 1; fi; \
          \"$STARTER\" --apk=\"$APK\"",
-        apk = apk_path.replace('\'', "'\\''")
+        apk = apk_path.replace('\'', "'\\''"),
+        abi_dir = primary_lib_dir,
     );
 
     let run = Command::new(adb_bin)
@@ -349,27 +502,41 @@ fn launch_nightzuku(adb_bin: &str, target: &str, package_name: &str) -> Result<(
     }
 }
 
+fn split_last_whitespace(s: &str) -> Option<(&str, &str)> {
+    let trimmed = s.trim_end();
+    let idx = trimmed.rfind(char::is_whitespace)?;
+    let ws_len = trimmed[idx..].chars().next()?.len_utf8();
+    let head = trimmed[..idx].trim_end();
+    let tail = &trimmed[idx + ws_len..];
+    if head.is_empty() || tail.is_empty() {
+        return None;
+    }
+    Some((head, tail))
+}
+
 /// Parses a single line from `adb mdns services` or `adb mdns track-services`:
 /// `adb-XXXX-YYYY\t_adb-tls-connect._tcp\t192.168.1.42:37891`
+/// Parses from the right so instance names containing spaces are preserved intact.
 fn parse_mdns_line(line: &str) -> Option<MdnsEndpoint> {
     let trimmed = line.trim();
     if trimmed.is_empty() || trimmed.starts_with("List of") {
         return None;
     }
-    let parts: Vec<&str> = trimmed.split_whitespace().collect();
-    if parts.len() < 3 {
+
+    let (before_target, target) = split_last_whitespace(trimmed)?;
+    let (instance, raw_service_type) = split_last_whitespace(before_target)?;
+
+    let service_type = raw_service_type.trim_end_matches('.');
+    if !service_type.starts_with('_') {
         return None;
     }
 
-    let instance = parts[0].to_string();
-    let service_type = parts[1].trim_end_matches('.').to_string();
-    let target = parts[2].to_string();
-    let host = extract_host(&target)?;
+    let host = extract_host(target)?;
 
     Some(MdnsEndpoint {
-        instance,
-        service_type,
-        target,
+        instance: instance.to_string(),
+        service_type: service_type.to_string(),
+        target: target.to_string(),
         host,
     })
 }
@@ -407,6 +574,16 @@ mod tests {
     }
 
     #[test]
+    fn parses_instance_name_with_spaces() {
+        let ep = parse_mdns_line("My Pixel 9 Pro\t_adb-tls-connect._tcp\t192.168.1.50:41235")
+            .expect("should parse instance with spaces");
+        assert_eq!(ep.instance, "My Pixel 9 Pro");
+        assert_eq!(ep.service_type, "_adb-tls-connect._tcp");
+        assert_eq!(ep.target, "192.168.1.50:41235");
+        assert_eq!(ep.host, "192.168.1.50");
+    }
+
+    #[test]
     fn parses_ipv6_and_trailing_dot() {
         let ep = parse_mdns_line("adb-dev\t_adb-tls-connect._tcp.\t[fe80::1]:42001")
             .expect("should parse");
@@ -418,5 +595,44 @@ mod tests {
     fn ignores_header_and_invalid_ports() {
         assert!(parse_mdns_line("List of discovered mdns services").is_none());
         assert!(parse_mdns_line("adb-dev\t_adb-tls-connect._tcp\t192.168.1.50:notaport").is_none());
+    }
+
+    #[test]
+    fn validates_android_package_names() {
+        assert!(is_valid_android_package("kerneldroid.nightzuku"));
+        assert!(is_valid_android_package("com.example.app_1"));
+        assert!(!is_valid_android_package(""));
+        assert!(!is_valid_android_package("nodot"));
+        assert!(!is_valid_android_package(".leading.dot"));
+        assert!(!is_valid_android_package("trailing.dot."));
+        assert!(!is_valid_android_package("double..dot"));
+        assert!(!is_valid_android_package("com.example;id"));
+        assert!(!is_valid_android_package("com.example $(id)"));
+    }
+
+    #[test]
+    fn selects_base_apk_over_split_apks() {
+        let split_output = "\
+package:/data/app/~~abc==/kerneldroid.nightzuku-xyz==/split_config.arm64_v8a.apk\n\
+package:/data/app/~~abc==/kerneldroid.nightzuku-xyz==/base.apk\n";
+        assert_eq!(
+            select_base_apk_path(split_output).as_deref(),
+            Some("/data/app/~~abc==/kerneldroid.nightzuku-xyz==/base.apk")
+        );
+
+        let single_output = "package:/data/app/kerneldroid.nightzuku/app.apk\n";
+        assert_eq!(
+            select_base_apk_path(single_output).as_deref(),
+            Some("/data/app/kerneldroid.nightzuku/app.apk")
+        );
+    }
+
+    #[test]
+    fn maps_android_abi_names() {
+        assert_eq!(map_android_abi_to_lib_dir("arm64-v8a\r\n"), Some("arm64"));
+        assert_eq!(map_android_abi_to_lib_dir("armeabi-v7a"), Some("arm"));
+        assert_eq!(map_android_abi_to_lib_dir("x86_64"), Some("x86_64"));
+        assert_eq!(map_android_abi_to_lib_dir("x86"), Some("x86"));
+        assert_eq!(map_android_abi_to_lib_dir("riscv64"), None);
     }
 }

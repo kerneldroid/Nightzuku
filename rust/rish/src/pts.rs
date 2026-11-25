@@ -2,14 +2,9 @@
 // https://github.com/d4rken-org/porter-api (eu.darken.porter / porsh, Apache-2.0 / MIT).
 
 use core::ffi::c_int;
-use core::fmt::{self, Arguments, Write};
-use std::ffi::CStr;
 use std::os::fd::{FromRawFd, OwnedFd, RawFd};
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Condvar, Mutex, OnceLock};
-
-#[cfg(target_os = "android")]
-use core::ffi::c_char;
 
 use log::{debug, error};
 
@@ -93,82 +88,6 @@ pub fn dup_cloexec(fd: RawFd) -> Option<OwnedFd> {
     }
 }
 
-const LOG_DEBUG: c_int = 3;
-const LOG_ERROR: c_int = 6;
-
-#[cfg(target_os = "android")]
-const LOG_TAG: &CStr = c"RISH";
-
-#[cfg(target_os = "android")]
-unsafe extern "C" {
-    fn __android_log_write(prio: c_int, tag: *const c_char, text: *const c_char) -> c_int;
-}
-
-pub struct CStrBytes<'a>(pub &'a CStr);
-
-impl fmt::Display for CStrBytes<'_> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for &byte in self.0.to_bytes() {
-            if (0x20..=0x7e).contains(&byte) {
-                formatter.write_char(byte as char)?;
-            } else {
-                write!(formatter, "\\x{byte:02x}")?;
-            }
-        }
-
-        Ok(())
-    }
-}
-
-struct FixedBuffer {
-    buffer: [u8; 512],
-    length: usize,
-}
-
-impl Default for FixedBuffer {
-    fn default() -> Self {
-        Self {
-            buffer: [0; 512],
-            length: 0,
-        }
-    }
-}
-
-impl FixedBuffer {
-    fn new() -> Self {
-        Self::default()
-    }
-}
-
-impl Write for FixedBuffer {
-    fn write_str(&mut self, value: &str) -> fmt::Result {
-        let available = self.buffer.len() - 1 - self.length;
-        let bytes = value.as_bytes();
-        let count = bytes.len().min(available);
-        self.buffer[self.length..self.length + count].copy_from_slice(&bytes[..count]);
-        self.length += count;
-
-        Ok(())
-    }
-}
-
-fn emit(priority: c_int, buffer: &FixedBuffer) {
-    #[cfg(target_os = "android")]
-    unsafe {
-        __android_log_write(priority, LOG_TAG.as_ptr(), buffer.buffer.as_ptr().cast());
-    }
-
-    #[cfg(not(target_os = "android"))]
-    unsafe {
-        libc::write(
-            libc::STDERR_FILENO,
-            buffer.buffer.as_ptr().cast(),
-            buffer.length,
-        );
-        let _ = priority;
-    }
-}
-
 #[cfg(target_os = "android")]
 pub fn current_errno() -> c_int {
     unsafe { *libc::__errno() }
@@ -179,31 +98,6 @@ pub fn current_errno() -> c_int {
     std::io::Error::last_os_error()
         .raw_os_error()
         .unwrap_or_default()
-}
-
-pub fn debug_child(args: Arguments<'_>) {
-    let mut buffer = FixedBuffer::new();
-    let _ = buffer.write_fmt(args);
-    emit(LOG_DEBUG, &buffer);
-}
-
-pub fn ploge_child(args: Arguments<'_>) {
-    let errno = current_errno();
-
-    let mut buffer = FixedBuffer::new();
-    let _ = buffer.write_fmt(args);
-    let _ = write!(buffer, " failed with {errno}: ");
-
-    let message = unsafe { libc::strerror(errno) };
-
-    if message.is_null() {
-        let _ = buffer.write_str("unknown error");
-    } else {
-        let display = CStrBytes(unsafe { CStr::from_ptr(message) });
-        let _ = write!(buffer, "{display}");
-    }
-
-    emit(LOG_ERROR, &buffer);
 }
 
 /// Safe cross-thread completion gate replacing raw cross-thread `pthread_mutex_unlock` UB.

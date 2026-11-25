@@ -272,27 +272,36 @@ fn wait_for_process_exit(pid: c_int, timeout: Duration) {
 
 fn kill_old_processes(replace_pid: Option<c_int>) {
     let self_pid = unsafe { libc::getpid() };
+    let parent_pid = unsafe { libc::getppid() };
     let self_exe = read_self_exe();
 
-    if let Some(target_pid) = replace_pid
-        && target_pid > 1
-        && target_pid != self_pid
-        && is_privileged_uid(target_pid)
-    {
-        let mut buf = [0u8; 1024];
-        if misc::get_proc_name(target_pid, &mut buf) == 0 {
-            let name = unsafe { CStr::from_ptr(buf.as_ptr().cast()) };
-            if name.to_bytes() == SERVER_NAME.as_bytes()
-                && unsafe { libc::kill(target_pid, libc::SIGKILL) } == 0
-            {
-                logging::logi(&format!("replaced old shizuku_server pid {target_pid}"));
-                wait_for_process_exit(target_pid, Duration::from_millis(REPLACE_WAIT_TIMEOUT_MS));
+    if let Some(target_pid) = replace_pid {
+        if target_pid > 1
+            && target_pid != self_pid
+            && target_pid != parent_pid
+            && is_privileged_uid(target_pid)
+        {
+            let mut buf = [0u8; 1024];
+            if misc::get_proc_name(target_pid, &mut buf) == 0 {
+                let name = unsafe { CStr::from_ptr(buf.as_ptr().cast()) };
+                if name.to_bytes() == SERVER_NAME.as_bytes()
+                    && unsafe { libc::kill(target_pid, libc::SIGKILL) } == 0
+                {
+                    logging::logi(&format!("replaced old shizuku_server pid {target_pid}"));
+                    wait_for_process_exit(
+                        target_pid,
+                        Duration::from_millis(REPLACE_WAIT_TIMEOUT_MS),
+                    );
+                }
             }
         }
     }
 
     misc::foreach_proc(|pid| {
-        if pid == self_pid || Some(pid) == replace_pid {
+        if pid == self_pid
+            || Some(pid) == replace_pid
+            || (replace_pid.is_some() && pid == parent_pid)
+        {
             return;
         }
 
@@ -578,12 +587,12 @@ fn switch_cgroup() -> c_int {
         println!("info: switch cgroup succeeded, cgroup in /sys/fs/cgroup");
         return 0;
     }
-    if let Some(value) = android::prop("ro.config.per_app_memcg")
-        && !value.as_bytes().starts_with(b"false")
-        && cgroup::switch_cgroup("/dev/memcg/apps", pid)
-    {
-        println!("info: switch cgroup succeeded, cgroup in /dev/memcg/apps");
-        return 0;
+    if let Some(value) = android::prop("ro.config.per_app_memcg") {
+        if !value.as_bytes().starts_with(b"false") && cgroup::switch_cgroup("/dev/memcg/apps", pid)
+        {
+            println!("info: switch cgroup succeeded, cgroup in /dev/memcg/apps");
+            return 0;
+        }
     }
     println!("warn: can't switch cgroup");
     flush();
@@ -603,12 +612,12 @@ fn main() {
         let bytes = arg.into_vec();
         if bytes.starts_with(b"--apk=") {
             apk_path = String::from_utf8_lossy(&bytes[6..]).into_owned();
-        } else if let Some(pid_bytes) = bytes.strip_prefix(b"--replace=")
-            && misc::is_num(pid_bytes)
-        {
-            let parsed = misc::atoi(pid_bytes);
-            if parsed > 1 {
-                replace_pid = Some(parsed);
+        } else if let Some(pid_bytes) = bytes.strip_prefix(b"--replace=") {
+            if misc::is_num(pid_bytes) {
+                let parsed = misc::atoi(pid_bytes);
+                if parsed > 1 {
+                    replace_pid = Some(parsed);
+                }
             }
         }
     }
@@ -677,12 +686,12 @@ fn main() {
         apk_path.clear();
     }
 
-    if apk_path.is_empty()
-        && let Some(derived) = derive_apk_from_self_exe()
-    {
-        println!("info: resolved base.apk from /proc/self/exe");
-        flush();
-        apk_path = derived;
+    if apk_path.is_empty() {
+        if let Some(derived) = derive_apk_from_self_exe() {
+            println!("info: resolved base.apk from /proc/self/exe");
+            flush();
+            apk_path = derived;
+        }
     }
 
     if let Some(package) = derive_package_from_apk_path(&apk_path) {
