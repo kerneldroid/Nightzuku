@@ -216,7 +216,14 @@ object LargeCommandTransport {
     ): PreparedCommand {
         val dir = resolveSpoolDir(spoolDirOverride)
         val scriptFile = File(dir, "sh_${UUID.randomUUID()}.sh")
-        scriptFile.writeText(cmd[2], StandardCharsets.UTF_8)
+        val escapedPath = scriptFile.absolutePath.replace("'", "'\\''")
+        val hasPositionalArgs = cmd.size > 3
+        val header = if (hasPositionalArgs) {
+            "unset __nz_s; rm -f -- '$escapedPath' >/dev/null 2>&1 || true\n"
+        } else {
+            "rm -f -- '$escapedPath' >/dev/null 2>&1 || true\n"
+        }
+        scriptFile.writeText(header + cmd[2], StandardCharsets.UTF_8)
         try {
             Os.chmod(scriptFile.absolutePath, MODE_0600)
         } catch (_: Throwable) {
@@ -226,11 +233,23 @@ object LargeCommandTransport {
             scriptFile.setWritable(true, true)
         }
 
-        val rewritten = ArrayList<String>(cmd.size)
-        rewritten.add(cmd[0])
-        rewritten.add(scriptFile.absolutePath)
-        for (i in 3 until cmd.size) {
-            rewritten.add(cmd[i])
+        val rewritten = if (hasPositionalArgs) {
+            // Preserve $0 (cmd[3]) and $1.. (cmd[4..]) semantics of `sh -c <script> <arg0> <arg1>...`.
+            ArrayList<String>(cmd.size + 2).apply {
+                add(cmd[0])
+                add("-c")
+                add("__nz_s=\$1; shift; . \"\$__nz_s\"")
+                add(cmd[3])
+                add(scriptFile.absolutePath)
+                for (i in 4 until cmd.size) {
+                    add(cmd[i])
+                }
+            }
+        } else {
+            ArrayList<String>(2).apply {
+                add(cmd[0])
+                add(scriptFile.absolutePath)
+            }
         }
         return PreparedCommand(rewritten.toTypedArray(), env, scriptFile)
     }

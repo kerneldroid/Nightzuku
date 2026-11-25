@@ -160,6 +160,20 @@ object NightDog {
         }
     }
 
+    private fun unlinkServiceIfMatch(name: String, expectedBinder: IBinder): Boolean {
+        if (!bindings.remove(name, expectedBinder)) {
+            return false
+        }
+        val recipient = deathRecipients.remove(name)
+        if (recipient != null) {
+            try {
+                expectedBinder.unlinkToDeath(recipient, 0)
+            } catch (_: Exception) {
+            }
+        }
+        return true
+    }
+
     private fun linkToServices(critical: Boolean, vararg names: String) {
         for (name in names) {
             if (!started.get()) return
@@ -181,7 +195,9 @@ object NightDog {
             Log.e(TAG, "System service died: $name")
             handler?.post {
                 if (!started.get()) return@post
-                unlinkService(name)
+                if (!unlinkServiceIfMatch(name, binder)) {
+                    return@post
+                }
                 rebindAttempts.remove(name)
                 scheduleRebind(name, INITIAL_REBIND_DELAY_MS)
             }
@@ -300,13 +316,15 @@ object NightDog {
         try {
             if (!binder.pingBinder()) {
                 Log.w(TAG, "System service '$name' unresponsive during fallback check")
-                unlinkService(name)
-                scheduleRebind(name, INITIAL_REBIND_DELAY_MS)
+                if (unlinkServiceIfMatch(name, binder)) {
+                    scheduleRebind(name, INITIAL_REBIND_DELAY_MS)
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Fallback check failed for '$name'", e)
-            unlinkService(name)
-            scheduleRebind(name, INITIAL_REBIND_DELAY_MS)
+            if (unlinkServiceIfMatch(name, binder)) {
+                scheduleRebind(name, INITIAL_REBIND_DELAY_MS)
+            }
         }
     }
 

@@ -100,9 +100,48 @@ class LargeCommandTransportTest {
         )
 
         assertNotNull(prepared.cleanupFile)
+        val scriptPath = prepared.cleanupFile!!.absolutePath
         assertEquals("/system/bin/sh", prepared.cmd[0])
-        assertEquals(prepared.cleanupFile!!.absolutePath, prepared.cmd[1])
-        assertEquals(hugeScript, prepared.cleanupFile!!.readText())
+        assertEquals(scriptPath, prepared.cmd[1])
+        val escapedPath = scriptPath.replace("'", "'\\''")
+        val expectedHeader = "rm -f -- '$escapedPath' >/dev/null 2>&1 || true\n"
+        val content = prepared.cleanupFile!!.readText()
+        assertTrue("Script must start with self-unlink header", content.startsWith(expectedHeader))
+        assertEquals(expectedHeader + hugeScript, content)
+
+        prepared.cleanup()
+        assertFalse(prepared.cleanupFile!!.exists())
+    }
+
+    @Test
+    fun `oversized sh -c with positional args preserves arg0 and positional parameters`() {
+        val hugeScript = "echo \"\$0:\$1:\$2\" #" + "y".repeat(140 * 1024)
+        val cmd = arrayOf("/system/bin/sh", "-c", hugeScript, "my-script", "first-arg", "second-arg")
+
+        val prepared = LargeCommandTransport.prepare(
+            cmd = cmd,
+            env = null,
+            managerApkPath = "/data/app/kerneldroid.nightzuku/base.apk",
+            spoolDirOverride = tempFolder.root
+        )
+
+        assertNotNull(prepared.cleanupFile)
+        val scriptPath = prepared.cleanupFile!!.absolutePath
+        assertArrayEquals(
+            arrayOf(
+                "/system/bin/sh",
+                "-c",
+                "__nz_s=\$1; shift; . \"\$__nz_s\"",
+                "my-script",
+                scriptPath,
+                "first-arg",
+                "second-arg"
+            ),
+            prepared.cmd
+        )
+        val escapedPath = scriptPath.replace("'", "'\\''")
+        val expectedHeader = "unset __nz_s; rm -f -- '$escapedPath' >/dev/null 2>&1 || true\n"
+        assertEquals(expectedHeader + hugeScript, prepared.cleanupFile!!.readText())
 
         prepared.cleanup()
         assertFalse(prepared.cleanupFile!!.exists())

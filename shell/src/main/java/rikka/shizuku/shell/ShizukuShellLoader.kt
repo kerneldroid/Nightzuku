@@ -73,6 +73,7 @@ object ShizukuShellLoader {
         }
 
         try {
+            val userId = Os.getuid() / 100000
             if (Build.VERSION.SDK_INT >= 30) {
                 val method = findBroadcastMethod(am)
                     ?: throw RuntimeException("Cannot find broadcastIntentWithFeature on " + am.javaClass)
@@ -88,7 +89,11 @@ object ShizukuShellLoader {
                     if (t == Boolean::class.java) {
                         callArgs[i] = booleanIndex++ == 0
                     } else if (t == Int::class.java) {
-                        callArgs[i] = if (isAppOpParameter(paramTypes, i, intIndex)) -1 else 0
+                        callArgs[i] = when {
+                            i == paramTypes.lastIndex -> userId
+                            isAppOpParameter(paramTypes, i, intIndex) -> -1
+                            else -> 0
+                        }
                         intIndex++
                     } else if (t == Long::class.java) {
                         callArgs[i] = 0L
@@ -104,7 +109,7 @@ object ShizukuShellLoader {
             } else {
                 am.broadcastIntent(
                     null, intent, null, null, 0, null, null,
-                    null, -1, null, true, false, 0
+                    null, -1, null, true, false, userId
                 )
             }
         } catch (e: Throwable) {

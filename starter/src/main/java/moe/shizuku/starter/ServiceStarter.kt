@@ -39,7 +39,7 @@ object ServiceStarter {
             " -XjdwpProvider:internal" +
             " -XjdwpOptions:transport=dt_android_adb,suspend=n,server=y"
         else -> "-Xcompiler-option" + " --debuggable" +
-            "-agentlib:jdwp=transport=dt_android_adb,suspend=n,server=y"
+            " -agentlib:jdwp=transport=dt_android_adb,suspend=n,server=y"
     }
 
     private var shizukuBinder: IBinder? = null

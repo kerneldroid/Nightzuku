@@ -289,7 +289,9 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         if (clientRecord != null) {
             return clientRecord.allowed
         }
-        if (checkCallingPermission() == PackageManager.PERMISSION_GRANTED) {
+        if (checkCallingPermission() == PackageManager.PERMISSION_GRANTED &&
+            configManager.find(callingUid)?.isAllowed() == true
+        ) {
             val packages = PackageManagerApis.getPackagesForUidNoThrow(callingUid)
             if (packages.any { configManager.verifyClientIdentity(callingUid, it) }) {
                 configManager.recordConnection(callingUid)
@@ -448,6 +450,16 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         verifyManagerSignature(allowGraceRetry = true)
         userServiceManager.reconcileUserServicePackages()
         reconcileRuntimePermissionRevocations()
+        reconcileExpiredAccessTimers()
+    }
+
+    private fun reconcileExpiredAccessTimers() {
+        val now = SystemClock.elapsedRealtime()
+        for ((uid, expiry) in accessTimerExpiry) {
+            if (expiry <= now) {
+                mainHandler.post { revokeTimedGrantNow(uid, expiry) }
+            }
+        }
     }
 
     /**
@@ -463,6 +475,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             val userId = UserHandleCompat.getUserId(uid)
             var declaresRuntimePermission = false
             var anyGranted = false
+            var anyUnknown = false
 
             for (pkg in packages) {
                 val pi = Android17Compat.getPackageInfo(
@@ -472,20 +485,23 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                 ) ?: continue
                 if (pi.requestedPermissions?.contains(ServerConstants.PERMISSION) == true) {
                     declaresRuntimePermission = true
-                    val granted = try {
-                        Android17Compat.checkPermission(ServerConstants.PERMISSION, pkg, userId) ==
-                            PackageManager.PERMISSION_GRANTED
+                    val permResult = try {
+                        Android17Compat.checkPermissionOrNull(ServerConstants.PERMISSION, pkg, userId)
                     } catch (_: Throwable) {
-                        true
+                        null
                     }
-                    if (granted) {
+                    if (permResult == null) {
+                        anyUnknown = true
+                        break
+                    }
+                    if (permResult == PackageManager.PERMISSION_GRANTED) {
                         anyGranted = true
                         break
                     }
                 }
             }
 
-            if (declaresRuntimePermission && !anyGranted) {
+            if (declaresRuntimePermission && !anyGranted && !anyUnknown) {
                 Service.LOGGER.i("Runtime permission revoked in system settings for uid=%d, revoking grant", uid)
                 configManager.update(uid, null, ConfigManager.MASK_PERMISSION, ConfigManager.FLAG_DENIED)
                 val denied = true
@@ -564,7 +580,10 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             configManager.recordConnection(callingUid)
             return true
         }
-        if (clientRecord == null && checkCallingPermission() == PackageManager.PERMISSION_GRANTED) {
+        if (clientRecord == null &&
+            checkCallingPermission() == PackageManager.PERMISSION_GRANTED &&
+            configManager.find(callingUid)?.isAllowed() == true
+        ) {
             val packages = PackageManagerApis.getPackagesForUidNoThrow(callingUid)
             if (packages.any { configManager.verifyClientIdentity(callingUid, it) }) {
                 configManager.recordConnection(callingUid)
@@ -629,17 +648,24 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         }
 
         var record = clientManager.findClient(callingUid, callingPid)
+        var existed = record != null
         if (record == null) {
             synchronized(this) {
-                record = clientManager.addClient(
-                    callingUid,
-                    callingPid,
-                    bridgeApp,
-                    packageName,
-                    ShizukuApiConstants.SERVER_VERSION
-                )
+                record = clientManager.findClient(callingUid, callingPid)
+                if (record != null) {
+                    existed = true
+                } else {
+                    record = clientManager.addClient(
+                        callingUid,
+                        callingPid,
+                        bridgeApp,
+                        packageName,
+                        ShizukuApiConstants.SERVER_VERSION
+                    )
+                }
             }
-        } else {
+        }
+        if (existed) {
             // Re-verify client identity if attaching on Night wire after legacy attach
             if (!isManager) {
                 if (configManager.isAccessPaused()) {
@@ -698,16 +724,16 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
 
         clientManager.registerLegacyApplication(callingUid, callingPid, application)
 
-        if (clientManager.findClient(callingUid, callingPid) == null) {
+        clientRecord = clientManager.findClient(callingUid, callingPid)
+        if (clientRecord == null) {
             synchronized(this) {
-                clientRecord = clientManager.addClient(callingUid, callingPid, application, requestPackageName, apiVersion)
+                clientRecord = clientManager.findClient(callingUid, callingPid)
+                    ?: clientManager.addClient(callingUid, callingPid, application, requestPackageName, apiVersion)
             }
             if (clientRecord == null) {
                 Service.LOGGER.w("Add client failed")
                 return
             }
-        } else {
-            clientRecord = clientManager.findClient(callingUid, callingPid)
         }
 
         if (!isManager && !configManager.isAccessPaused() && isTemporaryGrantActive(callingUid)) {
@@ -887,6 +913,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             requestUid, requestPid, requestCode, allowed.toString(), onetime.toString()
         )
 
+        cancelAccessTimer(requestUid)
         val uidPackages = PackageManagerApis.getPackagesForUidNoThrow(requestUid).toMutableList()
         if (!onetime) {
             clientManager.clearOneTimeGrant(requestUid)
@@ -1111,8 +1138,12 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         }
     }
 
-    private fun revokeTimedGrantNow(uid: Int) {
-        accessTimerExpiry.remove(uid)
+    private fun revokeTimedGrantNow(uid: Int, expectedExpiry: Long? = null) {
+        if (expectedExpiry != null) {
+            if (!accessTimerExpiry.remove(uid, expectedExpiry)) return
+        } else {
+            accessTimerExpiry.remove(uid)
+        }
         accessTimerRunnables.remove(uid)?.let { mainHandler.removeCallbacks(it) }
         Service.LOGGER.i("Access timer expired for uid=%d, revoking grant", uid)
         clientManager.clearOneTimeGrant(uid)
@@ -1132,7 +1163,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         val expiry = SystemClock.elapsedRealtime() + durationMs
         accessTimerExpiry[uid] = expiry
         val runnable = Runnable {
-            revokeTimedGrantNow(uid)
+            revokeTimedGrantNow(uid, expiry)
         }
         accessTimerRunnables[uid] = runnable
         mainHandler.postDelayed(runnable, durationMs)
@@ -1171,6 +1202,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
     }
 
     internal fun setOneTimeGrantForUid(uid: Int, enabled: Boolean) {
+        cancelAccessTimer(uid)
         val uidPackages = PackageManagerApis.getPackagesForUidNoThrow(uid).toMutableList()
         val paused = configManager.isAccessPaused()
         if (enabled) {
@@ -1270,9 +1302,15 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             transactRemote(data, reply, flags)
             return true
         } else if (code == ServerConstants.BINDER_TRANSACTION_getApplications) {
-            val replyParcel = reply!!
-            if (!checkCallerManagerPermission("getApplications", Binder.getCallingUid(), Binder.getCallingPid())
-                && checkCallingPermission() != PackageManager.PERMISSION_GRANTED
+            val replyParcel = reply ?: return true
+            val callingUid = Binder.getCallingUid()
+            val callingPid = Binder.getCallingPid()
+            if (!checkCallerPermission(
+                    "getApplications",
+                    callingUid,
+                    callingPid,
+                    clientManager.findClient(callingUid, callingPid)
+                )
             ) {
                 replyParcel.writeException(SecurityException("Permission denied"))
                 return true
@@ -1284,7 +1322,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             result.writeToParcel(replyParcel, Parcelable.PARCELABLE_WRITE_RETURN_VALUE)
             return true
         } else if (code == ServerConstants.BINDER_TRANSACTION_setNightDogEnabled) {
-            val replyParcel = reply!!
+            val replyParcel = reply ?: return true
             if (!checkCallerManagerPermission("setNightDogEnabled", Binder.getCallingUid(), Binder.getCallingPid())) {
                 replyParcel.writeException(SecurityException("Permission denied"))
                 return true
@@ -1297,7 +1335,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             replyParcel.writeNoException()
             return true
         } else if (code == ServerConstants.BINDER_TRANSACTION_getNightDogEnabled) {
-            val replyParcel = reply!!
+            val replyParcel = reply ?: return true
             if (!checkCallerManagerPermission("getNightDogEnabled", Binder.getCallingUid(), Binder.getCallingPid())) {
                 replyParcel.writeException(SecurityException("Permission denied"))
                 return true
@@ -1307,7 +1345,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             replyParcel.writeInt(if (configManager.getNightDogEnabled()) 1 else 0)
             return true
         } else if (code == ServerConstants.BINDER_TRANSACTION_getNightDogStatus) {
-            val replyParcel = reply!!
+            val replyParcel = reply ?: return true
             if (!checkCallerManagerPermission("getNightDogStatus", Binder.getCallingUid(), Binder.getCallingPid())) {
                 replyParcel.writeException(SecurityException("Permission denied"))
                 return true
@@ -1326,7 +1364,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             replyParcel.writeBundle(statusBundle)
             return true
         } else if (code == ServerConstants.BINDER_TRANSACTION_claimUserServiceLaunch) {
-            val replyParcel = reply!!
+            val replyParcel = reply ?: return true
             if (Binder.getCallingUid() != OsUtils.getUid()) {
                 replyParcel.writeException(SecurityException("Permission denied"))
                 return true
@@ -1338,7 +1376,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             replyParcel.writeInt(if (claimed) 1 else 0)
             return true
         } else if (code == ServerConstants.BINDER_TRANSACTION_setAccessPaused) {
-            val replyParcel = reply!!
+            val replyParcel = reply ?: return true
             if (!checkCallerManagerPermission("setAccessPaused", Binder.getCallingUid(), Binder.getCallingPid())) {
                 replyParcel.writeException(SecurityException("Permission denied"))
                 return true
@@ -1349,7 +1387,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             replyParcel.writeNoException()
             return true
         } else if (code == ServerConstants.BINDER_TRANSACTION_getAccessPaused) {
-            val replyParcel = reply!!
+            val replyParcel = reply ?: return true
             if (!checkCallerManagerPermission("getAccessPaused", Binder.getCallingUid(), Binder.getCallingPid())) {
                 replyParcel.writeException(SecurityException("Permission denied"))
                 return true
@@ -1359,7 +1397,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             replyParcel.writeInt(if (configManager.isAccessPaused()) 1 else 0)
             return true
         } else if (code == ServerConstants.BINDER_TRANSACTION_setOneTimeGrant) {
-            val replyParcel = reply!!
+            val replyParcel = reply ?: return true
             if (!checkCallerManagerPermission("setOneTimeGrant", Binder.getCallingUid(), Binder.getCallingPid())) {
                 replyParcel.writeException(SecurityException("Permission denied"))
                 return true
@@ -1371,7 +1409,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             replyParcel.writeNoException()
             return true
         } else if (code == ServerConstants.BINDER_TRANSACTION_isOneTimeGrant) {
-            val replyParcel = reply!!
+            val replyParcel = reply ?: return true
             if (!checkCallerManagerPermission("isOneTimeGrant", Binder.getCallingUid(), Binder.getCallingPid())) {
                 replyParcel.writeException(SecurityException("Permission denied"))
                 return true
@@ -1382,7 +1420,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             replyParcel.writeInt(if (clientManager.isOneTimeGranted(targetUid)) 1 else 0)
             return true
         } else if (code == ServerConstants.BINDER_TRANSACTION_setAccessTimer) {
-            val replyParcel = reply!!
+            val replyParcel = reply ?: return true
             if (!checkCallerManagerPermission("setAccessTimer", Binder.getCallingUid(), Binder.getCallingPid())) {
                 replyParcel.writeException(SecurityException("Permission denied"))
                 return true
@@ -1394,7 +1432,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             replyParcel.writeNoException()
             return true
         } else if (code == ServerConstants.BINDER_TRANSACTION_getAccessTimerRemaining) {
-            val replyParcel = reply!!
+            val replyParcel = reply ?: return true
             if (!checkCallerManagerPermission("getAccessTimerRemaining", Binder.getCallingUid(), Binder.getCallingPid())) {
                 replyParcel.writeException(SecurityException("Permission denied"))
                 return true
@@ -1405,7 +1443,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             replyParcel.writeLong(getAccessTimerRemainingMs(targetUid))
             return true
         } else if (code == ServerConstants.BINDER_TRANSACTION_forceStopApp) {
-            val replyParcel = reply!!
+            val replyParcel = reply ?: return true
             if (!checkCallerManagerPermission("forceStopApp", Binder.getCallingUid(), Binder.getCallingPid())) {
                 replyParcel.writeException(SecurityException("Permission denied"))
                 return true
@@ -1422,7 +1460,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             replyParcel.writeNoException()
             return true
         } else if (code == ServerConstants.BINDER_TRANSACTION_getAppControlInfo) {
-            val replyParcel = reply!!
+            val replyParcel = reply ?: return true
             if (!checkCallerManagerPermission("getAppControlInfo", Binder.getCallingUid(), Binder.getCallingPid())) {
                 replyParcel.writeException(SecurityException("Permission denied"))
                 return true
@@ -1460,7 +1498,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             replyParcel.writeBundle(bundle)
             return true
         } else if (code == ServerConstants.BINDER_TRANSACTION_requestBinderForClient) {
-            val replyParcel = reply!!
+            val replyParcel = reply ?: return true
             val callingUid = Binder.getCallingUid()
             val callingPid = Binder.getCallingPid()
             data.enforceInterface(ShizukuApiConstants.BINDER_DESCRIPTOR)
@@ -1474,7 +1512,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             replyParcel.writeNoException()
             return true
         } else if (code == ServerConstants.BINDER_TRANSACTION_getSmartLogs) {
-            val replyParcel = reply!!
+            val replyParcel = reply ?: return true
             if (!checkCallerManagerPermission("getSmartLogs", Binder.getCallingUid(), Binder.getCallingPid())) {
                 replyParcel.writeException(SecurityException("Permission denied"))
                 return true
@@ -1485,7 +1523,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             replyParcel.writeBundle(bundle)
             return true
         } else if (code == ServerConstants.BINDER_TRANSACTION_clearSmartLogs) {
-            val replyParcel = reply!!
+            val replyParcel = reply ?: return true
             if (!checkCallerManagerPermission("clearSmartLogs", Binder.getCallingUid(), Binder.getCallingPid())) {
                 replyParcel.writeException(SecurityException("Permission denied"))
                 return true
@@ -1495,7 +1533,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             replyParcel.writeNoException()
             return true
         } else if (code == ServerConstants.BINDER_TRANSACTION_getSecurityPolicy) {
-            val replyParcel = reply!!
+            val replyParcel = reply ?: return true
             if (!checkCallerManagerPermission("getSecurityPolicy", Binder.getCallingUid(), Binder.getCallingPid())) {
                 replyParcel.writeException(SecurityException("Permission denied"))
                 return true
@@ -1506,7 +1544,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             replyParcel.writeBundle(bundle)
             return true
         } else if (code == ServerConstants.BINDER_TRANSACTION_setSecurityPolicy) {
-            val replyParcel = reply!!
+            val replyParcel = reply ?: return true
             if (!checkCallerManagerPermission("setSecurityPolicy", Binder.getCallingUid(), Binder.getCallingPid())) {
                 replyParcel.writeException(SecurityException("Permission denied"))
                 return true
@@ -1528,7 +1566,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             replyParcel.writeNoException()
             return true
         } else if (code == ServerConstants.BINDER_TRANSACTION_getDeviceUsers) {
-            val replyParcel = reply!!
+            val replyParcel = reply ?: return true
             if (!checkCallerManagerPermission("getDeviceUsers", Binder.getCallingUid(), Binder.getCallingPid())) {
                 replyParcel.writeException(SecurityException("Permission denied"))
                 return true

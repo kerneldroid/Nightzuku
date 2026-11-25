@@ -30,7 +30,10 @@ class ShizukuConfigManager : ConfigManager() {
 
     private val config: ShizukuConfig = load()
 
-    private val mWriteRunner = Runnable { write(config) }
+    private val mWriteRunner = Runnable {
+        val jsonSnapshot = synchronized(this) { toJson(config) }
+        writeJson(jsonSnapshot)
+    }
 
     init {
         var changed = false
@@ -608,6 +611,11 @@ class ShizukuConfigManager : ConfigManager() {
 
         @JvmStatic
         fun write(config: ShizukuConfig): Boolean {
+            return writeJson(toJson(config))
+        }
+
+        @JvmStatic
+        internal fun writeJson(json: String): Boolean {
             synchronized(ATOMIC_FILE) {
                 val stream: FileOutputStream = try {
                     ATOMIC_FILE.startWrite()
@@ -617,7 +625,6 @@ class ShizukuConfigManager : ConfigManager() {
                 }
 
                 return try {
-                    val json = toJson(config)
                     stream.write(json.toByteArray(StandardCharsets.UTF_8))
 
                     // Ensure shell (uid 2000) always owns the replacement inode even when the

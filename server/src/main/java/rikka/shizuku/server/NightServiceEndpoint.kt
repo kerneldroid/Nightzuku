@@ -69,6 +69,10 @@ class NightServiceEndpoint(
 
     private data class ExecCallKey(val uid: Int, val pid: Int, val callId: Long)
 
+    private interface ShutdownCloseableTask : Runnable {
+        fun closeOnShutdown()
+    }
+
     private class ActiveExecHandle(
         val callId: Long,
         val callingUid: Int,
@@ -140,11 +144,16 @@ class NightServiceEndpoint(
     }
 
     internal fun shutdown() {
+        val queuedTasks = execDispatchPool.shutdownNow()
+        for (task in queuedTasks) {
+            if (task is ShutdownCloseableTask) {
+                task.closeOnShutdown()
+            }
+        }
         for ((key, handle) in ArrayList(activeExecCalls.entries)) {
             activeExecCalls.remove(key, handle)
             handle.terminate(fromClientDeath = false)
         }
-        execDispatchPool.shutdownNow()
         execIoPool.shutdownNow()
     }
 
@@ -221,7 +230,8 @@ class NightServiceEndpoint(
             }
             NightProtocol.TRANSACTION_ATTACH -> {
                 data.enforceInterface(NightProtocol.DESCRIPTOR)
-                handleAttach(data, reply!!)
+                val replyParcel = reply ?: return true
+                handleAttach(data, replyParcel)
                 return true
             }
             NightProtocol.TRANSACTION_TRANSACT_REMOTE -> {
@@ -231,12 +241,14 @@ class NightServiceEndpoint(
             }
             NightProtocol.TRANSACTION_EXEC_FAST -> {
                 data.enforceInterface(NightProtocol.DESCRIPTOR)
-                handleExecFast(data, reply!!)
+                val replyParcel = reply ?: return true
+                handleExecFast(data, replyParcel)
                 return true
             }
             NightProtocol.TRANSACTION_EXEC_FAST_FD -> {
                 data.enforceInterface(NightProtocol.DESCRIPTOR)
-                handleExecFastFd(data, reply!!)
+                val replyParcel = reply ?: return true
+                handleExecFastFd(data, replyParcel)
                 return true
             }
             NightProtocol.TRANSACTION_EXEC_ASYNC -> {
@@ -256,7 +268,8 @@ class NightServiceEndpoint(
             }
             NightProtocol.TRANSACTION_CHECK_PERMISSION -> {
                 data.enforceInterface(NightProtocol.DESCRIPTOR)
-                handleCheckPermission(reply!!)
+                val replyParcel = reply ?: return true
+                handleCheckPermission(replyParcel)
                 return true
             }
             NightProtocol.TRANSACTION_REQUEST_PERMISSION -> {
@@ -268,6 +281,7 @@ class NightServiceEndpoint(
             }
             NightProtocol.TRANSACTION_GET_SYSTEM_PROPERTY -> {
                 data.enforceInterface(NightProtocol.DESCRIPTOR)
+                val replyParcel = reply ?: return true
                 val name = data.readString() ?: ""
                 val defaultValue = data.readString()
                 val callingUid = Binder.getCallingUid()
@@ -286,12 +300,13 @@ class NightServiceEndpoint(
                 } catch (t: Throwable) {
                     throw IllegalStateException(t.message)
                 }
-                reply!!.writeNoException()
-                reply.writeString(value)
+                replyParcel.writeNoException()
+                replyParcel.writeString(value)
                 return true
             }
             NightProtocol.TRANSACTION_SET_SYSTEM_PROPERTY -> {
                 data.enforceInterface(NightProtocol.DESCRIPTOR)
+                val replyParcel = reply ?: return true
                 val name = data.readString() ?: ""
                 val value = data.readString() ?: ""
                 val callingUid = Binder.getCallingUid()
@@ -310,11 +325,12 @@ class NightServiceEndpoint(
                 } catch (t: Throwable) {
                     throw IllegalStateException(t.message)
                 }
-                reply!!.writeNoException()
+                replyParcel.writeNoException()
                 return true
             }
             NightProtocol.TRANSACTION_CLAIM_USER_SERVICE -> {
                 data.enforceInterface(NightProtocol.DESCRIPTOR)
+                val replyParcel = reply ?: return true
                 val token = data.readString()
                 val callingUid = Binder.getCallingUid()
                 val callingPid = Binder.getCallingPid()
@@ -322,12 +338,13 @@ class NightServiceEndpoint(
                     throw SecurityException("claimUserServiceLaunch may only be invoked by the privileged starter uid")
                 }
                 val claimed = token != null && service.userServiceManager.claimUserServiceLaunch(token, callingPid)
-                reply!!.writeNoException()
-                reply.writeInt(if (claimed) 1 else 0)
+                replyParcel.writeNoException()
+                replyParcel.writeInt(if (claimed) 1 else 0)
                 return true
             }
             NightProtocol.TRANSACTION_GET_UID_CAPABILITIES -> {
                 data.enforceInterface(NightProtocol.DESCRIPTOR)
+                val replyParcel = reply ?: return true
                 service.enforceManagerPermission("getUidCapabilities")
                 val targetUid = data.readInt()
                 val entry = service.configManager.find(targetUid)
@@ -336,38 +353,42 @@ class NightServiceEndpoint(
                     service.configManager.isAccessPaused(),
                     service.isTemporaryGrantActive(targetUid)
                 )
-                reply!!.writeNoException()
-                reply.writeInt(caps)
+                replyParcel.writeNoException()
+                replyParcel.writeInt(caps)
                 return true
             }
             NightProtocol.TRANSACTION_SET_UID_CAPABILITIES -> {
                 data.enforceInterface(NightProtocol.DESCRIPTOR)
+                val replyParcel = reply ?: return true
                 service.enforceManagerPermission("setUidCapabilities")
                 val targetUid = data.readInt()
                 val caps = data.readInt() and NightProtocol.MASK_CAPABILITIES
                 val packages = PackageManagerApis.getPackagesForUidNoThrow(targetUid).toMutableList()
                 service.configManager.update(targetUid, packages, NightProtocol.MASK_CAPABILITIES, caps)
                 service.notifyCapabilitiesUpdated(targetUid)
-                reply!!.writeNoException()
+                replyParcel.writeNoException()
                 return true
             }
             NightProtocol.TRANSACTION_GET_ACCESS_PAUSED -> {
                 data.enforceInterface(NightProtocol.DESCRIPTOR)
+                val replyParcel = reply ?: return true
                 service.enforceManagerPermission("getAccessPaused")
-                reply!!.writeNoException()
-                reply.writeInt(if (service.configManager.isAccessPaused()) 1 else 0)
+                replyParcel.writeNoException()
+                replyParcel.writeInt(if (service.configManager.isAccessPaused()) 1 else 0)
                 return true
             }
             NightProtocol.TRANSACTION_SET_ACCESS_PAUSED -> {
                 data.enforceInterface(NightProtocol.DESCRIPTOR)
+                val replyParcel = reply ?: return true
                 service.enforceManagerPermission("setAccessPaused")
                 val paused = data.readInt() != 0
                 service.setAccessPaused(paused)
-                reply!!.writeNoException()
+                replyParcel.writeNoException()
                 return true
             }
             NightProtocol.TRANSACTION_GET_SERVER_DIAGNOSTICS -> {
                 data.enforceInterface(NightProtocol.DESCRIPTOR)
+                val replyParcel = reply ?: return true
                 service.enforceCallingPermission("getServerDiagnostics")
                 val isManager = service.checkCallerManagerPermission(
                     "getServerDiagnostics",
@@ -394,46 +415,55 @@ class NightServiceEndpoint(
                         putString("qprCompatAudit", smartBundle.getString("qprCompatAudit"))
                     }
                 }
-                reply!!.writeNoException()
-                reply.writeBundle(diagnostics)
+                replyParcel.writeNoException()
+                replyParcel.writeBundle(diagnostics)
                 return true
             }
             NightProtocol.TRANSACTION_ADD_USER_SERVICE -> {
                 data.enforceInterface(NightProtocol.DESCRIPTOR)
+                val replyParcel = reply ?: return true
                 val connBinder = data.readStrongBinder()
                 val conn = IShizukuServiceConnection.Stub.asInterface(connBinder)
                 val options = data.readBundle(Bundle::class.java.classLoader) ?: Bundle()
                 val res = service.addUserService(conn, options)
-                reply!!.writeNoException()
-                reply.writeInt(res)
+                replyParcel.writeNoException()
+                replyParcel.writeInt(res)
                 return true
             }
             NightProtocol.TRANSACTION_REMOVE_USER_SERVICE -> {
                 data.enforceInterface(NightProtocol.DESCRIPTOR)
+                val replyParcel = reply ?: return true
                 val connBinder = data.readStrongBinder()
                 val conn = IShizukuServiceConnection.Stub.asInterface(connBinder)
                 val options = data.readBundle(Bundle::class.java.classLoader) ?: Bundle()
                 val res = service.removeUserService(conn, options)
-                reply!!.writeNoException()
-                reply.writeInt(res)
+                replyParcel.writeNoException()
+                replyParcel.writeInt(res)
                 return true
             }
             NightProtocol.TRANSACTION_NEW_PROCESS -> {
                 data.enforceInterface(NightProtocol.DESCRIPTOR)
+                val replyParcel = reply ?: return true
                 val cmd = data.createStringArray()
                 if (cmd.isNullOrEmpty()) {
                     throw IllegalArgumentException("Command array must not be empty")
                 }
                 val env = data.createStringArray()
                 val dir = data.readString()
-                replyNewProcess(cmd, env, dir, reply!!)
+                replyNewProcess(cmd, env, dir, replyParcel)
                 return true
             }
             NightProtocol.TRANSACTION_NEW_PROCESS_FD -> {
                 data.enforceInterface(NightProtocol.DESCRIPTOR)
+                val replyParcel = reply ?: return true
                 val pfd = ParcelFileDescriptor.CREATOR.createFromParcel(data)
-                val decoded = LargeExecCodec.decodeFromParcelFileDescriptor(pfd)
-                replyNewProcess(decoded.cmd, decoded.env, decoded.dir, reply!!)
+                val decoded = try {
+                    LargeExecCodec.decodeFromParcelFileDescriptor(pfd)
+                } catch (t: Throwable) {
+                    runCatching { pfd.close() }
+                    throw t
+                }
+                replyNewProcess(decoded.cmd, decoded.env, decoded.dir, replyParcel)
                 return true
             }
         }
@@ -867,8 +897,14 @@ class NightServiceEndpoint(
         )
 
         val pfd = ParcelFileDescriptor.CREATOR.createFromParcel(data)
-        val timeoutMs = data.readLong().coerceIn(100L, 300_000L)
-        val decoded = LargeExecCodec.decodeFromParcelFileDescriptor(pfd)
+        val timeoutMs: Long
+        val decoded = try {
+            timeoutMs = data.readLong().coerceIn(100L, 300_000L)
+            LargeExecCodec.decodeFromParcelFileDescriptor(pfd)
+        } catch (t: Throwable) {
+            runCatching { pfd.close() }
+            throw t
+        }
         val out = executeCommandBounded(decoded.cmd, decoded.env, decoded.dir, timeoutMs)
 
         reply.writeNoException()
@@ -882,9 +918,17 @@ class NightServiceEndpoint(
         val callingUid = Binder.getCallingUid()
         val callId = data.readLong()
         val pfd = ParcelFileDescriptor.CREATOR.createFromParcel(data)
-        val timeoutMs = data.readLong().coerceIn(100L, 300_000L)
-        val reportedPid = if (data.dataAvail() >= 4) data.readInt() else 0
-        val callingPid = resolveOnewayCallingPid(reportedPid, callingUid)
+        val timeoutMs: Long
+        val callingPid: Int
+        try {
+            timeoutMs = data.readLong().coerceIn(100L, 300_000L)
+            val reportedPid = if (data.dataAvail() >= 4) data.readInt() else 0
+            callingPid = resolveOnewayCallingPid(reportedPid, callingUid)
+        } catch (t: Throwable) {
+            runCatching { pfd.close() }
+            logger.w(t, "Failed to parse execAsyncFd parcel for uid=%d callId=%d", callingUid, callId)
+            return
+        }
 
         try {
             service.enforceCallingPermission("execAsync", callingUid, callingPid)
@@ -905,10 +949,21 @@ class NightServiceEndpoint(
 
         val callKey = ExecCallKey(callingUid, callingPid, callId)
         val handle = ActiveExecHandle(callId, callingUid, callingPid)
-        activeExecCalls[callKey] = handle
+        if (activeExecCalls.putIfAbsent(callKey, handle) != null) {
+            runCatching { pfd.close() }
+            val errBytes = "Duplicate in-flight callId=$callId".toByteArray(StandardCharsets.UTF_8)
+            notifyExecResult(callingPid, callId, -1, false, ByteArray(0), errBytes)
+            return
+        }
 
-        try {
-            execDispatchPool.execute {
+        val task = object : ShutdownCloseableTask {
+            override fun closeOnShutdown() {
+                runCatching { pfd.close() }
+                activeExecCalls.remove(callKey, handle)
+                handle.terminate(fromClientDeath = false)
+            }
+
+            override fun run() {
                 try {
                     val decoded = LargeExecCodec.decodeFromParcelFileDescriptor(pfd)
                     val out = executeCommandBounded(decoded.cmd, decoded.env, decoded.dir, timeoutMs, handle)
@@ -927,6 +982,10 @@ class NightServiceEndpoint(
                     activeExecCalls.remove(callKey, handle)
                 }
             }
+        }
+
+        try {
+            execDispatchPool.execute(task)
         } catch (e: RejectedExecutionException) {
             runCatching { pfd.close() }
             activeExecCalls.remove(callKey, handle)
@@ -1024,7 +1083,11 @@ class NightServiceEndpoint(
 
         val callKey = ExecCallKey(callingUid, callingPid, callId)
         val handle = ActiveExecHandle(callId, callingUid, callingPid)
-        activeExecCalls[callKey] = handle
+        if (activeExecCalls.putIfAbsent(callKey, handle) != null) {
+            val errBytes = "Duplicate in-flight callId=$callId".toByteArray(StandardCharsets.UTF_8)
+            notifyExecResult(callingPid, callId, -1, false, ByteArray(0), errBytes)
+            return
+        }
 
         try {
             execDispatchPool.execute {
