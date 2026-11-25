@@ -35,10 +35,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.MutableLiveData
-import androidx.tv.material3.Button as TvButton
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme as TvMaterialTheme
-import androidx.tv.material3.OutlinedButton as TvOutlinedButton
 import androidx.tv.material3.Text as TvText
 import androidx.wear.compose.material3.AlertDialog as WearAlertDialog
 import androidx.wear.compose.material3.Button as WearButton
@@ -67,7 +65,13 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material3.Button
@@ -81,6 +85,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import moe.shizuku.manager.ui.compose.MonospaceLog
 import moe.shizuku.manager.ui.compose.ShizukuIcon
+import moe.shizuku.manager.ui.compose.TvActionButton
+import moe.shizuku.manager.ui.compose.TvDialog
+import moe.shizuku.manager.ui.compose.TvSecondaryButton
 import moe.shizuku.manager.utils.EnvironmentUtils
 import moe.shizuku.manager.utils.SmartLogManager
 import java.net.ConnectException
@@ -116,23 +123,26 @@ fun HomeAboutDialog(
             }
         }
     } else if (isTv) {
-        moe.shizuku.manager.ui.compose.TvShizukuTheme {
-            AlertDialog(
+        val primaryFocusRequester = remember { FocusRequester() }
+        moe.shizuku.manager.ui.compose.TvShizukuTheme(wrapSurface = false) {
+            TvDialog(
                 onDismissRequest = onDismiss,
                 title = { TvText(stringResource(R.string.app_name)) },
                 text = { TvText(versionName ?: "") },
+                initialFocusRequester = primaryFocusRequester,
                 confirmButton = {
-                    TvButton(onClick = onSourceCode) {
+                    TvActionButton(
+                        onClick = onSourceCode,
+                        modifier = Modifier.focusRequester(primaryFocusRequester)
+                    ) {
                         TvText(stringResource(R.string.about_source_code_button))
                     }
                 },
                 dismissButton = {
-                    TvOutlinedButton(onClick = onDismiss) {
+                    TvSecondaryButton(onClick = onDismiss) {
                         TvText(stringResource(android.R.string.ok))
                     }
-                },
-                containerColor = TvMaterialTheme.colorScheme.surfaceVariant,
-                shape = TvMaterialTheme.shapes.extraLarge
+                }
             )
         }
     } else {
@@ -184,23 +194,26 @@ fun HomeStopDialog(
             }
         }
     } else if (isTv) {
-        moe.shizuku.manager.ui.compose.TvShizukuTheme {
-            AlertDialog(
+        val primaryFocusRequester = remember { FocusRequester() }
+        moe.shizuku.manager.ui.compose.TvShizukuTheme(wrapSurface = false) {
+            TvDialog(
                 onDismissRequest = onDismiss,
                 title = { TvText(stringResource(R.string.action_stop)) },
                 text = { TvText(stringResource(R.string.dialog_stop_message)) },
+                initialFocusRequester = primaryFocusRequester,
                 confirmButton = {
-                    TvButton(onClick = { onConfirm(); onDismiss() }) {
+                    TvActionButton(
+                        onClick = { onConfirm(); onDismiss() },
+                        modifier = Modifier.focusRequester(primaryFocusRequester)
+                    ) {
                         TvText(stringResource(android.R.string.ok))
                     }
                 },
                 dismissButton = {
-                    TvOutlinedButton(onClick = onDismiss) {
+                    TvSecondaryButton(onClick = onDismiss) {
                         TvText(stringResource(android.R.string.cancel))
                     }
-                },
-                containerColor = TvMaterialTheme.colorScheme.surfaceVariant,
-                shape = TvMaterialTheme.shapes.extraLarge
+                }
             )
         }
     } else {
@@ -261,19 +274,26 @@ fun HomeStartMethodDialog(
             }
         }
     } else if (isTv) {
-        moe.shizuku.manager.ui.compose.TvShizukuTheme {
-            AlertDialog(
+        val primaryFocusRequester = remember { FocusRequester() }
+        moe.shizuku.manager.ui.compose.TvShizukuTheme(wrapSurface = false) {
+            TvDialog(
                 onDismissRequest = onDismiss,
                 title = { TvText(title) },
                 text = { TvText(message) },
+                initialFocusRequester = primaryFocusRequester,
                 confirmButton = {
-                    TvButton(onClick = onRoot) { TvText(rootLabel) }
+                    TvActionButton(
+                        onClick = onRoot,
+                        modifier = Modifier.focusRequester(primaryFocusRequester)
+                    ) {
+                        TvText(rootLabel)
+                    }
                 },
                 dismissButton = {
-                    TvOutlinedButton(onClick = onAdb) { TvText(adbLabel) }
-                },
-                containerColor = TvMaterialTheme.colorScheme.surfaceVariant,
-                shape = TvMaterialTheme.shapes.extraLarge
+                    TvSecondaryButton(onClick = onAdb) {
+                        TvText(adbLabel)
+                    }
+                }
             )
         }
     } else {
@@ -338,8 +358,9 @@ fun HomeAdbCommandDialog(
             }
         }
     } else if (isTv) {
-        moe.shizuku.manager.ui.compose.TvShizukuTheme {
-            AlertDialog(
+        val primaryFocusRequester = remember { FocusRequester() }
+        moe.shizuku.manager.ui.compose.TvShizukuTheme(wrapSurface = false) {
+            TvDialog(
                 onDismissRequest = onDismiss,
                 title = { TvText(stringResource(R.string.home_adb_button_view_command)) },
                 text = {
@@ -347,23 +368,25 @@ fun HomeAdbCommandDialog(
                         MonospaceLog(command)
                     }
                 },
+                initialFocusRequester = primaryFocusRequester,
                 confirmButton = {
-                    TvButton(onClick = { onCopy(); onDismiss() }) {
+                    TvActionButton(
+                        onClick = { onCopy(); onDismiss() },
+                        modifier = Modifier.focusRequester(primaryFocusRequester)
+                    ) {
                         TvText(stringResource(R.string.home_adb_dialog_view_command_copy_button))
                     }
                 },
                 dismissButton = {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TvButton(onClick = { onSend(); onDismiss() }) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        TvSecondaryButton(onClick = { onSend(); onDismiss() }) {
                             TvText(stringResource(R.string.home_adb_dialog_view_command_button_send))
                         }
-                        TvOutlinedButton(onClick = onDismiss) {
+                        TvSecondaryButton(onClick = onDismiss) {
                             TvText(stringResource(android.R.string.cancel))
                         }
                     }
-                },
-                containerColor = TvMaterialTheme.colorScheme.surfaceVariant,
-                shape = TvMaterialTheme.shapes.extraLarge
+                }
             )
         }
     } else {
@@ -470,8 +493,10 @@ fun HomeAdbDiscoveryDialog(
             }
         }
     } else if (isTv) {
-        moe.shizuku.manager.ui.compose.TvShizukuTheme {
-            AlertDialog(
+        val primaryFocusRequester = remember { FocusRequester() }
+        val hasDirectStart = currentPort in 1..65535 || manualPort != -1
+        moe.shizuku.manager.ui.compose.TvShizukuTheme(wrapSurface = false) {
+            TvDialog(
                 onDismissRequest = onDismiss,
                 title = { TvText(stringResource(R.string.dialog_adb_discovery)) },
                 text = {
@@ -486,29 +511,41 @@ fun HomeAdbDiscoveryDialog(
                         }
                     }
                 },
+                initialFocusRequester = primaryFocusRequester,
                 confirmButton = {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         if (currentPort in 1..65535) {
-                            TvButton(onClick = { onStart(currentHost, currentPort) }) {
+                            TvActionButton(
+                                onClick = { onStart(currentHost, currentPort) },
+                                modifier = Modifier.focusRequester(primaryFocusRequester)
+                            ) {
                                 TvText("Start ($currentPort)")
                             }
                         } else if (manualPort != -1) {
-                            TvButton(onClick = { onStart("127.0.0.1", manualPort) }) {
+                            TvActionButton(
+                                onClick = { onStart("127.0.0.1", manualPort) },
+                                modifier = Modifier.focusRequester(primaryFocusRequester)
+                            ) {
                                 TvText("Start ($manualPort)")
                             }
                         }
-                        TvButton(onClick = openDevSettings) {
+                        TvActionButton(
+                            onClick = openDevSettings,
+                            modifier = if (!hasDirectStart) {
+                                Modifier.focusRequester(primaryFocusRequester)
+                            } else {
+                                Modifier
+                            }
+                        ) {
                             TvText(stringResource(R.string.development_settings))
                         }
                     }
                 },
                 dismissButton = {
-                    TvOutlinedButton(onClick = onDismiss) {
+                    TvSecondaryButton(onClick = onDismiss) {
                         TvText(stringResource(android.R.string.cancel))
                     }
-                },
-                containerColor = TvMaterialTheme.colorScheme.surfaceVariant,
-                shape = TvMaterialTheme.shapes.extraLarge
+                }
             )
         }
     } else {
@@ -573,18 +610,21 @@ fun HomeWadbNotEnabledDialog(onDismiss: () -> Unit) {
             }
         }
     } else if (isTv) {
-        moe.shizuku.manager.ui.compose.TvShizukuTheme {
-            AlertDialog(
+        val primaryFocusRequester = remember { FocusRequester() }
+        moe.shizuku.manager.ui.compose.TvShizukuTheme(wrapSurface = false) {
+            TvDialog(
                 onDismissRequest = onDismiss,
                 title = { TvText(stringResource(R.string.dialog_wireless_adb_not_enabled)) },
                 text = { },
+                initialFocusRequester = primaryFocusRequester,
                 confirmButton = {
-                    TvButton(onClick = onDismiss) {
+                    TvActionButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.focusRequester(primaryFocusRequester)
+                    ) {
                         TvText(stringResource(android.R.string.ok))
                     }
-                },
-                containerColor = TvMaterialTheme.colorScheme.surfaceVariant,
-                shape = TvMaterialTheme.shapes.extraLarge
+                }
             )
         }
     } else {
@@ -753,10 +793,13 @@ fun HomeAdbPairDialog(onDismiss: () -> Unit) {
             }
         }
     } else if (isTv) {
-        moe.shizuku.manager.ui.compose.TvShizukuTheme {
-            AlertDialog(
+        val primaryFocusRequester = remember { FocusRequester() }
+        val portFocusRequester = remember { FocusRequester() }
+        moe.shizuku.manager.ui.compose.TvShizukuTheme(wrapSurface = false) {
+            TvDialog(
                 onDismissRequest = onDismiss,
                 title = { TvText(stringResource(R.string.dialog_adb_pairing_title)) },
+                initialFocusRequester = primaryFocusRequester,
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         OutlinedTextField(
@@ -764,6 +807,14 @@ fun HomeAdbPairDialog(onDismiss: () -> Unit) {
                             onValueChange = { pairingCode = it.filter(Char::isDigit).take(6) },
                             label = { Text(stringResource(R.string.dialog_adb_pairing_paring_code)) },
                             modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Number,
+                                imeAction = ImeAction.Next
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onNext = { runCatching { portFocusRequester.requestFocus() } }
+                            ),
                             isError = pairingCodeError != null,
                             supportingText = pairingCodeError?.let { { Text(it) } },
                             enabled = !isPairing
@@ -772,14 +823,24 @@ fun HomeAdbPairDialog(onDismiss: () -> Unit) {
                             value = portText,
                             onValueChange = { portText = it.filter(Char::isDigit).take(5) },
                             label = { Text(stringResource(R.string.dialog_adb_port)) },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(portFocusRequester),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Number,
+                                imeAction = ImeAction.Done
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onDone = { onPair() }
+                            ),
                             isError = portError != null,
                             supportingText = portError?.let { { Text(it) } },
                             enabled = !isPairing
                         )
 
                         val autoEnabled = AdbPairingAutoDetect.isServiceEnabled(context)
-                        TvButton(
+                        TvSecondaryButton(
                             onClick = {
                                 autoArmed = true
                                 AdbPairingAutoDetect.arm(context)
@@ -802,17 +863,19 @@ fun HomeAdbPairDialog(onDismiss: () -> Unit) {
                     }
                 },
                 confirmButton = {
-                    TvButton(onClick = onPair, enabled = !isPairing) {
+                    TvActionButton(
+                        onClick = onPair,
+                        enabled = !isPairing,
+                        modifier = Modifier.focusRequester(primaryFocusRequester)
+                    ) {
                         TvText(stringResource(android.R.string.ok))
                     }
                 },
                 dismissButton = {
-                    TvOutlinedButton(onClick = onDismiss) {
+                    TvSecondaryButton(onClick = onDismiss) {
                         TvText(stringResource(android.R.string.cancel))
                     }
-                },
-                containerColor = TvMaterialTheme.colorScheme.surfaceVariant,
-                shape = TvMaterialTheme.shapes.extraLarge
+                }
             )
         }
     } else {
@@ -878,18 +941,21 @@ fun HomeAdbLimitedDialog(onDismiss: () -> Unit) {
             }
         }
     } else if (isTv) {
-        moe.shizuku.manager.ui.compose.TvShizukuTheme {
-            AlertDialog(
+        val primaryFocusRequester = remember { FocusRequester() }
+        moe.shizuku.manager.ui.compose.TvShizukuTheme(wrapSurface = false) {
+            TvDialog(
                 onDismissRequest = onDismiss,
                 title = { TvText(stringResource(R.string.app_management_dialog_adb_is_limited_title)) },
                 text = { TvText(message) },
+                initialFocusRequester = primaryFocusRequester,
                 confirmButton = {
-                    TvButton(onClick = onDismiss) {
+                    TvActionButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.focusRequester(primaryFocusRequester)
+                    ) {
                         TvText(stringResource(android.R.string.ok))
                     }
-                },
-                containerColor = TvMaterialTheme.colorScheme.surfaceVariant,
-                shape = TvMaterialTheme.shapes.extraLarge
+                }
             )
         }
     } else {
@@ -928,18 +994,21 @@ fun HomeErrorDialog(message: String, onDismiss: () -> Unit) {
             }
         }
     } else if (isTv) {
-        moe.shizuku.manager.ui.compose.TvShizukuTheme {
-            AlertDialog(
+        val primaryFocusRequester = remember { FocusRequester() }
+        moe.shizuku.manager.ui.compose.TvShizukuTheme(wrapSurface = false) {
+            TvDialog(
                 onDismissRequest = onDismiss,
                 title = { TvText(stringResource(R.string.starter)) },
                 text = { TvText(message) },
+                initialFocusRequester = primaryFocusRequester,
                 confirmButton = {
-                    TvButton(onClick = onDismiss) {
+                    TvActionButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.focusRequester(primaryFocusRequester)
+                    ) {
                         TvText(stringResource(android.R.string.ok))
                     }
-                },
-                containerColor = TvMaterialTheme.colorScheme.surfaceVariant,
-                shape = TvMaterialTheme.shapes.extraLarge
+                }
             )
         }
     } else {
@@ -1015,10 +1084,12 @@ fun SmartLogRecoveryDialog(
             }
         }
     } else if (isTv) {
-        moe.shizuku.manager.ui.compose.TvShizukuTheme {
-            AlertDialog(
+        val primaryFocusRequester = remember { FocusRequester() }
+        moe.shizuku.manager.ui.compose.TvShizukuTheme(wrapSurface = false) {
+            TvDialog(
                 onDismissRequest = onDismiss,
                 title = { TvText(stringResource(R.string.smart_log_dialog_title)) },
+                initialFocusRequester = primaryFocusRequester,
                 text = {
                     Column(
                         modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -1026,7 +1097,7 @@ fun SmartLogRecoveryDialog(
                     ) {
                         TvText(headerMessage)
                         MonospaceLog(logText)
-                        TvButton(
+                        TvSecondaryButton(
                             onClick = onOpenIssues,
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -1035,24 +1106,25 @@ fun SmartLogRecoveryDialog(
                     }
                 },
                 confirmButton = {
-                    TvButton(onClick = onCopy) {
+                    TvActionButton(
+                        onClick = onCopy,
+                        modifier = Modifier.focusRequester(primaryFocusRequester)
+                    ) {
                         TvText(stringResource(R.string.smart_log_button_copy))
                     }
                 },
                 dismissButton = {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         if (snapshotCount > 0) {
-                            TvOutlinedButton(onClick = onClear) {
+                            TvSecondaryButton(onClick = onClear) {
                                 TvText(stringResource(R.string.smart_log_button_clear))
                             }
                         }
-                        TvOutlinedButton(onClick = onDismiss) {
+                        TvSecondaryButton(onClick = onDismiss) {
                             TvText(stringResource(R.string.smart_log_button_close))
                         }
                     }
-                },
-                containerColor = TvMaterialTheme.colorScheme.surfaceVariant,
-                shape = TvMaterialTheme.shapes.extraLarge
+                }
             )
         }
     } else {

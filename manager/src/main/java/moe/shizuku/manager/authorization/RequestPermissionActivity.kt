@@ -1,3 +1,5 @@
+@file:OptIn(androidx.tv.material3.ExperimentalTvMaterial3Api::class)
+
 package moe.shizuku.manager.authorization
 
 import android.content.Intent
@@ -27,9 +29,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.res.painterResource
@@ -43,7 +48,12 @@ import androidx.wear.compose.material3.Text as WearText
 import kerneldroid.nightzuku.util.LabelSanitizer
 import moe.shizuku.manager.R
 import moe.shizuku.manager.app.AppActivity
+import androidx.tv.material3.MaterialTheme as TvMaterialTheme
+import androidx.tv.material3.Text as TvText
 import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
+import moe.shizuku.manager.ui.compose.TvActionButton
+import moe.shizuku.manager.ui.compose.TvSecondaryButton
+import moe.shizuku.manager.ui.compose.TvShizukuTheme
 import moe.shizuku.manager.ui.compose.htmlToPlainText
 import moe.shizuku.manager.utils.Logger.LOGGER
 import rikka.shizuku.Shizuku
@@ -297,6 +307,7 @@ class RequestPermissionActivity : AppActivity() {
             val current = activeRequest ?: return@setContent
             val generation = requestGeneration
             val isWatch = moe.shizuku.manager.utils.EnvironmentUtils.isWatch(this@RequestPermissionActivity)
+            val isTv = moe.shizuku.manager.utils.EnvironmentUtils.isTV(this@RequestPermissionActivity)
             if (isWatch) {
                 moe.shizuku.manager.ui.compose.WearShizukuTheme {
                     WearAlertDialog(
@@ -361,6 +372,77 @@ class RequestPermissionActivity : AppActivity() {
                                 WearText(stringResource(R.string.grant_dialog_button_deny))
                             }
                         }
+                    )
+                }
+            } else if (isTv) {
+                val denyFocusRequester = remember(current, generation) { FocusRequester() }
+                TvShizukuTheme(wrapSurface = false) {
+                    AlertDialog(
+                        onDismissRequest = {
+                            dispatchDecision(current, allowed = false, onetime = true, ignoreTapGrace = true)
+                            finish()
+                        },
+                        icon = {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_system_icon),
+                                contentDescription = null
+                            )
+                        },
+                        title = {
+                            HardenDialogWindow(current, generation)
+                            LaunchedEffect(current, generation) {
+                                runCatching { denyFocusRequester.requestFocus() }
+                            }
+                            TvText(stringResource(R.string.app_name))
+                        },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                TvText(
+                                    text = htmlToPlainText(
+                                        getString(
+                                            R.string.permission_warning_template,
+                                            current.displayLabel,
+                                            getString(R.string.permission_group_description)
+                                        )
+                                    )
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                TvSecondaryButton(
+                                    onClick = {
+                                        if (dispatchDecision(current, allowed = true, onetime = true)) {
+                                            finish()
+                                        }
+                                    }
+                                ) {
+                                    TvText(stringResource(R.string.grant_dialog_button_allow_onetime))
+                                }
+                                TvActionButton(
+                                    onClick = {
+                                        if (dispatchDecision(current, allowed = true, onetime = false)) {
+                                            finish()
+                                        }
+                                    }
+                                ) {
+                                    TvText(stringResource(R.string.grant_dialog_button_allow_always))
+                                }
+                            }
+                        },
+                        dismissButton = {
+                            TvSecondaryButton(
+                                onClick = {
+                                    dispatchDecision(current, allowed = false, onetime = false, ignoreTapGrace = true)
+                                    finish()
+                                },
+                                modifier = Modifier.focusRequester(denyFocusRequester)
+                            ) {
+                                TvText(stringResource(R.string.grant_dialog_button_deny))
+                            }
+                        },
+                        containerColor = TvMaterialTheme.colorScheme.surfaceVariant,
+                        shape = TvMaterialTheme.shapes.extraLarge
                     )
                 }
             } else {

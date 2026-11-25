@@ -30,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -52,6 +53,7 @@ import moe.shizuku.manager.module.ModuleSettings
 import moe.shizuku.manager.module.update.ModuleUpdateScheduler
 import moe.shizuku.manager.module.update.UpdateSettingsScreen
 import moe.shizuku.manager.ShizukuSettings.LaunchMethod
+import moe.shizuku.manager.adb.AdbSettings
 import moe.shizuku.manager.receiver.AdbBootStartScheduler
 import moe.shizuku.manager.receiver.BootCompleteReceiver
 import moe.shizuku.manager.utils.EnvironmentUtils
@@ -68,7 +70,9 @@ import rikka.core.util.ResourceUtils
 import rikka.material.app.LocaleDelegate
 import rikka.shizuku.Shizuku
 import rikka.shizuku.manager.ShizukuLocales
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 private enum class SettingsCategory(
@@ -166,8 +170,12 @@ class SettingsActivity : AppActivity() {
 
         setContent {
             val prefs = ShizukuSettings.getPreferences()
+            val coroutineScope = rememberCoroutineScope()
             var startOnBoot by remember {
-                mutableStateOf(packageManager.isComponentEnabled(componentName))
+                mutableStateOf(
+                    packageManager.isComponentEnabled(componentName) &&
+                        ShizukuSettings.isStartOnBootEnabled()
+                )
             }
             var languageTag by remember {
                 mutableStateOf(prefs.getString(LANGUAGE, "SYSTEM") ?: "SYSTEM")
@@ -298,10 +306,15 @@ class SettingsActivity : AppActivity() {
             fun updateStartOnBoot(enabled: Boolean) {
                 packageManager.setComponentEnabled(componentName, enabled)
                 ShizukuSettings.setStartOnBootEnabled(enabled)
-                if (!enabled) {
+                if (enabled) {
+                    coroutineScope.launch(Dispatchers.IO) {
+                        runCatching { AdbSettings.preProvisionForAutostart(this@SettingsActivity) }
+                    }
+                } else {
                     AdbBootStartScheduler.cancel(this@SettingsActivity)
                 }
-                startOnBoot = packageManager.isComponentEnabled(componentName)
+                startOnBoot = packageManager.isComponentEnabled(componentName) &&
+                    ShizukuSettings.isStartOnBootEnabled()
             }
 
             androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize()) {
@@ -372,6 +385,18 @@ class SettingsActivity : AppActivity() {
                                         onNavigateUp = { finish() },
                                         startOnBoot = startOnBoot,
                                         onStartOnBootChange = { updateStartOnBoot(it) },
+                                        isRooted = isRooted,
+                                        bootLaunchMethod = bootLaunchMethod,
+                                        bootDiscoveryTimeoutSec = bootDiscoveryTimeoutSec,
+                                        bootMaxRetries = bootMaxRetries,
+                                        bootFallbackNotification = bootFallbackNotification,
+                                        onBootMethodClick = { showBootMethodDialog = true },
+                                        onBootTimeoutClick = { showBootTimeoutDialog = true },
+                                        onBootRetriesClick = { showBootRetriesDialog = true },
+                                        onBootFallbackNotificationChange = { enabled ->
+                                            ShizukuSettings.setBootFallbackNotificationEnabled(enabled)
+                                            bootFallbackNotification = enabled
+                                        },
                                         languageSummary = languageSummary,
                                         onLanguageClick = { showLanguageDialog = true },
                                         nightSummary = nightSummary,
@@ -392,7 +417,15 @@ class SettingsActivity : AppActivity() {
                                         },
                                         onLabFeaturesClick = {
                                             secondarySubscreen = SecondarySubscreen.LAB_FEATURES
-                                        }
+                                        },
+                                        isDialogOpen = showLanguageDialog ||
+                                            showNightDialog ||
+                                            showBootMethodDialog ||
+                                            showBootTimeoutDialog ||
+                                            showBootRetriesDialog ||
+                                            showDeliveryModeDialog ||
+                                            showModuleModeDialog ||
+                                            showCustomPermissionsDialog
                                     )
                                 }
                             }
@@ -928,7 +961,7 @@ class SettingsActivity : AppActivity() {
                             )
                         }
                     } else if (isTv) {
-                        moe.shizuku.manager.ui.compose.TvShizukuTheme {
+                        moe.shizuku.manager.ui.compose.TvShizukuTheme(wrapSurface = false) {
                             TvChoiceDialog(
                                 title = stringResource(R.string.settings_language),
                                 choices = choices,
@@ -996,7 +1029,7 @@ class SettingsActivity : AppActivity() {
                             )
                         }
                     } else if (isTv) {
-                        moe.shizuku.manager.ui.compose.TvShizukuTheme {
+                        moe.shizuku.manager.ui.compose.TvShizukuTheme(wrapSurface = false) {
                             TvChoiceDialog(
                                 title = stringResource(R.string.dark_theme),
                                 choices = choices,
@@ -1062,7 +1095,7 @@ class SettingsActivity : AppActivity() {
                             )
                         }
                     } else if (isTv) {
-                        moe.shizuku.manager.ui.compose.TvShizukuTheme {
+                        moe.shizuku.manager.ui.compose.TvShizukuTheme(wrapSurface = false) {
                             TvChoiceDialog(
                                 title = stringResource(R.string.modules_access_mode),
                                 choices = choices,
@@ -1110,22 +1143,42 @@ class SettingsActivity : AppActivity() {
                     val selectedDelivery = if (
                         securityPolicy.binderDeliveryMode == SecurityPolicyState.BINDER_DELIVERY_AUTHORIZED_ONLY
                     ) 1 else 0
-                    ShizukuExpressiveTheme {
-                        ChoiceDialog(
-                            title = stringResource(R.string.settings_security_delivery_mode_title),
-                            choices = deliveryChoices,
-                            selectedIndex = selectedDelivery,
-                            onDismiss = { showDeliveryModeDialog = false },
-                            onSelect = { index ->
-                                val mode = if (index == 1) {
-                                    SecurityPolicyState.BINDER_DELIVERY_AUTHORIZED_ONLY
-                                } else {
-                                    SecurityPolicyState.BINDER_DELIVERY_ALL_DECLARED
+                    if (isTv) {
+                        moe.shizuku.manager.ui.compose.TvShizukuTheme(wrapSurface = false) {
+                            TvChoiceDialog(
+                                title = stringResource(R.string.settings_security_delivery_mode_title),
+                                choices = deliveryChoices,
+                                selectedIndex = selectedDelivery,
+                                onDismiss = { showDeliveryModeDialog = false },
+                                onSelect = { index ->
+                                    val mode = if (index == 1) {
+                                        SecurityPolicyState.BINDER_DELIVERY_AUTHORIZED_ONLY
+                                    } else {
+                                        SecurityPolicyState.BINDER_DELIVERY_ALL_DECLARED
+                                    }
+                                    updateSecurityPolicy { it.copy(binderDeliveryMode = mode) }
+                                    showDeliveryModeDialog = false
                                 }
-                                updateSecurityPolicy { it.copy(binderDeliveryMode = mode) }
-                                showDeliveryModeDialog = false
-                            }
-                        )
+                            )
+                        }
+                    } else {
+                        ShizukuExpressiveTheme {
+                            ChoiceDialog(
+                                title = stringResource(R.string.settings_security_delivery_mode_title),
+                                choices = deliveryChoices,
+                                selectedIndex = selectedDelivery,
+                                onDismiss = { showDeliveryModeDialog = false },
+                                onSelect = { index ->
+                                    val mode = if (index == 1) {
+                                        SecurityPolicyState.BINDER_DELIVERY_AUTHORIZED_ONLY
+                                    } else {
+                                        SecurityPolicyState.BINDER_DELIVERY_ALL_DECLARED
+                                    }
+                                    updateSecurityPolicy { it.copy(binderDeliveryMode = mode) }
+                                    showDeliveryModeDialog = false
+                                }
+                            )
+                        }
                     }
                 }
 
@@ -1149,19 +1202,36 @@ class SettingsActivity : AppActivity() {
                         )
                     )
                     val selectedMethodIndex = if (bootLaunchMethod == LaunchMethod.ROOT && isRooted) 1 else 0
-                    ShizukuExpressiveTheme {
-                        ChoiceDialog(
-                            title = stringResource(R.string.settings_boot_method_title),
-                            choices = bootMethodChoices,
-                            selectedIndex = selectedMethodIndex,
-                            onDismiss = { showBootMethodDialog = false },
-                            onSelect = { index ->
-                                val chosen = if (index == 1 && isRooted) LaunchMethod.ROOT else LaunchMethod.ADB
-                                ShizukuSettings.setLastLaunchMode(chosen)
-                                bootLaunchMethod = chosen
-                                showBootMethodDialog = false
-                            }
-                        )
+                    if (isTv) {
+                        moe.shizuku.manager.ui.compose.TvShizukuTheme(wrapSurface = false) {
+                            TvChoiceDialog(
+                                title = stringResource(R.string.settings_boot_method_title),
+                                choices = bootMethodChoices,
+                                selectedIndex = selectedMethodIndex,
+                                onDismiss = { showBootMethodDialog = false },
+                                onSelect = { index ->
+                                    val chosen = if (index == 1 && isRooted) LaunchMethod.ROOT else LaunchMethod.ADB
+                                    ShizukuSettings.setLastLaunchMode(chosen)
+                                    bootLaunchMethod = chosen
+                                    showBootMethodDialog = false
+                                }
+                            )
+                        }
+                    } else {
+                        ShizukuExpressiveTheme {
+                            ChoiceDialog(
+                                title = stringResource(R.string.settings_boot_method_title),
+                                choices = bootMethodChoices,
+                                selectedIndex = selectedMethodIndex,
+                                onDismiss = { showBootMethodDialog = false },
+                                onSelect = { index ->
+                                    val chosen = if (index == 1 && isRooted) LaunchMethod.ROOT else LaunchMethod.ADB
+                                    ShizukuSettings.setLastLaunchMode(chosen)
+                                    bootLaunchMethod = chosen
+                                    showBootMethodDialog = false
+                                }
+                            )
+                        }
                     }
                 }
 
@@ -1171,19 +1241,36 @@ class SettingsActivity : AppActivity() {
                         ChoiceOption(title = stringResource(R.string.settings_boot_timeout_summary, sec))
                     }
                     val selectedTimeout = timeoutValues.indexOf(bootDiscoveryTimeoutSec).coerceAtLeast(0)
-                    ShizukuExpressiveTheme {
-                        ChoiceDialog(
-                            title = stringResource(R.string.settings_boot_timeout_title),
-                            choices = timeoutChoices,
-                            selectedIndex = selectedTimeout,
-                            onDismiss = { showBootTimeoutDialog = false },
-                            onSelect = { index ->
-                                val chosen = timeoutValues[index]
-                                ShizukuSettings.setBootDiscoveryTimeoutSeconds(chosen)
-                                bootDiscoveryTimeoutSec = chosen
-                                showBootTimeoutDialog = false
-                            }
-                        )
+                    if (isTv) {
+                        moe.shizuku.manager.ui.compose.TvShizukuTheme(wrapSurface = false) {
+                            TvChoiceDialog(
+                                title = stringResource(R.string.settings_boot_timeout_title),
+                                choices = timeoutChoices,
+                                selectedIndex = selectedTimeout,
+                                onDismiss = { showBootTimeoutDialog = false },
+                                onSelect = { index ->
+                                    val chosen = timeoutValues[index]
+                                    ShizukuSettings.setBootDiscoveryTimeoutSeconds(chosen)
+                                    bootDiscoveryTimeoutSec = chosen
+                                    showBootTimeoutDialog = false
+                                }
+                            )
+                        }
+                    } else {
+                        ShizukuExpressiveTheme {
+                            ChoiceDialog(
+                                title = stringResource(R.string.settings_boot_timeout_title),
+                                choices = timeoutChoices,
+                                selectedIndex = selectedTimeout,
+                                onDismiss = { showBootTimeoutDialog = false },
+                                onSelect = { index ->
+                                    val chosen = timeoutValues[index]
+                                    ShizukuSettings.setBootDiscoveryTimeoutSeconds(chosen)
+                                    bootDiscoveryTimeoutSec = chosen
+                                    showBootTimeoutDialog = false
+                                }
+                            )
+                        }
                     }
                 }
 
@@ -1193,19 +1280,36 @@ class SettingsActivity : AppActivity() {
                         ChoiceOption(title = stringResource(R.string.settings_boot_retries_summary, count))
                     }
                     val selectedRetries = retryValues.indexOf(bootMaxRetries).coerceAtLeast(0)
-                    ShizukuExpressiveTheme {
-                        ChoiceDialog(
-                            title = stringResource(R.string.settings_boot_retries_title),
-                            choices = retryChoices,
-                            selectedIndex = selectedRetries,
-                            onDismiss = { showBootRetriesDialog = false },
-                            onSelect = { index ->
-                                val chosen = retryValues[index]
-                                ShizukuSettings.setBootMaxRetries(chosen)
-                                bootMaxRetries = chosen
-                                showBootRetriesDialog = false
-                            }
-                        )
+                    if (isTv) {
+                        moe.shizuku.manager.ui.compose.TvShizukuTheme(wrapSurface = false) {
+                            TvChoiceDialog(
+                                title = stringResource(R.string.settings_boot_retries_title),
+                                choices = retryChoices,
+                                selectedIndex = selectedRetries,
+                                onDismiss = { showBootRetriesDialog = false },
+                                onSelect = { index ->
+                                    val chosen = retryValues[index]
+                                    ShizukuSettings.setBootMaxRetries(chosen)
+                                    bootMaxRetries = chosen
+                                    showBootRetriesDialog = false
+                                }
+                            )
+                        }
+                    } else {
+                        ShizukuExpressiveTheme {
+                            ChoiceDialog(
+                                title = stringResource(R.string.settings_boot_retries_title),
+                                choices = retryChoices,
+                                selectedIndex = selectedRetries,
+                                onDismiss = { showBootRetriesDialog = false },
+                                onSelect = { index ->
+                                    val chosen = retryValues[index]
+                                    ShizukuSettings.setBootMaxRetries(chosen)
+                                    bootMaxRetries = chosen
+                                    showBootRetriesDialog = false
+                                }
+                            )
+                        }
                     }
                 }
 
@@ -1223,7 +1327,7 @@ class SettingsActivity : AppActivity() {
                             )
                         }
                     } else if (isTv) {
-                        moe.shizuku.manager.ui.compose.TvShizukuTheme {
+                        moe.shizuku.manager.ui.compose.TvShizukuTheme(wrapSurface = false) {
                             TvCustomPermissionsDialog(
                                 value = customPermissions,
                                 onDismiss = { showCustomPermissionsDialog = false },

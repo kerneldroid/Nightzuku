@@ -2,35 +2,47 @@
 
 package moe.shizuku.manager.settings
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.ClickableSurfaceDefaults as TvClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme as TvMaterialTheme
-import androidx.tv.material3.Surface as TvSurface
 import androidx.tv.material3.Text as TvText
 import moe.shizuku.manager.R
-import moe.shizuku.manager.ui.compose.ShizukuIcon
+import moe.shizuku.manager.ShizukuSettings.LaunchMethod
+import moe.shizuku.manager.ui.compose.TvBackButton
+import moe.shizuku.manager.ui.compose.TvSettingsClickRow
+import moe.shizuku.manager.ui.compose.TvSettingsToggleRow
+import moe.shizuku.manager.ui.compose.TvTwoPaneLayout
 
 @Composable
 fun TvSettingsScreen(
     onNavigateUp: () -> Unit,
     startOnBoot: Boolean,
     onStartOnBootChange: (Boolean) -> Unit,
+    isRooted: Boolean,
+    bootLaunchMethod: Int,
+    bootDiscoveryTimeoutSec: Int,
+    bootMaxRetries: Int,
+    bootFallbackNotification: Boolean,
+    onBootMethodClick: () -> Unit,
+    onBootTimeoutClick: () -> Unit,
+    onBootRetriesClick: () -> Unit,
+    onBootFallbackNotificationChange: (Boolean) -> Unit,
     languageSummary: String,
     onLanguageClick: () -> Unit,
     nightSummary: String,
@@ -39,34 +51,50 @@ fun TvSettingsScreen(
     onBlackNightThemeChange: (Boolean) -> Unit,
     useSystemColor: Boolean,
     onUseSystemColorChange: (Boolean) -> Unit,
-    onLabFeaturesClick: () -> Unit
+    onLabFeaturesClick: () -> Unit,
+    isDialogOpen: Boolean = false
 ) {
-    Row(modifier = Modifier.fillMaxSize()) {
+    val initialFocusRequester = remember { FocusRequester() }
+    val bootMethodFocusRequester = remember { FocusRequester() }
+    val bootTimeoutFocusRequester = remember { FocusRequester() }
+    val bootRetriesFocusRequester = remember { FocusRequester() }
+    val languageFocusRequester = remember { FocusRequester() }
+    val nightModeFocusRequester = remember { FocusRequester() }
 
-        Column(
-            modifier = Modifier
-                .padding(32.dp)
-                .size(width = 300.dp, height = 500.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            TvText(
-                text = stringResource(R.string.settings_title),
-                style = TvMaterialTheme.typography.headlineMedium,
-                color = TvMaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(bottom = 24.dp)
-            )
+    var lastDialogTrigger by remember { mutableStateOf<FocusRequester?>(null) }
 
-            TvMenuButton(
-                icon = R.drawable.ic_arrow_back_24,
-                label = android.R.string.cancel,
-                onClick = onNavigateUp
-            )
+    LaunchedEffect(Unit) {
+        runCatching { initialFocusRequester.requestFocus() }
+    }
+
+    LaunchedEffect(isDialogOpen) {
+        if (!isDialogOpen) {
+            val target = lastDialogTrigger
+            if (target != null) {
+                runCatching { target.requestFocus() }
+                lastDialogTrigger = null
+            }
         }
+    }
 
+    val bootMethodSummary = when {
+        bootLaunchMethod == LaunchMethod.ROOT && isRooted ->
+            stringResource(R.string.settings_boot_method_root)
+        !isRooted ->
+            stringResource(R.string.settings_boot_method_wireless_only_summary)
+        else ->
+            stringResource(R.string.settings_boot_method_wireless)
+    }
 
+    TvTwoPaneLayout(
+        title = stringResource(R.string.settings_title),
+        sidebarContent = {
+            TvBackButton(onClick = onNavigateUp)
+        }
+    ) {
         LazyColumn(
-            modifier = Modifier.weight(1f).fillMaxSize(),
-            contentPadding = PaddingValues(32.dp),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(top = 32.dp, end = 32.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
@@ -77,8 +105,66 @@ fun TvSettingsScreen(
                     title = stringResource(R.string.settings_start_on_boot),
                     summary = stringResource(R.string.settings_start_on_boot_summary),
                     checked = startOnBoot,
-                    onCheckedChange = onStartOnBootChange
+                    onCheckedChange = onStartOnBootChange,
+                    icon = R.drawable.ic_server_restart,
+                    modifier = Modifier.focusRequester(initialFocusRequester)
                 )
+            }
+            item {
+                TvSettingsClickRow(
+                    title = stringResource(R.string.settings_boot_method_title),
+                    summary = bootMethodSummary,
+                    enabled = startOnBoot,
+                    icon = if (bootLaunchMethod == LaunchMethod.ROOT && isRooted) {
+                        R.drawable.ic_root_24dp
+                    } else {
+                        R.drawable.ic_wadb_24
+                    },
+                    modifier = Modifier.focusRequester(bootMethodFocusRequester),
+                    onClick = {
+                        lastDialogTrigger = bootMethodFocusRequester
+                        onBootMethodClick()
+                    }
+                )
+            }
+
+            if (startOnBoot && !(bootLaunchMethod == LaunchMethod.ROOT && isRooted)) {
+                item {
+                    TvSettingsGroupTitle(stringResource(R.string.settings_startup_wireless_options))
+                }
+                item {
+                    TvSettingsClickRow(
+                        title = stringResource(R.string.settings_boot_timeout_title),
+                        summary = stringResource(R.string.settings_boot_timeout_summary, bootDiscoveryTimeoutSec),
+                        icon = R.drawable.ic_wadb_24,
+                        modifier = Modifier.focusRequester(bootTimeoutFocusRequester),
+                        onClick = {
+                            lastDialogTrigger = bootTimeoutFocusRequester
+                            onBootTimeoutClick()
+                        }
+                    )
+                }
+                item {
+                    TvSettingsClickRow(
+                        title = stringResource(R.string.settings_boot_retries_title),
+                        summary = stringResource(R.string.settings_boot_retries_summary, bootMaxRetries),
+                        icon = R.drawable.ic_server_restart,
+                        modifier = Modifier.focusRequester(bootRetriesFocusRequester),
+                        onClick = {
+                            lastDialogTrigger = bootRetriesFocusRequester
+                            onBootRetriesClick()
+                        }
+                    )
+                }
+                item {
+                    TvSettingsToggleRow(
+                        title = stringResource(R.string.settings_boot_fallback_notification_title),
+                        summary = stringResource(R.string.settings_boot_fallback_notification_summary),
+                        checked = bootFallbackNotification,
+                        onCheckedChange = onBootFallbackNotificationChange,
+                        icon = R.drawable.ic_outline_notifications_active_24
+                    )
+                }
             }
 
             item {
@@ -88,7 +174,12 @@ fun TvSettingsScreen(
                 TvSettingsClickRow(
                     title = stringResource(R.string.settings_language),
                     summary = languageSummary,
-                    onClick = onLanguageClick
+                    icon = R.drawable.ic_outline_translate_24,
+                    modifier = Modifier.focusRequester(languageFocusRequester),
+                    onClick = {
+                        lastDialogTrigger = languageFocusRequester
+                        onLanguageClick()
+                    }
                 )
             }
 
@@ -99,7 +190,12 @@ fun TvSettingsScreen(
                 TvSettingsClickRow(
                     title = stringResource(rikka.core.R.string.dark_theme),
                     summary = nightSummary,
-                    onClick = onNightModeClick
+                    icon = R.drawable.ic_outline_dark_mode_24,
+                    modifier = Modifier.focusRequester(nightModeFocusRequester),
+                    onClick = {
+                        lastDialogTrigger = nightModeFocusRequester
+                        onNightModeClick()
+                    }
                 )
             }
             item {
@@ -125,10 +221,10 @@ fun TvSettingsScreen(
                 TvSettingsClickRow(
                     title = stringResource(R.string.lab_features_title),
                     summary = stringResource(R.string.lab_features_summary),
+                    icon = R.drawable.ic_code_24dp,
                     onClick = onLabFeaturesClick
                 )
             }
-
         }
     }
 }
@@ -139,111 +235,7 @@ private fun TvSettingsGroupTitle(title: String) {
         text = title,
         style = TvMaterialTheme.typography.titleMedium,
         color = TvMaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
+        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
         fontWeight = FontWeight.Bold
     )
-}
-
-@Composable
-private fun TvSettingsClickRow(
-    title: String,
-    summary: String? = null,
-    onClick: () -> Unit
-) {
-    val alpha = if (isSystemInDarkTheme()) 0.3f else 0.12f
-    TvSurface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = TvClickableSurfaceDefaults.shape(shape = TvMaterialTheme.shapes.medium),
-        colors = TvClickableSurfaceDefaults.colors(
-            containerColor = TvMaterialTheme.colorScheme.surfaceVariant.copy(alpha = alpha),
-            focusedContainerColor = TvMaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            TvText(text = title, style = TvMaterialTheme.typography.titleMedium)
-            if (summary != null) {
-                TvText(
-                    text = summary,
-                    style = TvMaterialTheme.typography.bodySmall,
-                    color = TvMaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun TvSettingsToggleRow(
-    title: String,
-    summary: String? = null,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    val alpha = if (isSystemInDarkTheme()) 0.3f else 0.12f
-    TvSurface(
-        onClick = { onCheckedChange(!checked) },
-        modifier = Modifier.fillMaxWidth(),
-        shape = TvClickableSurfaceDefaults.shape(shape = TvMaterialTheme.shapes.medium),
-        colors = TvClickableSurfaceDefaults.colors(
-            containerColor = if (checked) {
-                TvMaterialTheme.colorScheme.primaryContainer.copy(alpha = alpha)
-            } else {
-                TvMaterialTheme.colorScheme.surfaceVariant.copy(alpha = alpha)
-            },
-            focusedContainerColor = if (checked) {
-                TvMaterialTheme.colorScheme.primaryContainer
-            } else {
-                TvMaterialTheme.colorScheme.surfaceVariant
-            }
-        )
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                TvText(text = title, style = TvMaterialTheme.typography.titleMedium)
-                if (summary != null) {
-                    TvText(
-                        text = summary,
-                        style = TvMaterialTheme.typography.bodySmall,
-                        color = TvMaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            TvText(
-                text = if (checked) stringResource(android.R.string.ok) else stringResource(android.R.string.cancel),
-                style = TvMaterialTheme.typography.labelLarge,
-                color = if (checked) TvMaterialTheme.colorScheme.primary else TvMaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-private fun TvMenuButton(
-    icon: Int,
-    label: Int,
-    onClick: () -> Unit
-) {
-    val alpha = if (isSystemInDarkTheme()) 0.5f else 0.2f
-    TvSurface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = TvClickableSurfaceDefaults.shape(shape = TvMaterialTheme.shapes.medium),
-        colors = TvClickableSurfaceDefaults.colors(
-            containerColor = TvMaterialTheme.colorScheme.surfaceVariant.copy(alpha = alpha),
-            focusedContainerColor = TvMaterialTheme.colorScheme.primaryContainer
-        )
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            ShizukuIcon(icon = icon, modifier = Modifier.size(24.dp))
-            TvText(text = stringResource(label), style = TvMaterialTheme.typography.labelLarge)
-        }
-    }
 }

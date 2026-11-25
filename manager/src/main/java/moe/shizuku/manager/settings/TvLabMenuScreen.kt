@@ -5,13 +5,11 @@ package moe.shizuku.manager.settings
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -21,22 +19,27 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.ClickableSurfaceDefaults as TvClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme as TvMaterialTheme
-import androidx.tv.material3.Surface as TvSurface
 import androidx.tv.material3.Text as TvText
 import kotlinx.coroutines.launch
 import moe.shizuku.manager.R
 import moe.shizuku.manager.module.ModuleSettings
 import moe.shizuku.manager.nightdog.NightDogClient
-import moe.shizuku.manager.ui.compose.ShizukuIcon
+import moe.shizuku.manager.ui.compose.TvActionButton
+import moe.shizuku.manager.ui.compose.TvActionCard
+import moe.shizuku.manager.ui.compose.TvBackButton
+import moe.shizuku.manager.ui.compose.TvDialog
+import moe.shizuku.manager.ui.compose.TvSecondaryButton
+import moe.shizuku.manager.ui.compose.TvToggleCard
+import moe.shizuku.manager.ui.compose.TvTwoPaneLayout
 import rikka.shizuku.Shizuku
 
 @Composable
@@ -50,10 +53,26 @@ fun TvLabMenuScreen(
     var showUnsafeDialog by remember { mutableStateOf(false) }
     var showNightDogDialog by remember { mutableStateOf(false) }
 
+    val nightDogFocusRequester = remember { FocusRequester() }
+    val connectorFocusRequester = remember { FocusRequester() }
+    var lastDialogTrigger by remember { mutableStateOf<FocusRequester?>(null) }
+
     val watchdogStatus by NightDogClient.watchdogStatus.collectAsState()
 
     LaunchedEffect(Unit) {
         NightDogClient.refreshWatchdogStatus()
+        runCatching { nightDogFocusRequester.requestFocus() }
+    }
+
+    val anyDialogOpen = showUnsafeDialog || showNightDogDialog
+    LaunchedEffect(anyDialogOpen) {
+        if (!anyDialogOpen) {
+            val target = lastDialogTrigger
+            if (target != null) {
+                runCatching { target.requestFocus() }
+                lastDialogTrigger = null
+            }
+        }
     }
 
     DisposableEffect(Unit) {
@@ -77,29 +96,15 @@ fun TvLabMenuScreen(
         stringResource(R.string.nightdog_status_inactive_summary)
     }
 
-    Row(modifier = Modifier.fillMaxSize().padding(32.dp)) {
-        Column(
-            modifier = Modifier
-                .size(width = 300.dp, height = 500.dp)
-                .padding(end = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            TvText(
-                text = stringResource(R.string.lab_features_title),
-                style = TvMaterialTheme.typography.headlineMedium,
-                color = TvMaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
-
-            TvLabButton(
-                icon = R.drawable.ic_arrow_back_24,
-                label = android.R.string.cancel,
-                onClick = onNavigateUp
-            )
+    TvTwoPaneLayout(
+        title = stringResource(R.string.lab_features_title),
+        sidebarContent = {
+            TvBackButton(onClick = onNavigateUp)
         }
-
+    ) {
         LazyColumn(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(top = 32.dp, end = 32.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
@@ -107,18 +112,24 @@ fun TvLabMenuScreen(
                     text = stringResource(R.string.nightdog_section_title),
                     style = TvMaterialTheme.typography.titleMedium,
                     color = TvMaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(bottom = 4.dp)
                 )
             }
 
             item {
-                TvLabToggleCard(
+                TvToggleCard(
                     title = stringResource(R.string.nightdog_title),
                     summary = stringResource(R.string.nightdog_summary),
                     checked = nightDogEnabled,
-                    onToggle = {
-                        if (!nightDogEnabled) showNightDogDialog = true
-                        else {
+                    icon = R.drawable.ic_shield_24,
+                    shape = TvMaterialTheme.shapes.large,
+                    modifier = Modifier.focusRequester(nightDogFocusRequester),
+                    onCheckedChange = { enabled ->
+                        if (enabled) {
+                            lastDialogTrigger = nightDogFocusRequester
+                            showNightDogDialog = true
+                        } else {
                             NightDogClient.setEnabled(false)
                             nightDogEnabled = false
                         }
@@ -153,18 +164,24 @@ fun TvLabMenuScreen(
                     text = stringResource(R.string.lab_features_summary),
                     style = TvMaterialTheme.typography.titleMedium,
                     color = TvMaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
                 )
             }
 
             item {
-                TvLabToggleCard(
+                TvToggleCard(
                     title = stringResource(R.string.shizuku_connectors_title),
                     summary = stringResource(R.string.shizuku_connectors_summary),
                     checked = connectorEnabled,
-                    onToggle = {
-                        if (!connectorEnabled) showUnsafeDialog = true
-                        else {
+                    icon = R.drawable.ic_baseline_link_24,
+                    shape = TvMaterialTheme.shapes.large,
+                    modifier = Modifier.focusRequester(connectorFocusRequester),
+                    onCheckedChange = { enabled ->
+                        if (enabled) {
+                            lastDialogTrigger = connectorFocusRequester
+                            showUnsafeDialog = true
+                        } else {
                             connectorEnabled = false
                             ModuleSettings.setConnectorEnabled(false)
                         }
@@ -175,132 +192,59 @@ fun TvLabMenuScreen(
     }
 
     if (showUnsafeDialog) {
-        AlertDialog(
+        val cancelFocusRequester = remember { FocusRequester() }
+        TvDialog(
             onDismissRequest = { showUnsafeDialog = false },
             title = { TvText(stringResource(R.string.unsafe_warning_title)) },
             text = { TvText(stringResource(R.string.unsafe_warning_message)) },
+            initialFocusRequester = cancelFocusRequester,
             confirmButton = {
-                TvSurface(
+                TvActionButton(
                     onClick = {
                         showUnsafeDialog = false
                         connectorEnabled = true
                         ModuleSettings.setConnectorEnabled(true)
-                    },
-                    shape = TvClickableSurfaceDefaults.shape(TvMaterialTheme.shapes.small),
-                    colors = TvClickableSurfaceDefaults.colors(
-                        containerColor = TvMaterialTheme.colorScheme.primaryContainer
-                    )
+                    }
                 ) {
-                    TvText(
-                        text = stringResource(android.R.string.ok),
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
-                    )
+                    TvText(stringResource(android.R.string.ok))
                 }
             },
             dismissButton = {
-                TvSurface(
+                TvSecondaryButton(
                     onClick = { showUnsafeDialog = false },
-                    shape = TvClickableSurfaceDefaults.shape(TvMaterialTheme.shapes.small),
-                    colors = TvClickableSurfaceDefaults.colors(
-                        containerColor = TvMaterialTheme.colorScheme.surfaceVariant
-                    )
+                    modifier = Modifier.focusRequester(cancelFocusRequester)
                 ) {
-                    TvText(
-                        text = stringResource(android.R.string.cancel),
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
-                    )
+                    TvText(stringResource(android.R.string.cancel))
                 }
-            },
-            containerColor = TvMaterialTheme.colorScheme.surfaceVariant,
-            shape = TvMaterialTheme.shapes.extraLarge
+            }
         )
     }
 
     if (showNightDogDialog) {
-        AlertDialog(
+        val confirmFocusRequester = remember { FocusRequester() }
+        TvDialog(
             onDismissRequest = { showNightDogDialog = false },
             title = { TvText(stringResource(R.string.nightdog_title)) },
             text = { TvText(stringResource(R.string.nightdog_description)) },
+            initialFocusRequester = confirmFocusRequester,
             confirmButton = {
-                TvSurface(
+                TvActionButton(
                     onClick = {
                         showNightDogDialog = false
                         nightDogEnabled = true
                         NightDogClient.setEnabled(true)
                     },
-                    shape = TvClickableSurfaceDefaults.shape(TvMaterialTheme.shapes.small),
-                    colors = TvClickableSurfaceDefaults.colors(
-                        containerColor = TvMaterialTheme.colorScheme.primaryContainer
-                    )
+                    modifier = Modifier.focusRequester(confirmFocusRequester)
                 ) {
-                    TvText(
-                        text = stringResource(android.R.string.ok),
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
-                    )
+                    TvText(stringResource(android.R.string.ok))
                 }
             },
             dismissButton = {
-                TvSurface(
-                    onClick = { showNightDogDialog = false },
-                    shape = TvClickableSurfaceDefaults.shape(TvMaterialTheme.shapes.small),
-                    colors = TvClickableSurfaceDefaults.colors(
-                        containerColor = TvMaterialTheme.colorScheme.surfaceVariant
-                    )
-                ) {
-                    TvText(
-                        text = stringResource(android.R.string.cancel),
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
-                    )
+                TvSecondaryButton(onClick = { showNightDogDialog = false }) {
+                    TvText(stringResource(android.R.string.cancel))
                 }
-            },
-            containerColor = TvMaterialTheme.colorScheme.surfaceVariant,
-            shape = TvMaterialTheme.shapes.extraLarge
-        )
-    }
-}
-
-@Composable
-private fun TvLabToggleCard(
-    title: String,
-    summary: String,
-    checked: Boolean,
-    onToggle: () -> Unit
-) {
-    TvSurface(
-        onClick = onToggle,
-        modifier = Modifier.fillMaxWidth(),
-        shape = TvClickableSurfaceDefaults.shape(TvMaterialTheme.shapes.large),
-        colors = TvClickableSurfaceDefaults.colors(
-            containerColor = if (checked) TvMaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-            else TvMaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-            focusedContainerColor = if (checked) TvMaterialTheme.colorScheme.primaryContainer
-            else TvMaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
-        Row(
-            modifier = Modifier.padding(24.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(20.dp)
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                TvText(
-                    text = title,
-                    style = TvMaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                TvText(
-                    text = summary,
-                    style = TvMaterialTheme.typography.bodyMedium,
-                    color = TvMaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
-            TvText(
-                text = if (checked) "ON" else "OFF",
-                style = TvMaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = if (checked) TvMaterialTheme.colorScheme.primary else TvMaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+        )
     }
 }
 
@@ -310,16 +254,16 @@ private fun TvLabActionCard(
     summary: String,
     onClick: () -> Unit
 ) {
-    TvSurface(
+    TvActionCard(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = TvClickableSurfaceDefaults.shape(TvMaterialTheme.shapes.large),
-        colors = TvClickableSurfaceDefaults.colors(
-            containerColor = TvMaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-            focusedContainerColor = TvMaterialTheme.colorScheme.primaryContainer
-        )
+        shape = TvMaterialTheme.shapes.large
     ) {
-        Column(modifier = Modifier.padding(24.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
             TvText(
                 text = title,
                 style = TvMaterialTheme.typography.titleLarge,
@@ -330,32 +274,6 @@ private fun TvLabActionCard(
                 style = TvMaterialTheme.typography.bodyMedium,
                 color = TvMaterialTheme.colorScheme.onSurfaceVariant
             )
-        }
-    }
-}
-
-@Composable
-private fun TvLabButton(
-    icon: Int,
-    label: Int,
-    onClick: () -> Unit
-) {
-    TvSurface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = TvClickableSurfaceDefaults.shape(TvMaterialTheme.shapes.medium),
-        colors = TvClickableSurfaceDefaults.colors(
-            containerColor = TvMaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-            focusedContainerColor = TvMaterialTheme.colorScheme.primaryContainer
-        )
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            ShizukuIcon(icon = icon, modifier = Modifier.size(24.dp))
-            TvText(text = stringResource(label), style = TvMaterialTheme.typography.labelLarge)
         }
     }
 }

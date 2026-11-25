@@ -4,8 +4,6 @@ package moe.shizuku.manager.home
 
 import android.os.Build
 import androidx.annotation.DrawableRes
-import androidx.annotation.StringRes
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,34 +15,38 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.tv.material3.Button as TvButton
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme as TvMaterialTheme
 import androidx.tv.material3.Surface as TvSurface
 import androidx.tv.material3.SurfaceDefaults as TvSurfaceDefaults
-import androidx.tv.material3.ClickableSurfaceDefaults as TvClickableSurfaceDefaults
 import androidx.tv.material3.Text as TvText
 import moe.shizuku.manager.Helps
 import moe.shizuku.manager.R
 import moe.shizuku.manager.model.ServiceStatus
 import moe.shizuku.manager.ui.compose.ShizukuIcon
+import moe.shizuku.manager.ui.compose.TvActionButton
+import moe.shizuku.manager.ui.compose.TvActionCard
+import moe.shizuku.manager.ui.compose.TvMenuButton
+import moe.shizuku.manager.ui.compose.TvSecondaryButton
+import moe.shizuku.manager.ui.compose.TvStaticCard
+import moe.shizuku.manager.ui.compose.TvTwoPaneLayout
 import moe.shizuku.manager.utils.EnvironmentUtils
 import rikka.lifecycle.Resource
-import rikka.shizuku.Shizuku
-import rikka.shizuku.ShizukuApiConstants
 
 @Composable
 internal fun TVHomeScreen(
@@ -81,51 +83,86 @@ internal fun TVHomeScreen(
         buildDiagnostics(context, status, grantedCount, localNetworkPermissionState)
     }
 
-    Row(modifier = Modifier.fillMaxSize()) {
+    val lazyListState = rememberLazyListState()
+    val initialFocusRequester = remember { FocusRequester() }
+    val refreshFocusRequester = remember { FocusRequester() }
+    val primaryTargetIsManageApps = adbPermission && running
+    val primaryTargetIsRoot = !primaryTargetIsManageApps && isPrimaryUser && isRooted
+    val primaryTargetIsWireless = !primaryTargetIsManageApps && !primaryTargetIsRoot && isPrimaryUser && canUseWirelessAdb
+    val primaryTargetIsAdbCommand = !primaryTargetIsManageApps && !primaryTargetIsRoot && !primaryTargetIsWireless && isPrimaryUser
 
-        Column(
-            modifier = Modifier
-                .width(300.dp)
-                .fillMaxSize()
-                .padding(32.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            TvText(
-                text = stringResource(R.string.app_name),
-                style = TvMaterialTheme.typography.headlineMedium,
-                color = TvMaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(bottom = 24.dp)
-            )
+    val targetItemIndex: Int? = remember(
+        adbPermission,
+        running,
+        isPrimaryUser,
+        isRooted,
+        canUseWirelessAdb
+    ) {
+        var idx = 1 // 0 is TvStatusCard
+        if (adbPermission) {
+            if (primaryTargetIsManageApps) return@remember idx
+            idx += 2 // Manage Apps + Terminal
+        }
+        if (running && !adbPermission) {
+            idx += 1 // ADB limited warning card
+        }
+        if (isPrimaryUser) {
+            if (isRooted) {
+                if (primaryTargetIsRoot) return@remember idx
+                idx += 1
+            }
+            if (canUseWirelessAdb) {
+                if (primaryTargetIsWireless) return@remember idx
+                idx += 1
+            }
+            if (primaryTargetIsAdbCommand) return@remember idx
+        }
+        null
+    }
 
-            TvNavigationButton(
+    LaunchedEffect(Unit) {
+        if (targetItemIndex != null) {
+            lazyListState.scrollToItem(targetItemIndex)
+            withFrameNanos { }
+            if (runCatching { initialFocusRequester.requestFocus() }.isFailure) {
+                runCatching { refreshFocusRequester.requestFocus() }
+            }
+        } else {
+            runCatching { refreshFocusRequester.requestFocus() }
+        }
+    }
+
+    TvTwoPaneLayout(
+        title = stringResource(R.string.app_name),
+        sidebarContent = {
+            TvMenuButton(
                 icon = R.drawable.ic_server_restart,
                 label = R.string.home_refresh,
-                onClick = onRefresh
+                onClick = onRefresh,
+                modifier = Modifier.focusRequester(refreshFocusRequester)
             )
-            TvNavigationButton(
+            TvMenuButton(
                 icon = R.drawable.ic_action_settings_24dp,
                 label = R.string.settings_title,
                 onClick = onSettings
             )
-            TvNavigationButton(
+            TvMenuButton(
                 icon = R.drawable.ic_outline_info_24,
                 label = R.string.action_about,
                 onClick = onAbout
             )
             if (running) {
-                TvNavigationButton(
+                TvMenuButton(
                     icon = R.drawable.ic_close_24,
                     label = R.string.action_stop,
                     onClick = onStop
                 )
             }
         }
-
-
+    ) {
         LazyColumn(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxSize(),
+            state = lazyListState,
+            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(top = 32.dp, end = 32.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
@@ -152,6 +189,11 @@ internal fun TVHomeScreen(
                             stringResource(R.string.home_status_service_not_running, stringResource(R.string.app_name))
                         },
                         enabled = running,
+                        modifier = if (primaryTargetIsManageApps) {
+                            Modifier.focusRequester(initialFocusRequester)
+                        } else {
+                            Modifier
+                        },
                         onClick = onManageApps
                     )
                 }
@@ -172,12 +214,13 @@ internal fun TVHomeScreen(
 
             if (running && !adbPermission) {
                 item {
-                    TvHomeCard(
+                    TvStaticInfoCard(
                         icon = R.drawable.ic_warning_24,
                         title = stringResource(R.string.home_adb_is_limited_title),
-                        body = stringResource(R.string.home_adb_is_limited_description)
+                        body = stringResource(R.string.home_adb_is_limited_description),
+                        danger = true
                     ) {
-                        TvButton(onClick = onOpenAdbPermissionHelp) {
+                        TvActionButton(onClick = onOpenAdbPermissionHelp) {
                             TvText(stringResource(R.string.home_adb_button_view_help))
                         }
                     }
@@ -188,7 +231,15 @@ internal fun TVHomeScreen(
                 val rootRestart = running && status.uid == 0
                 if (isRooted) {
                     item {
-                        TvRootCard(rootRestart, onStartRoot)
+                        TvRootCard(
+                            restart = rootRestart,
+                            onStartRoot = onStartRoot,
+                            primaryButtonModifier = if (primaryTargetIsRoot) {
+                                Modifier.focusRequester(initialFocusRequester)
+                            } else {
+                                Modifier
+                            }
+                        )
                     }
                 }
                 if (canUseWirelessAdb) {
@@ -197,34 +248,48 @@ internal fun TVHomeScreen(
                             localNetworkPermissionState = localNetworkPermissionState,
                             onStartWirelessAdb = onStartWirelessAdb,
                             onPairWirelessAdb = onPairWirelessAdb,
-                            onOpenWirelessGuide = onOpenWirelessGuide
+                            onOpenWirelessGuide = onOpenWirelessGuide,
+                            primaryButtonModifier = if (primaryTargetIsWireless) {
+                                Modifier.focusRequester(initialFocusRequester)
+                            } else {
+                                Modifier
+                            }
                         )
                     }
                 }
                 item {
                     TvAdbCommandCard(
                         onShowAdbCommand = onShowAdbCommand,
-                        onOpenAdbHelp = onOpenAdbHelp
+                        onOpenAdbHelp = onOpenAdbHelp,
+                        primaryButtonModifier = if (primaryTargetIsAdbCommand) {
+                            Modifier.focusRequester(initialFocusRequester)
+                        } else {
+                            Modifier
+                        }
                     )
                 }
                 if (!isRooted) {
                     item {
-                        TvRootCard(rootRestart, onStartRoot)
+                        TvRootCard(
+                            restart = rootRestart,
+                            onStartRoot = onStartRoot
+                        )
                     }
                 }
             }
 
             if (localNetworkPermissionState.required && !localNetworkPermissionState.granted) {
                 item {
-                    TvHomeCard(
+                    TvStaticInfoCard(
                         icon = R.drawable.ic_warning_24,
                         title = stringResource(R.string.home_local_network_title),
                         body = stringResource(
                             R.string.home_local_network_description,
                             localNetworkPermissionState.label
-                        )
+                        ),
+                        danger = true
                     ) {
-                        TvButton(onClick = onRequestLocalNetworkPermission) {
+                        TvActionButton(onClick = onRequestLocalNetworkPermission) {
                             TvText(stringResource(R.string.home_local_network_grant))
                         }
                     }
@@ -232,15 +297,10 @@ internal fun TVHomeScreen(
             }
 
             item {
-                TvHomeCard(
-                    icon = R.drawable.ic_outline_info_24,
-                    title = stringResource(R.string.home_diagnostics_title),
-                    body = diagnostics
-                ) {
-                    TvButton(onClick = { onCopyDiagnostics(diagnostics) }) {
-                        TvText(stringResource(R.string.home_diagnostics_copy))
-                    }
-                }
+                TvDiagnosticsCard(
+                    diagnostics = diagnostics,
+                    onCopyDiagnostics = { onCopyDiagnostics(diagnostics) }
+                )
             }
 
             item {
@@ -256,33 +316,6 @@ internal fun TVHomeScreen(
 }
 
 @Composable
-private fun TvNavigationButton(
-    @DrawableRes icon: Int,
-    @StringRes label: Int,
-    onClick: () -> Unit
-) {
-    val alpha = if (isSystemInDarkTheme()) 0.3f else 0.12f
-    TvSurface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = TvClickableSurfaceDefaults.shape(shape = TvMaterialTheme.shapes.medium),
-        colors = TvClickableSurfaceDefaults.colors(
-            containerColor = TvMaterialTheme.colorScheme.surfaceVariant.copy(alpha = alpha),
-            focusedContainerColor = TvMaterialTheme.colorScheme.primaryContainer
-        )
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            ShizukuIcon(icon = icon, modifier = Modifier.size(24.dp))
-            TvText(text = stringResource(label), style = TvMaterialTheme.typography.labelLarge)
-        }
-    }
-}
-
-@Composable
 private fun TvStatusCard(status: ServiceStatus) {
     val context = LocalContext.current
     val running = status.isRunning
@@ -293,7 +326,7 @@ private fun TvStatusCard(status: ServiceStatus) {
     }
     val summary = remember(status, running) { buildServiceSummary(context, status) }
 
-    TvHomeCard(
+    TvStaticInfoCard(
         icon = if (running) R.drawable.ic_server_ok_24dp else R.drawable.ic_server_error_24dp,
         title = title,
         body = summary
@@ -301,14 +334,21 @@ private fun TvStatusCard(status: ServiceStatus) {
 }
 
 @Composable
-private fun TvRootCard(restart: Boolean, onStartRoot: () -> Unit) {
+private fun TvRootCard(
+    restart: Boolean,
+    onStartRoot: () -> Unit,
+    primaryButtonModifier: Modifier = Modifier
+) {
     val buttonLabel = if (restart) R.string.home_root_button_restart else R.string.home_root_button_start
-    TvHomeCard(
+    TvStaticInfoCard(
         icon = R.drawable.ic_root_24dp,
         title = htmlToPlainText(stringResource(R.string.home_root_title)),
         body = htmlToPlainText(stringResource(R.string.home_root_description, "Don't kill my app!"))
     ) {
-        TvButton(onClick = onStartRoot) {
+        TvActionButton(
+            onClick = onStartRoot,
+            modifier = primaryButtonModifier
+        ) {
             TvText(stringResource(buttonLabel))
         }
     }
@@ -319,27 +359,34 @@ private fun TvWirelessAdbCard(
     localNetworkPermissionState: LocalNetworkPermissionState,
     onStartWirelessAdb: () -> Unit,
     onPairWirelessAdb: () -> Unit,
-    onOpenWirelessGuide: () -> Unit
+    onOpenWirelessGuide: () -> Unit,
+    primaryButtonModifier: Modifier = Modifier
 ) {
     val body = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
         htmlToPlainText(stringResource(R.string.home_wireless_adb_description))
     } else {
         htmlToPlainText(stringResource(R.string.home_wireless_adb_description_pre_11))
     }
-    TvHomeCard(
+    TvStaticInfoCard(
         icon = R.drawable.ic_wadb_24,
         title = htmlToPlainText(stringResource(R.string.home_wireless_adb_title)),
         body = body
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            TvButton(onClick = onStartWirelessAdb) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            TvActionButton(
+                onClick = onStartWirelessAdb,
+                modifier = primaryButtonModifier
+            ) {
                 TvText(stringResource(R.string.home_root_button_start))
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                TvButton(onClick = onPairWirelessAdb) {
+                TvSecondaryButton(onClick = onPairWirelessAdb) {
                     TvText(stringResource(R.string.adb_pairing))
                 }
-                TvButton(onClick = onOpenWirelessGuide) {
+                TvSecondaryButton(onClick = onOpenWirelessGuide) {
                     TvText(stringResource(R.string.home_wireless_adb_view_guide_button))
                 }
             }
@@ -348,19 +395,45 @@ private fun TvWirelessAdbCard(
 }
 
 @Composable
-private fun TvAdbCommandCard(onShowAdbCommand: () -> Unit, onOpenAdbHelp: () -> Unit) {
-    TvHomeCard(
+private fun TvAdbCommandCard(
+    onShowAdbCommand: () -> Unit,
+    onOpenAdbHelp: () -> Unit,
+    primaryButtonModifier: Modifier = Modifier
+) {
+    TvStaticInfoCard(
         icon = R.drawable.ic_adb_24dp,
         title = htmlToPlainText(stringResource(R.string.home_adb_title)),
         body = htmlToPlainText(stringResource(R.string.home_adb_description, Helps.ADB.get()))
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            TvButton(onClick = onShowAdbCommand) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            TvActionButton(
+                onClick = onShowAdbCommand,
+                modifier = primaryButtonModifier
+            ) {
                 TvText(stringResource(R.string.home_adb_button_view_command))
             }
-            TvButton(onClick = onOpenAdbHelp) {
+            TvSecondaryButton(onClick = onOpenAdbHelp) {
                 TvText(stringResource(R.string.home_adb_button_view_help))
             }
+        }
+    }
+}
+
+@Composable
+private fun TvDiagnosticsCard(
+    diagnostics: String,
+    onCopyDiagnostics: () -> Unit
+) {
+    TvStaticInfoCard(
+        icon = R.drawable.ic_outline_info_24,
+        title = stringResource(R.string.home_diagnostics_title),
+        body = diagnostics
+    ) {
+        TvSecondaryButton(onClick = onCopyDiagnostics) {
+            TvText(stringResource(R.string.home_diagnostics_copy))
         }
     }
 }
@@ -370,76 +443,102 @@ private fun TvSimpleActionCard(
     @DrawableRes icon: Int,
     title: String,
     body: String,
+    modifier: Modifier = Modifier,
     enabled: Boolean = true,
     onClick: () -> Unit
 ) {
-    TvHomeCard(
-        icon = icon,
-        title = title,
-        body = body,
-        enabled = enabled,
-        onClick = onClick
-    )
+    TvActionCard(
+        onClick = onClick,
+        modifier = modifier,
+        enabled = enabled
+    ) {
+        TvHomeCardBody(
+            icon = icon,
+            title = title,
+            body = body,
+            danger = false
+        )
+    }
 }
 
 @Composable
-private fun TvHomeCard(
+private fun TvStaticInfoCard(
     @DrawableRes icon: Int,
     title: String,
     body: String,
-    enabled: Boolean = true,
-    onClick: (() -> Unit)? = null,
-    content: @Composable () -> Unit = {}
+    danger: Boolean = false,
+    actions: (@Composable () -> Unit)? = null
 ) {
-    val alpha = if (isSystemInDarkTheme()) 0.3f else 0.12f
-    TvSurface(
-        onClick = onClick ?: {},
-        enabled = enabled && onClick != null,
-        modifier = Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.5f),
-        shape = TvClickableSurfaceDefaults.shape(shape = TvMaterialTheme.shapes.large),
-        colors = TvClickableSurfaceDefaults.colors(
-            containerColor = TvMaterialTheme.colorScheme.surfaceVariant.copy(alpha = alpha),
-            focusedContainerColor = TvMaterialTheme.colorScheme.surfaceVariant
+    TvStaticCard(danger = danger) {
+        TvHomeCardBody(
+            icon = icon,
+            title = title,
+            body = body,
+            danger = danger,
+            actions = actions
         )
+    }
+}
+
+@Composable
+private fun TvHomeCardBody(
+    @DrawableRes icon: Int,
+    title: String,
+    body: String,
+    danger: Boolean,
+    actions: (@Composable () -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier.padding(24.dp),
+        horizontalArrangement = Arrangement.spacedBy(20.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier.padding(24.dp),
-            horizontalArrangement = Arrangement.spacedBy(20.dp),
-            verticalAlignment = Alignment.CenterVertically
+        TvSurface(
+            modifier = Modifier.size(56.dp),
+            shape = CircleShape,
+            colors = TvSurfaceDefaults.colors(
+                containerColor = if (danger) {
+                    TvMaterialTheme.colorScheme.error
+                } else {
+                    TvMaterialTheme.colorScheme.primaryContainer
+                }
+            )
         ) {
-            TvSurface(
-                modifier = Modifier.size(56.dp),
-                shape = CircleShape,
-                colors = TvSurfaceDefaults.colors(containerColor = TvMaterialTheme.colorScheme.primaryContainer)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    ShizukuIcon(
-                        icon = icon,
-                        tint = TvMaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
-            }
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                TvText(
-                    text = title,
-                    style = TvMaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
+            Box(contentAlignment = Alignment.Center) {
+                ShizukuIcon(
+                    icon = icon,
+                    tint = if (danger) {
+                        TvMaterialTheme.colorScheme.onError
+                    } else {
+                        TvMaterialTheme.colorScheme.onPrimaryContainer
+                    },
+                    modifier = Modifier.size(32.dp)
                 )
-                if (body.isNotBlank()) {
-                    TvText(
-                        text = body,
-                        style = TvMaterialTheme.typography.bodyMedium,
-                        color = TvMaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                if (onClick == null) {
-                    Spacer(Modifier.height(4.dp))
-                    content()
-                }
+            }
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            TvText(
+                text = title,
+                style = TvMaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+            if (body.isNotBlank()) {
+                TvText(
+                    text = body,
+                    style = TvMaterialTheme.typography.bodyMedium,
+                    color = if (danger) {
+                        TvMaterialTheme.colorScheme.onErrorContainer
+                    } else {
+                        TvMaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+            }
+            if (actions != null) {
+                Spacer(Modifier.height(4.dp))
+                actions()
             }
         }
     }

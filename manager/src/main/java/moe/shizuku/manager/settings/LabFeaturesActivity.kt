@@ -54,6 +54,13 @@ class LabFeaturesActivity : AppActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
+            if (moe.shizuku.manager.utils.EnvironmentUtils.isTV(this@LabFeaturesActivity)) {
+                moe.shizuku.manager.ui.compose.TvShizukuTheme {
+                    TvLabMenuScreen(onNavigateUp = { finish() })
+                }
+                return@setContent
+            }
+
             val context = LocalContext.current
             val scope = rememberCoroutineScope()
             var connectorEnabled by remember { mutableStateOf(ModuleSettings.isConnectorEnabled()) }

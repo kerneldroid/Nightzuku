@@ -203,7 +203,10 @@ fun WearShizukuTheme(content: @Composable () -> Unit) {
 
 @OptIn(androidx.tv.material3.ExperimentalTvMaterial3Api::class)
 @Composable
-fun TvShizukuTheme(content: @Composable () -> Unit) {
+fun TvShizukuTheme(
+    wrapSurface: Boolean = true,
+    content: @Composable () -> Unit
+) {
     val context = LocalContext.current
     val dark = isSystemInDarkTheme()
 
@@ -253,17 +256,19 @@ fun TvShizukuTheme(content: @Composable () -> Unit) {
         colorScheme = colorScheme.copy(
             background = Color.Black,
             surface = Color.Black,
-            surfaceVariant = Color.Black
+            surfaceVariant = Color(0xFF1A1A1A),
+            border = baseScheme.outline,
+            borderVariant = Color(0xFF3A3A3A)
         )
         phoneColorScheme = baseScheme.copy(
             background = Color.Black,
             surface = Color.Black,
-            surfaceVariant = Color.Black,
-            surfaceContainer = Color.Black,
-            surfaceContainerLow = Color.Black,
+            surfaceVariant = Color(0xFF1A1A1A),
+            surfaceContainer = Color(0xFF121212),
+            surfaceContainerLow = Color(0xFF0A0A0A),
             surfaceContainerLowest = Color.Black,
-            surfaceContainerHigh = Color.Black,
-            surfaceContainerHighest = Color.Black
+            surfaceContainerHigh = Color(0xFF1A1A1A),
+            surfaceContainerHighest = Color(0xFF242424)
         )
     }
 
@@ -273,13 +278,21 @@ fun TvShizukuTheme(content: @Composable () -> Unit) {
         androidx.compose.material3.MaterialTheme(
             colorScheme = phoneColorScheme
         ) {
-            androidx.tv.material3.Surface(
-                modifier = Modifier.fillMaxSize(),
-                colors = androidx.tv.material3.SurfaceDefaults.colors(
-                    containerColor = colorScheme.background,
-                    contentColor = colorScheme.onSurface
-                )
-            ) {
+            if (wrapSurface) {
+                androidx.tv.material3.Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    colors = androidx.tv.material3.SurfaceDefaults.colors(
+                        containerColor = colorScheme.background,
+                        contentColor = colorScheme.onSurface
+                    )
+                ) {
+                    CompositionLocalProvider(
+                        androidx.compose.material3.LocalContentColor provides colorScheme.onSurface,
+                        androidx.tv.material3.LocalContentColor provides colorScheme.onSurface,
+                        content = content
+                    )
+                }
+            } else {
                 CompositionLocalProvider(
                     androidx.compose.material3.LocalContentColor provides colorScheme.onSurface,
                     androidx.tv.material3.LocalContentColor provides colorScheme.onSurface,

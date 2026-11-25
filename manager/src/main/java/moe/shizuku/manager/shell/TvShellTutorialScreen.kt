@@ -2,30 +2,34 @@
 
 package moe.shizuku.manager.shell
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.Button as TvButton
-import androidx.tv.material3.ClickableSurfaceDefaults as TvClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme as TvMaterialTheme
-import androidx.tv.material3.Surface as TvSurface
 import androidx.tv.material3.Text as TvText
 import moe.shizuku.manager.R
-import moe.shizuku.manager.ui.compose.ShizukuIcon
+import moe.shizuku.manager.ui.compose.TvActionButton
+import moe.shizuku.manager.ui.compose.TvActionCard
+import moe.shizuku.manager.ui.compose.TvBackButton
+import moe.shizuku.manager.ui.compose.TvMenuButton
+import moe.shizuku.manager.ui.compose.TvStaticCard
+import moe.shizuku.manager.ui.compose.TvTwoPaneLayout
 import moe.shizuku.manager.ui.compose.htmlToPlainText
 
 @Composable
@@ -36,26 +40,16 @@ fun TvShellTutorialScreen(
     onExportFiles: () -> Unit,
     onViewHelp: () -> Unit
 ) {
-    Row(modifier = Modifier.fillMaxSize()) {
+    val initialFocusRequester = remember { FocusRequester() }
 
-        Column(
-            modifier = Modifier
-                .padding(32.dp)
-                .size(width = 300.dp, height = 500.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            TvText(
-                text = stringResource(R.string.home_terminal_title),
-                style = TvMaterialTheme.typography.headlineMedium,
-                color = TvMaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(bottom = 24.dp)
-            )
+    LaunchedEffect(Unit) {
+        runCatching { initialFocusRequester.requestFocus() }
+    }
 
-            TvMenuButton(
-                icon = R.drawable.ic_arrow_back_24,
-                label = android.R.string.cancel,
-                onClick = onNavigateUp
-            )
+    TvTwoPaneLayout(
+        title = stringResource(R.string.home_terminal_title),
+        sidebarContent = {
+            TvBackButton(onClick = onNavigateUp)
 
             TvMenuButton(
                 icon = R.drawable.ic_help_outline_24dp,
@@ -63,11 +57,10 @@ fun TvShellTutorialScreen(
                 onClick = onViewHelp
             )
         }
-
-
+    ) {
         LazyColumn(
-            modifier = Modifier.weight(1f).fillMaxSize(),
-            contentPadding = PaddingValues(32.dp),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(top = 32.dp, end = 32.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
             item {
@@ -76,7 +69,10 @@ fun TvShellTutorialScreen(
                     title = htmlToPlainText(stringResource(R.string.terminal_tutorial_1, shName, dexName)),
                     body = stringResource(R.string.terminal_tutorial_1_description)
                 ) {
-                    TvButton(onClick = onExportFiles) {
+                    TvActionButton(
+                        onClick = onExportFiles,
+                        modifier = Modifier.focusRequester(initialFocusRequester)
+                    ) {
                         TvText(stringResource(R.string.terminal_export_files))
                     }
                 }
@@ -85,10 +81,15 @@ fun TvShellTutorialScreen(
                 TvTutorialStepCard(
                     number = 2,
                     title = htmlToPlainText(stringResource(R.string.terminal_tutorial_2, shName)),
-                    body = htmlToPlainText(stringResource(
-                        R.string.terminal_tutorial_2_description,
-                        "Termux", "PKG", "com.termux", "com.termux"
-                    ))
+                    body = htmlToPlainText(
+                        stringResource(
+                            R.string.terminal_tutorial_2_description,
+                            "Termux",
+                            "PKG",
+                            "com.termux",
+                            "com.termux"
+                        )
+                    )
                 )
             }
             item {
@@ -107,18 +108,9 @@ private fun TvTutorialStepCard(
     number: Int,
     title: String,
     body: String,
-    content: @Composable () -> Unit = {}
+    content: (@Composable () -> Unit)? = null
 ) {
-    val alpha = if (isSystemInDarkTheme()) 0.3f else 0.12f
-    TvSurface(
-        onClick = {},
-        modifier = Modifier.fillMaxWidth(),
-        shape = TvClickableSurfaceDefaults.shape(shape = TvMaterialTheme.shapes.large),
-        colors = TvClickableSurfaceDefaults.colors(
-            containerColor = TvMaterialTheme.colorScheme.surfaceVariant.copy(alpha = alpha),
-            focusedContainerColor = TvMaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
+    val cardContent: @Composable () -> Unit = {
         Row(
             modifier = Modifier.padding(24.dp),
             horizontalArrangement = Arrangement.spacedBy(20.dp)
@@ -129,7 +121,10 @@ private fun TvTutorialStepCard(
                 color = TvMaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Bold
             )
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 TvText(
                     text = title,
                     style = TvMaterialTheme.typography.titleLarge,
@@ -140,35 +135,21 @@ private fun TvTutorialStepCard(
                     style = TvMaterialTheme.typography.bodyMedium,
                     color = TvMaterialTheme.colorScheme.onSurfaceVariant
                 )
-                content()
+                if (content != null) {
+                    Spacer(Modifier.height(4.dp))
+                    content()
+                }
             }
         }
     }
-}
 
-@Composable
-private fun TvMenuButton(
-    icon: Int,
-    label: Int,
-    onClick: () -> Unit
-) {
-    val alpha = if (isSystemInDarkTheme()) 0.5f else 0.2f
-    TvSurface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = TvClickableSurfaceDefaults.shape(shape = TvMaterialTheme.shapes.medium),
-        colors = TvClickableSurfaceDefaults.colors(
-            containerColor = TvMaterialTheme.colorScheme.surfaceVariant.copy(alpha = alpha),
-            focusedContainerColor = TvMaterialTheme.colorScheme.primaryContainer
-        )
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            ShizukuIcon(icon = icon, modifier = Modifier.size(24.dp))
-            TvText(text = stringResource(label), style = TvMaterialTheme.typography.labelLarge)
+    if (content == null) {
+        TvActionCard(onClick = {}) {
+            cardContent()
+        }
+    } else {
+        TvStaticCard {
+            cardContent()
         }
     }
 }

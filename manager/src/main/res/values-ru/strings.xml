@@ -538,4 +538,9 @@
     <string name="settings_boot_retries_summary">%1$d попыт.</string>
     <string name="settings_boot_fallback_notification_title">Уведомление при неудаче</string>
     <string name="settings_boot_fallback_notification_summary">Показывать подсказку включить «Отладку по Wi-Fi», если автозапуск не смог найти порт</string>
+    <string name="tv_action_back">Назад</string>
+    <string name="tv_state_on">ВКЛ</string>
+    <string name="tv_state_off">ВЫКЛ</string>
+    <string name="tv_app_authorized">Разрешено</string>
+    <string name="tv_app_denied">Запрещено</string>
 </resources>

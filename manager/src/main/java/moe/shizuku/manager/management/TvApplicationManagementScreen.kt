@@ -4,7 +4,6 @@ package moe.shizuku.manager.management
 
 import android.content.pm.PackageInfo
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,14 +13,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -29,10 +31,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.tv.material3.ClickableSurfaceDefaults as TvClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme as TvMaterialTheme
 import androidx.tv.material3.Surface as TvSurface
@@ -41,7 +39,10 @@ import androidx.tv.material3.Text as TvText
 import kerneldroid.nightzuku.util.LabelSanitizer
 import moe.shizuku.manager.R
 import moe.shizuku.manager.authorization.AuthorizationManager
-import moe.shizuku.manager.ui.compose.ShizukuIcon
+import moe.shizuku.manager.ui.compose.TvActionCard
+import moe.shizuku.manager.ui.compose.TvBackButton
+import moe.shizuku.manager.ui.compose.TvMenuButton
+import moe.shizuku.manager.ui.compose.TvTwoPaneLayout
 import moe.shizuku.manager.utils.ShizukuSystemApis
 import moe.shizuku.manager.utils.UserHandleCompat
 
@@ -53,25 +54,22 @@ fun TvApplicationManagementScreen(
     onToggle: (PackageInfo) -> Unit,
     onSelectAll: (Boolean) -> Unit
 ) {
-    Row(modifier = Modifier.fillMaxSize()) {
+    val initialFocusRequester = remember { FocusRequester() }
 
-        Column(
-            modifier = Modifier
-                .padding(32.dp)
-                .size(width = 300.dp, height = 400.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            TvText(
-                text = stringResource(R.string.home_app_management_title),
-                style = TvMaterialTheme.typography.headlineMedium,
-                color = TvMaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(bottom = 24.dp)
-            )
+    LaunchedEffect(packages.isEmpty()) {
+        runCatching { initialFocusRequester.requestFocus() }
+    }
 
-            TvMenuButton(
-                icon = R.drawable.ic_arrow_back_24,
-                label = android.R.string.cancel,
-                onClick = onNavigateUp
+    TvTwoPaneLayout(
+        title = stringResource(R.string.home_app_management_title),
+        sidebarContent = {
+            TvBackButton(
+                onClick = onNavigateUp,
+                modifier = if (packages.isEmpty()) {
+                    Modifier.focusRequester(initialFocusRequester)
+                } else {
+                    Modifier
+                }
             )
 
             if (packages.isNotEmpty()) {
@@ -87,8 +85,7 @@ fun TvApplicationManagementScreen(
                 )
             }
         }
-
-
+    ) {
         if (packages.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -103,14 +100,22 @@ fun TvApplicationManagementScreen(
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(300.dp),
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(32.dp),
+                contentPadding = PaddingValues(top = 32.dp, end = 32.dp, bottom = 32.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                items(packages) { pkg ->
+                itemsIndexed(
+                    items = packages,
+                    key = { _, pkg -> "${pkg.packageName}:${pkg.applicationInfo?.uid ?: 0}" }
+                ) { index, pkg ->
                     TvAppCard(
                         packageInfo = pkg,
                         tick = tick,
+                        modifier = if (index == 0) {
+                            Modifier.focusRequester(initialFocusRequester)
+                        } else {
+                            Modifier
+                        },
                         onClick = { onToggle(pkg) }
                     )
                 }
@@ -120,36 +125,10 @@ fun TvApplicationManagementScreen(
 }
 
 @Composable
-private fun TvMenuButton(
-    icon: Int,
-    label: Int,
-    onClick: () -> Unit
-) {
-    val alpha = if (isSystemInDarkTheme()) 0.3f else 0.12f
-    TvSurface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = TvClickableSurfaceDefaults.shape(shape = TvMaterialTheme.shapes.medium),
-        colors = TvClickableSurfaceDefaults.colors(
-            containerColor = TvMaterialTheme.colorScheme.surfaceVariant.copy(alpha = alpha),
-            focusedContainerColor = TvMaterialTheme.colorScheme.primaryContainer
-        )
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            ShizukuIcon(icon = icon, modifier = Modifier.size(24.dp))
-            TvText(text = stringResource(label), style = TvMaterialTheme.typography.labelLarge)
-        }
-    }
-}
-
-@Composable
 private fun TvAppCard(
     packageInfo: PackageInfo,
     tick: Int,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
@@ -179,26 +158,16 @@ private fun TvAppCard(
         applicationInfo.loadIcon(pm).toBitmap(width = 96, height = 96).asImageBitmap()
     }
 
-    val alpha = if (isSystemInDarkTheme()) 0.3f else 0.12f
-    TvSurface(
+    TvActionCard(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = TvClickableSurfaceDefaults.shape(shape = TvMaterialTheme.shapes.large),
-        colors = TvClickableSurfaceDefaults.colors(
-            containerColor = if (granted) {
-                TvMaterialTheme.colorScheme.primaryContainer.copy(alpha = alpha)
-            } else {
-                TvMaterialTheme.colorScheme.surfaceVariant.copy(alpha = alpha)
-            },
-            focusedContainerColor = if (granted) {
-                TvMaterialTheme.colorScheme.primaryContainer
-            } else {
-                TvMaterialTheme.colorScheme.surfaceVariant
-            }
-        )
+        modifier = modifier,
+        selected = granted,
+        shape = TvMaterialTheme.shapes.large
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -213,7 +182,10 @@ private fun TvAppCard(
                     modifier = Modifier.fillMaxSize()
                 )
             }
-            Column(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
                 TvText(
                     text = title,
                     style = TvMaterialTheme.typography.titleMedium,
@@ -228,14 +200,18 @@ private fun TvAppCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (granted) {
-                    TvText(
-                        text = stringResource(android.R.string.ok),
-                        style = TvMaterialTheme.typography.labelSmall,
-                        color = TvMaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+                TvText(
+                    text = stringResource(
+                        if (granted) R.string.tv_app_authorized else R.string.tv_app_denied
+                    ),
+                    style = TvMaterialTheme.typography.labelSmall,
+                    color = if (granted) {
+                        TvMaterialTheme.colorScheme.primary
+                    } else {
+                        TvMaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }

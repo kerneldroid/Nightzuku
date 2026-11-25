@@ -35,6 +35,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -42,8 +46,6 @@ import androidx.compose.ui.unit.dp
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme as TvMaterialTheme
 import androidx.tv.material3.Text as TvText
-import androidx.tv.material3.Button as TvButton
-import androidx.tv.material3.OutlinedButton as TvOutlinedButton
 import androidx.tv.material3.Surface as TvSurface
 import androidx.tv.material3.ClickableSurfaceDefaults as TvClickableSurfaceDefaults
 import androidx.wear.compose.material3.Button as WearButton
@@ -57,6 +59,11 @@ import moe.shizuku.manager.module.ModuleSettings
 import moe.shizuku.manager.ui.compose.SettingsItem
 import moe.shizuku.manager.ui.compose.SettingsSwitchItem
 import moe.shizuku.manager.ui.compose.ShizukuIcon
+import moe.shizuku.manager.ui.compose.TvActionButton
+import moe.shizuku.manager.ui.compose.TvDialog
+import moe.shizuku.manager.ui.compose.TvSecondaryButton
+import moe.shizuku.manager.ui.compose.tvFocusBorder
+import moe.shizuku.manager.ui.compose.tvFocusScale
 
 internal data class ChoiceOption(
     val title: String,
@@ -357,15 +364,23 @@ internal fun TvChoiceDialog(
     onDismiss: () -> Unit,
     onSelect: (Int) -> Unit
 ) {
-    AlertDialog(
+    val initialFocusRequester = remember { FocusRequester() }
+    val targetIndex = when {
+        selectedIndex in choices.indices && choices[selectedIndex].enabled -> selectedIndex
+        else -> choices.indexOfFirst { it.enabled }
+    }
+
+    TvDialog(
         onDismissRequest = onDismiss,
         title = { TvText(title) },
+        initialFocusRequester = initialFocusRequester,
         text = {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 420.dp)
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 for ((index, choice) in choices.withIndex()) {
                     TvChoiceRow(
@@ -373,18 +388,29 @@ internal fun TvChoiceDialog(
                         title = choice.title,
                         summary = choice.summary,
                         selected = index == selectedIndex,
-                        onClick = { onSelect(index) }
+                        enabled = choice.enabled,
+                        modifier = if (index == targetIndex) {
+                            Modifier.focusRequester(initialFocusRequester)
+                        } else {
+                            Modifier
+                        },
+                        onClick = { if (choice.enabled) onSelect(index) }
                     )
                 }
             }
         },
         confirmButton = {
-            TvOutlinedButton(onClick = onDismiss) {
+            TvSecondaryButton(
+                onClick = onDismiss,
+                modifier = if (targetIndex < 0) {
+                    Modifier.focusRequester(initialFocusRequester)
+                } else {
+                    Modifier
+                }
+            ) {
                 TvText(stringResource(android.R.string.cancel))
             }
-        },
-        containerColor = TvMaterialTheme.colorScheme.surfaceVariant,
-        shape = TvMaterialTheme.shapes.extraLarge
+        }
     )
 }
 
@@ -394,16 +420,39 @@ internal fun TvChoiceRow(
     title: String,
     summary: String?,
     selected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
 ) {
-    val alpha = if (isSystemInDarkTheme()) 0.3f else 0.12f
+    val shape = TvMaterialTheme.shapes.medium
+    val alpha = if (isSystemInDarkTheme()) 0.35f else 0.14f
     TvSurface(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = TvClickableSurfaceDefaults.shape(TvMaterialTheme.shapes.medium),
+        enabled = enabled,
+        modifier = modifier
+            .fillMaxWidth()
+            .alpha(if (enabled) 1f else 0.45f)
+            .focusProperties { canFocus = enabled },
+        shape = TvClickableSurfaceDefaults.shape(shape = shape),
+        scale = tvFocusScale(focusedScale = 1.02f),
+        border = tvFocusBorder(shape = shape),
         colors = TvClickableSurfaceDefaults.colors(
-            containerColor = if (selected) TvMaterialTheme.colorScheme.primaryContainer.copy(alpha = alpha) else Color.Transparent,
-            focusedContainerColor = if (selected) TvMaterialTheme.colorScheme.primaryContainer else TvMaterialTheme.colorScheme.surfaceVariant
+            containerColor = if (selected) {
+                TvMaterialTheme.colorScheme.primaryContainer.copy(alpha = alpha)
+            } else {
+                Color.Transparent
+            },
+            contentColor = TvMaterialTheme.colorScheme.onSurface,
+            focusedContainerColor = if (selected) {
+                TvMaterialTheme.colorScheme.primaryContainer
+            } else {
+                TvMaterialTheme.colorScheme.surfaceVariant
+            },
+            focusedContentColor = if (selected) {
+                TvMaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                TvMaterialTheme.colorScheme.onSurface
+            }
         )
     ) {
         Row(
@@ -425,7 +474,11 @@ internal fun TvChoiceRow(
                 }
             }
             if (selected) {
-                ShizukuIcon(imageVector = Icons.Rounded.Check, modifier = Modifier.size(24.dp), tint = TvMaterialTheme.colorScheme.primary)
+                ShizukuIcon(
+                    imageVector = Icons.Rounded.Check,
+                    modifier = Modifier.size(24.dp),
+                    tint = TvMaterialTheme.colorScheme.primary
+                )
             }
         }
     }
@@ -438,21 +491,26 @@ internal fun TvCustomPermissionsDialog(
     onSave: (ModuleSettings.CustomPermissions) -> Unit
 ) {
     var draft by remember(value) { mutableStateOf(value) }
-    AlertDialog(
+    val initialFocusRequester = remember { FocusRequester() }
+
+    TvDialog(
         onDismissRequest = onDismiss,
         title = { TvText(stringResource(R.string.modules_custom_permissions)) },
+        initialFocusRequester = initialFocusRequester,
         text = {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 520.dp)
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 TvSwitchSettingsRow(
                     icon = R.drawable.ic_outline_play_arrow_24,
                     title = stringResource(R.string.modules_permission_action),
                     summary = stringResource(R.string.modules_permission_action_summary),
                     checked = draft.action,
+                    modifier = Modifier.focusRequester(initialFocusRequester),
                     onCheckedChange = { draft = draft.copy(action = it) }
                 )
                 TvSwitchSettingsRow(
@@ -498,17 +556,15 @@ internal fun TvCustomPermissionsDialog(
             }
         },
         confirmButton = {
-            TvButton(onClick = { onSave(draft) }) {
+            TvActionButton(onClick = { onSave(draft) }) {
                 TvText(stringResource(android.R.string.ok))
             }
         },
         dismissButton = {
-            TvOutlinedButton(onClick = onDismiss) {
+            TvSecondaryButton(onClick = onDismiss) {
                 TvText(stringResource(android.R.string.cancel))
             }
-        },
-        containerColor = TvMaterialTheme.colorScheme.surfaceVariant,
-        shape = TvMaterialTheme.shapes.extraLarge
+        }
     )
 }
 
@@ -518,15 +574,34 @@ internal fun TvSwitchSettingsRow(
     title: String,
     summary: String,
     checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
 ) {
+    val shape = TvMaterialTheme.shapes.medium
+    val alpha = if (isSystemInDarkTheme()) 0.35f else 0.14f
     TvSurface(
         onClick = { onCheckedChange(!checked) },
-        modifier = Modifier.fillMaxWidth(),
-        shape = TvClickableSurfaceDefaults.shape(TvMaterialTheme.shapes.medium),
+        modifier = modifier.fillMaxWidth(),
+        shape = TvClickableSurfaceDefaults.shape(shape = shape),
+        scale = tvFocusScale(focusedScale = 1.02f),
+        border = tvFocusBorder(shape = shape),
         colors = TvClickableSurfaceDefaults.colors(
-            containerColor = if (checked) TvMaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f) else Color.Transparent,
-            focusedContainerColor = if (checked) TvMaterialTheme.colorScheme.primaryContainer else TvMaterialTheme.colorScheme.surfaceVariant
+            containerColor = if (checked) {
+                TvMaterialTheme.colorScheme.primaryContainer.copy(alpha = alpha)
+            } else {
+                Color.Transparent
+            },
+            contentColor = TvMaterialTheme.colorScheme.onSurface,
+            focusedContainerColor = if (checked) {
+                TvMaterialTheme.colorScheme.primaryContainer
+            } else {
+                TvMaterialTheme.colorScheme.surfaceVariant
+            },
+            focusedContentColor = if (checked) {
+                TvMaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                TvMaterialTheme.colorScheme.onSurface
+            }
         )
     ) {
         Row(
@@ -545,7 +620,8 @@ internal fun TvSwitchSettingsRow(
             }
             moe.shizuku.manager.ui.compose.ExpressiveSwitch(
                 checked = checked,
-                onCheckedChange = onCheckedChange
+                onCheckedChange = null,
+                modifier = Modifier.focusProperties { canFocus = false }
             )
         }
     }
