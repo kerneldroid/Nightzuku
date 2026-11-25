@@ -18,6 +18,7 @@ import rikka.core.util.BuildUtils
 import java.io.Closeable
 import java.io.DataInputStream
 import java.io.DataOutputStream
+import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.nio.ByteBuffer
@@ -38,26 +39,45 @@ class AdbClient @JvmOverloads constructor(
     private val requireTls: Boolean = false
 ) : Closeable {
 
-    private lateinit var socket: Socket
-    private lateinit var plainInputStream: DataInputStream
-    private lateinit var plainOutputStream: DataOutputStream
+    @Volatile
+    private var closed = false
+    @Volatile
+    private var socket: Socket? = null
+    @Volatile
+    private var plainInputStream: DataInputStream? = null
+    @Volatile
+    private var plainOutputStream: DataOutputStream? = null
 
+    @Volatile
     private var useTls = false
 
-    private lateinit var tlsSocket: SSLSocket
-    private lateinit var tlsInputStream: DataInputStream
-    private lateinit var tlsOutputStream: DataOutputStream
+    @Volatile
+    private var tlsSocket: SSLSocket? = null
+    @Volatile
+    private var tlsInputStream: DataInputStream? = null
+    @Volatile
+    private var tlsOutputStream: DataOutputStream? = null
 
-    private val inputStream get() = if (useTls) tlsInputStream else plainInputStream
-    private val outputStream get() = if (useTls) tlsOutputStream else plainOutputStream
+    private val inputStream: DataInputStream
+        get() = (if (useTls) tlsInputStream else plainInputStream)
+            ?: throw IllegalStateException("ADB input stream is not open")
+
+    private val outputStream: DataOutputStream
+        get() = (if (useTls) tlsOutputStream else plainOutputStream)
+            ?: throw IllegalStateException("ADB output stream is not open")
 
     fun connect() {
-        socket = Socket()
-        socket.tcpNoDelay = true
-        socket.soTimeout = SO_TIMEOUT_MS
-        socket.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
-        plainInputStream = DataInputStream(socket.getInputStream())
-        plainOutputStream = DataOutputStream(socket.getOutputStream())
+        val rawSocket = Socket()
+        rawSocket.tcpNoDelay = true
+        rawSocket.soTimeout = SO_TIMEOUT_MS
+        socket = rawSocket
+        if (closed) {
+            close()
+            throw IOException("ADB client closed")
+        }
+        rawSocket.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
+        plainInputStream = DataInputStream(rawSocket.getInputStream())
+        plainOutputStream = DataOutputStream(rawSocket.getOutputStream())
 
         write(A_CNXN, A_VERSION, A_MAXDATA, "host::")
 
@@ -69,14 +89,19 @@ class AdbClient @JvmOverloads constructor(
             write(A_STLS, A_STLS_VERSION, 0)
 
             val sslContext = key.sslContext
-            tlsSocket = sslContext.socketFactory.createSocket(socket, host, port, true) as SSLSocket
-            tlsSocket.soTimeout = SO_TIMEOUT_MS
+            val createdTlsSocket = sslContext.socketFactory.createSocket(rawSocket, host, port, true) as SSLSocket
+            createdTlsSocket.soTimeout = SO_TIMEOUT_MS
+            tlsSocket = createdTlsSocket
+            if (closed) {
+                close()
+                throw IOException("ADB client closed")
+            }
             try {
-                tlsSocket.startHandshake()
+                createdTlsSocket.startHandshake()
                 Log.d(TAG, "Handshake succeeded.")
 
-                tlsInputStream = DataInputStream(tlsSocket.inputStream)
-                tlsOutputStream = DataOutputStream(tlsSocket.outputStream)
+                tlsInputStream = DataInputStream(createdTlsSocket.inputStream)
+                tlsOutputStream = DataOutputStream(createdTlsSocket.outputStream)
                 useTls = true
 
                 // In TLS 1.3, adbd sends its fatal certificate-rejection alert on the first read
@@ -104,6 +129,9 @@ class AdbClient @JvmOverloads constructor(
             }
         }
 
+        if (requireTls && !useTls) {
+            throw AdbException("Server did not negotiate TLS (A_STLS)")
+        }
         if (message.command != A_CNXN) error("not A_CNXN")
     }
 
@@ -176,37 +204,13 @@ class AdbClient @JvmOverloads constructor(
     }
 
     override fun close() {
-        if (useTls) {
-            try {
-                tlsInputStream.close()
-            } catch (_: Throwable) {
-            }
-            try {
-                tlsOutputStream.close()
-            } catch (_: Throwable) {
-            }
-            try {
-                tlsSocket.close()
-            } catch (_: Throwable) {
-            }
-        }
-        if (::plainInputStream.isInitialized) {
-            try {
-                plainInputStream.close()
-            } catch (_: Throwable) {
-            }
-        }
-        if (::plainOutputStream.isInitialized) {
-            try {
-                plainOutputStream.close()
-            } catch (_: Throwable) {
-            }
-        }
-        if (::socket.isInitialized) {
-            try {
-                socket.close()
-            } catch (_: Throwable) {
-            }
-        }
+        closed = true
+        // Close sockets first so any blocked I/O unblocks immediately before closing wrapper streams.
+        runCatching { tlsSocket?.close() }
+        runCatching { socket?.close() }
+        runCatching { tlsInputStream?.close() }
+        runCatching { tlsOutputStream?.close() }
+        runCatching { plainInputStream?.close() }
+        runCatching { plainOutputStream?.close() }
     }
 }

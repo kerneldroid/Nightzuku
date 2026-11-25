@@ -131,21 +131,36 @@ private class PairingPacketHeader(
     }
 }
 
-private class PairingContext private constructor(private val nativePtr: Long) {
+private class PairingContext private constructor(private var nativePtr: Long) {
 
+    private val nativeLock = Any()
     val msg: ByteArray
 
     init {
         msg = nativeMsg(nativePtr)
     }
 
-    fun initCipher(theirMsg: ByteArray) = nativeInitCipher(nativePtr, theirMsg)
+    fun initCipher(theirMsg: ByteArray): Boolean = synchronized(nativeLock) {
+        if (nativePtr == 0L) return false
+        nativeInitCipher(nativePtr, theirMsg)
+    }
 
-    fun encrypt(`in`: ByteArray) = nativeEncrypt(nativePtr, `in`)
+    fun encrypt(`in`: ByteArray): ByteArray? = synchronized(nativeLock) {
+        if (nativePtr == 0L) return null
+        nativeEncrypt(nativePtr, `in`)
+    }
 
-    fun decrypt(`in`: ByteArray) = nativeDecrypt(nativePtr, `in`)
+    fun decrypt(`in`: ByteArray): ByteArray? = synchronized(nativeLock) {
+        if (nativePtr == 0L) return null
+        nativeDecrypt(nativePtr, `in`)
+    }
 
-    fun destroy() = nativeDestroy(nativePtr)
+    fun destroy() = synchronized(nativeLock) {
+        if (nativePtr == 0L) return
+        val ptr = nativePtr
+        nativePtr = 0L
+        nativeDestroy(ptr)
+    }
 
     private external fun nativeMsg(nativePtr: Long): ByteArray
 
@@ -416,9 +431,6 @@ class AdbPairingClient(
         init {
             System.loadLibrary("adb")
         }
-
-        @JvmStatic
-        external fun available(): Boolean
 
         @JvmStatic
         fun consumeNativeErrorLog(): String {

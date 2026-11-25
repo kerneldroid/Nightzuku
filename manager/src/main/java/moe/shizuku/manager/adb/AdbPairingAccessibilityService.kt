@@ -28,6 +28,10 @@ class AdbPairingAccessibilityService : AccessibilityService() {
         }
     }
 
+    private val disableSelfRunnable = Runnable {
+        disableSelf()
+    }
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         if (!AdbPairingAutoDetect.isArmed(this)) {
@@ -60,13 +64,16 @@ class AdbPairingAccessibilityService : AccessibilityService() {
         handler.removeCallbacks(timeout)
         Log.i(TAG, "Pairing code detected in $owner (port=${result.port ?: "mDNS"})")
         AdbPairingAutoDetect.submit(this, result.code, result.host, result.port)
-        disableSelf()
+        // Delay disableSelf() so the foreground pairing service starts cleanly on Android 12+
+        // before the accessibility foreground-service exemption is released.
+        handler.postDelayed(disableSelfRunnable, DISABLE_SELF_DELAY_MS)
     }
 
     override fun onInterrupt() = Unit
 
     override fun onDestroy() {
         handler.removeCallbacks(timeout)
+        handler.removeCallbacks(disableSelfRunnable)
         super.onDestroy()
     }
 
@@ -89,6 +96,7 @@ class AdbPairingAccessibilityService : AccessibilityService() {
     private companion object {
         const val TAG = "AdbPairingAuto"
         const val ARM_TIMEOUT_MS = 2 * 60 * 1000L
+        const val DISABLE_SELF_DELAY_MS = 1500L
         const val MAX_NODES = 400
         const val MAX_TEXTS = 120
     }

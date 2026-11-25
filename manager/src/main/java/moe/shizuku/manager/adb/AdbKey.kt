@@ -142,8 +142,6 @@ class AdbKey(private val adbKeyStore: AdbKeyStore, name: String) {
     }
 
     private fun getOrCreatePrivateKey(): RSAPrivateKey {
-        var privateKey: RSAPrivateKey? = null
-
         val aad = ByteArray(16)
         "adbkey".toByteArray().copyInto(aad)
 
@@ -151,22 +149,26 @@ class AdbKey(private val adbKeyStore: AdbKeyStore, name: String) {
         if (ciphertext != null) {
             try {
                 val plaintext = decrypt(ciphertext, aad)
+                    ?: throw IllegalStateException("Stored ADB key ciphertext is truncated")
 
                 val keyFactory = KeyFactory.getInstance("RSA")
-                privateKey = keyFactory.generatePrivate(PKCS8EncodedKeySpec(plaintext)) as RSAPrivateKey
+                return keyFactory.generatePrivate(PKCS8EncodedKeySpec(plaintext)) as RSAPrivateKey
+            } catch (e: AdbKeyException) {
+                throw e
             } catch (e: Exception) {
+                Log.w(TAG, "Failed to decrypt stored ADB private key; preserving existing key", e)
+                throw AdbKeyException(e)
             }
         }
-        if (privateKey == null) {
-            val keyPairGenerator = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_RSA)
-            keyPairGenerator.initialize(RSAKeyGenParameterSpec(2048, RSAKeyGenParameterSpec.F4))
-            val keyPair = keyPairGenerator.generateKeyPair()
-            privateKey = keyPair.private as RSAPrivateKey
 
-            ciphertext = encrypt(privateKey.encoded, aad)
-            if (ciphertext != null) {
-                adbKeyStore.put(ciphertext)
-            }
+        val keyPairGenerator = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_RSA)
+        keyPairGenerator.initialize(RSAKeyGenParameterSpec(2048, RSAKeyGenParameterSpec.F4))
+        val keyPair = keyPairGenerator.generateKeyPair()
+        val privateKey = keyPair.private as RSAPrivateKey
+
+        ciphertext = encrypt(privateKey.encoded, aad)
+        if (ciphertext != null) {
+            adbKeyStore.put(ciphertext)
         }
         return privateKey
     }

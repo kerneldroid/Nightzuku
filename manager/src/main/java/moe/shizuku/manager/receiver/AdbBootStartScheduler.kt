@@ -13,8 +13,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.net.NetworkCapabilities
-import android.net.NetworkRequest
 import android.os.Build
 import android.os.PersistableBundle
 import android.provider.Settings
@@ -52,9 +50,11 @@ import rikka.shizuku.Shizuku
  * `BootCompleteReceiver.goAsync()`.
  *
  * Advantages over the legacy BroadcastReceiver flow:
- * - Waits for `TRANSPORT_WIFI` via OS network constraints instead of racing Wi-Fi association.
+ * - Waits for an unmetered network (Wi-Fi or Ethernet) via OS network constraints instead of
+ *   racing DHCP / network readiness.
  * - Eliminates the 10-second BroadcastReceiver ANR ceiling with a configurable discovery window.
- * - Uses OS-managed exponential backoff retries and `setPersisted(true)` across process restarts.
+ * - Uses OS-managed exponential backoff retries without persisting stale boot-count extras across
+ *   subsequent reboots.
  * - Supports direct `adb tcpip` startup when `service.adb.tcp.port` / `persist.adb.tcp.port` is set.
  * - Waits for `ACTION_USER_PRESENT` on Android 11–16 when the keyguard is locked so the system
  *   does not reset `adb_wifi_enabled` to `0` mid-discovery.
@@ -84,23 +84,24 @@ object AdbBootStartScheduler {
             JOB_ID_ADB_BOOT_START,
             ComponentName(appCtx, AdbBootStartJobService::class.java)
         )
-            .setPersisted(true)
             .setExtras(extras)
             .setBackoffCriteria(BACKOFF_INITIAL_MS, JobInfo.BACKOFF_POLICY_EXPONENTIAL)
+            .setRequiredNetworkType(
+                if (hasTcpPort) {
+                    // Direct loopback adb tcpip startup (127.0.0.1:$tcpPort) does not require a network.
+                    JobInfo.NETWORK_TYPE_NONE
+                } else {
+                    // Unmetered covers both Wi-Fi and Ethernet (Android TV) and ensures IP/DHCP readiness.
+                    JobInfo.NETWORK_TYPE_UNMETERED
+                }
+            )
 
-        if (hasTcpPort) {
-            // Direct loopback adb tcpip startup (127.0.0.1:$tcpPort) does not require Wi-Fi.
-            builder.setRequiredNetworkType(JobInfo.NETWORK_TYPE_NONE)
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            val wifiRequest = NetworkRequest.Builder()
-                .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
-                .build()
-            builder.setRequiredNetwork(wifiRequest)
-        } else {
-            builder.setRequiredNetworkType(JobInfo.NETWORK_TYPE_UNMETERED)
-        }
+        val result = runCatching {
+            scheduler.schedule(builder.build())
+        }.onFailure { t ->
+            Log.e(AppConstants.TAG, "Failed to schedule AdbBootStartJobService (bootCount=$bootCount)", t)
+        }.getOrDefault(JobScheduler.RESULT_FAILURE)
 
-        val result = scheduler.schedule(builder.build())
         Log.d(AppConstants.TAG, "Scheduled AdbBootStartJobService (bootCount=$bootCount, result=$result)")
         return result == JobScheduler.RESULT_SUCCESS
     }
@@ -146,7 +147,7 @@ class AdbBootStartJobService : JobService() {
     override fun onStopJob(params: JobParameters): Boolean {
         activeJob?.cancel()
         activeJob = null
-        // Reschedule if Wi-Fi dropped or the system preempted the job before completion.
+        // Reschedule if the network dropped or the system preempted the job before completion.
         return !Shizuku.pingBinder()
     }
 
@@ -208,18 +209,53 @@ class AdbBootStartJobService : JobService() {
             }
         }
 
+        val discoveryTimeoutMs = ShizukuSettings.getBootDiscoveryTimeoutSeconds() * 1000L
         val prepare = AdbSettings.prepareWirelessAdbForBoot(this)
         if (prepare == AdbSettings.BootPrepareResult.UNAVAILABLE) {
-            Log.w(AppConstants.TAG, "Wireless ADB settings could not be enabled automatically")
-            if (ShizukuSettings.isBootFallbackNotificationEnabled()) {
-                showManualWirelessToggleNotification()
+            Log.w(
+                AppConstants.TAG,
+                "Wireless ADB settings could not be enabled automatically; running bounded mDNS probe"
+            )
+            val probeTimeoutMs = minOf(discoveryTimeoutMs, UNAVAILABLE_MDNS_PROBE_TIMEOUT_MS)
+            val probedEndpoint = discoverLocalAdbEndpoint(probeTimeoutMs)
+            if (probedEndpoint == null) {
+                if (ShizukuSettings.isBootFallbackNotificationEnabled()) {
+                    showManualWirelessToggleNotification()
+                }
+                return Outcome.DONE
             }
-            return Outcome.DONE
+            val (host, port) = probedEndpoint
+            val started = connectAndStartServer(host, port, requireTls = true)
+            return if (started) {
+                markBootHandled(bootCount)
+                clearFallbackNotification()
+                Log.i(AppConstants.TAG, "Nightzuku server started via wireless ADB on boot ($host:$port)")
+                Outcome.DONE
+            } else {
+                handleAttemptFailure(bootCount, "ADB starter command did not bring up binder")
+            }
         }
 
-        val discoveryTimeoutMs = ShizukuSettings.getBootDiscoveryTimeoutSeconds() * 1000L
+        if (prepare == AdbSettings.BootPrepareResult.ENABLED) {
+            delay(ADB_WIFI_SETTLE_DELAY_MS)
+            if (!AdbSettings.isWirelessAdbEnabled(contentResolver)) {
+                return handleAttemptFailure(
+                    bootCount,
+                    "AdbService reset adb_wifi_enabled during early boot"
+                )
+            }
+        }
+
         val endpoint = discoverLocalAdbEndpoint(discoveryTimeoutMs)
         if (endpoint == null) {
+            if (prepare == AdbSettings.BootPrepareResult.ENABLED &&
+                !AdbSettings.isWirelessAdbEnabled(contentResolver)
+            ) {
+                return handleAttemptFailure(
+                    bootCount,
+                    "AdbService reset adb_wifi_enabled during mDNS discovery"
+                )
+            }
             return handleAttemptFailure(bootCount, "mDNS discovery timed out")
         }
 
@@ -431,6 +467,8 @@ class AdbBootStartJobService : JobService() {
     companion object {
         private const val BINDER_WAIT_TIMEOUT_MS = 5_000L
         private const val KEYGUARD_UNLOCK_TIMEOUT_MS = 120_000L
+        private const val UNAVAILABLE_MDNS_PROBE_TIMEOUT_MS = 8_000L
+        private const val ADB_WIFI_SETTLE_DELAY_MS = 1_500L
         private const val CHANNEL_ID = "adb_boot_start_status"
         private const val NOTIFICATION_ID_BOOT_FALLBACK = 4211
         private const val PREF_RETRY_BOOT_COUNT = "adb_boot_retry_boot_count"

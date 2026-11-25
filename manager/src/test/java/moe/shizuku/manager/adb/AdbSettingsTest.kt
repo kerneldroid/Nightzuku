@@ -46,6 +46,19 @@ class AdbSettingsTest {
     }
 
     @Test
+    fun `detects enabled wireless adb on Android TV 14 when usb debugging adb_enabled is off`() {
+        Settings.Global.putInt(resolver, "adb_wifi_enabled", 1)
+        Settings.Global.putInt(resolver, Settings.Global.ADB_ENABLED, 0)
+
+        assertTrue(AdbSettings.isWirelessAdbEnabled(resolver))
+        assertTrue(AdbSettings.enableWirelessAdb(context))
+        assertEquals(
+            AdbSettings.BootPrepareResult.ENABLED,
+            AdbSettings.prepareWirelessAdbForBoot(context, sdkInt = 34)
+        )
+    }
+
+    @Test
     fun `reports disabled when adb_wifi_enabled is off`() {
         Settings.Global.putInt(resolver, "adb_wifi_enabled", 0)
         Settings.Global.putInt(resolver, Settings.Global.ADB_ENABLED, 1)
@@ -66,7 +79,7 @@ class AdbSettingsTest {
     @Test
     fun `already enabled state succeeds without permission even when connection timer is non-zero`() {
         Settings.Global.putInt(resolver, "adb_wifi_enabled", 1)
-        Settings.Global.putInt(resolver, Settings.Global.ADB_ENABLED, 1)
+        Settings.Global.putInt(resolver, Settings.Global.ADB_ENABLED, 0)
 
         assertTrue(AdbSettings.enableWirelessAdb(context))
         assertEquals(
@@ -79,9 +92,10 @@ class AdbSettingsTest {
     fun `already enabled state best-effort clears connection timer when permission is granted`() {
         shadowOf(context).grantPermissions(Manifest.permission.WRITE_SECURE_SETTINGS)
         Settings.Global.putInt(resolver, "adb_wifi_enabled", 1)
-        Settings.Global.putInt(resolver, Settings.Global.ADB_ENABLED, 1)
+        Settings.Global.putInt(resolver, Settings.Global.ADB_ENABLED, 0)
 
         assertTrue(AdbSettings.enableWirelessAdb(context))
+        assertEquals(1, Settings.Global.getInt(resolver, Settings.Global.ADB_ENABLED, 0))
         assertEquals(0L, Settings.Global.getLong(resolver, "adb_allowed_connection_time", -1L))
     }
 

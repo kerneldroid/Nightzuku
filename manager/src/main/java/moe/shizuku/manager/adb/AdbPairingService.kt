@@ -19,6 +19,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import moe.shizuku.manager.R
 import moe.shizuku.manager.ShizukuSettings
 import moe.shizuku.manager.utils.SmartLogManager
@@ -74,6 +75,7 @@ class AdbPairingService : Service() {
     private val pairingInFlight = AtomicBoolean(false)
     private var adbMdns: AdbMdns? = null
     private var pendingAutoCode: String? = null
+    private var lastStartId: Int = -1
 
     private val observer = Observer<Pair<String, Int>> { pair ->
         val (host, port) = pair
@@ -83,7 +85,8 @@ class AdbPairingService : Service() {
         val autoCode = pendingAutoCode
         if (autoCode != null) {
             pendingAutoCode = null
-            onInput(autoCode, host, port)
+            val notification = onInput(autoCode, host, port)
+            getSystemService(NotificationManager::class.java).notify(foregroundNotificationId, notification)
             return@Observer
         }
 
@@ -110,6 +113,7 @@ class AdbPairingService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStartId = startId
         val notification = when (intent?.action) {
             startAction -> {
                 onStart()
@@ -145,7 +149,7 @@ class AdbPairingService : Service() {
                 pendingAutoCode = null
                 stopSearch()
                 stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
+                stopSelfResult(startId)
                 null
             }
             else -> {
@@ -203,6 +207,7 @@ class AdbPairingService : Service() {
             return workingNotification
         }
         stopSearch()
+        val requestStartId = lastStartId
 
         serviceScope.launch {
             try {
@@ -214,7 +219,7 @@ class AdbPairingService : Service() {
                     e.printStackTrace()
                     val keyErr = AdbKeyException(e)
                     SmartLogManager.recordPairingError("AdbPairingService.keyInit", host, port, keyErr)
-                    handleResult(false, keyErr)
+                    handleResult(false, keyErr, requestStartId)
                     return@launch
                 }
 
@@ -235,7 +240,7 @@ class AdbPairingService : Service() {
                     if (it is CancellationException) throw it
                     if (!coroutineContext.isActive) return@launch
                     SmartLogManager.recordPairingError("AdbPairingService.exchange", host, port, it)
-                    handleResult(false, it)
+                    handleResult(false, it, requestStartId)
                 }.onSuccess { ok ->
                     if (!coroutineContext.isActive) return@launch
                     if (!ok) {
@@ -247,7 +252,7 @@ class AdbPairingService : Service() {
                             "AdbPairingClient.start() returned false"
                         )
                     }
-                    handleResult(ok, null)
+                    handleResult(ok, null, requestStartId)
                 }
             } finally {
                 pairingInFlight.set(false)
@@ -257,8 +262,14 @@ class AdbPairingService : Service() {
         return workingNotification
     }
 
-    private fun handleResult(success: Boolean, exception: Throwable?) {
-        stopForeground(STOP_FOREGROUND_REMOVE)
+    private suspend fun handleResult(
+        success: Boolean,
+        exception: Throwable?,
+        requestStartId: Int
+    ) = withContext(Dispatchers.Main.immediate) {
+        if (requestStartId == lastStartId) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        }
 
         val title: String
         val text: String?
@@ -299,14 +310,14 @@ class AdbPairingService : Service() {
         // cannot race with NotificationManager and swallow the result banner.
         getSystemService(NotificationManager::class.java).notify(
             resultNotificationId,
-            Notification.Builder(this, notificationChannel)
+            Notification.Builder(this@AdbPairingService, notificationChannel)
                 .setColor(getColor(R.color.notification))
                 .setSmallIcon(R.drawable.ic_system_icon)
                 .setContentTitle(title)
                 .setContentText(text)
                 .build()
         )
-        stopSelf()
+        stopSelfResult(requestStartId)
     }
 
     private val stopNotificationAction by unsafeLazy {

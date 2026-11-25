@@ -58,7 +58,9 @@ import com.topjohnwu.superuser.CallbackList
 import com.topjohnwu.superuser.Shell
 import java.net.ConnectException
 import javax.net.ssl.SSLProtocolException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import moe.shizuku.manager.AppConstants.EXTRA
 import moe.shizuku.manager.R
@@ -373,13 +375,8 @@ private class ViewModel(
             }).submit {
                 if (it.code != 0) {
                     appendLine("\nSend this to developer may help solve the problem.")
-                    val currentLog = synchronized(outputLock) { sb.toString() }
-                    SmartLogManager.recordStarterError(
-                        isRoot = true,
-                        host = null,
-                        port = 0,
-                        starterOutput = currentLog,
-                        throwable = IllegalStateException("shizuku_starter root command exited with code ${it.code}")
+                    postResult(
+                        IllegalStateException("shizuku_starter root command exited with code ${it.code}")
                     )
                 }
             }
@@ -405,15 +402,25 @@ private class ViewModel(
 
             runCatching {
                 AdbClient(host, port, key).use { client ->
-                    client.connect()
-                    client.shellCommand(Starter.internalCommand) {
-                        synchronized(outputLock) {
-                            sb.append(String(it))
+                    val cancelHandle = coroutineContext.job.invokeOnCompletion { cause ->
+                        if (cause != null) {
+                            runCatching { client.close() }
                         }
-                        postResult()
+                    }
+                    try {
+                        client.connect()
+                        client.shellCommand(Starter.internalCommand) {
+                            synchronized(outputLock) {
+                                sb.append(String(it))
+                            }
+                            postResult()
+                        }
+                    } finally {
+                        cancelHandle.dispose()
                     }
                 }
             }.onFailure {
+                if (it is CancellationException) throw it
                 it.printStackTrace()
 
                 appendLine("\n${Log.getStackTraceString(it)}")

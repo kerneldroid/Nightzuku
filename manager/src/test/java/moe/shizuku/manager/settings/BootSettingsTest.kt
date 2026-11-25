@@ -1,11 +1,16 @@
 package moe.shizuku.manager.settings
 
 import android.app.Application
+import android.app.job.JobInfo
+import android.app.job.JobScheduler
 import androidx.test.core.app.ApplicationProvider
 import moe.shizuku.manager.ShizukuSettings
 import moe.shizuku.manager.ShizukuSettings.LaunchMethod
+import moe.shizuku.manager.receiver.AdbBootStartScheduler
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -23,6 +28,7 @@ class BootSettingsTest {
     fun setUp() {
         ShizukuSettings.initialize(context)
         ShizukuSettings.getPreferences().edit().clear().commit()
+        AdbBootStartScheduler.cancel(context)
     }
 
     @Test
@@ -56,5 +62,20 @@ class BootSettingsTest {
         assertTrue(ShizukuSettings.isBootFallbackNotificationEnabled())
         ShizukuSettings.setBootFallbackNotificationEnabled(false)
         assertFalse(ShizukuSettings.isBootFallbackNotificationEnabled())
+    }
+
+    @Test
+    fun `schedules non-persisted unmetered boot job and cancels cleanly`() {
+        assertTrue(AdbBootStartScheduler.schedule(context, bootCount = 7))
+
+        val scheduler = context.getSystemService(JobScheduler::class.java)
+        val jobInfo = scheduler.getPendingJob(AdbBootStartScheduler.JOB_ID_ADB_BOOT_START)
+        assertNotNull(jobInfo)
+        assertFalse(jobInfo!!.isPersisted)
+        assertEquals(JobInfo.NETWORK_TYPE_UNMETERED, jobInfo.networkType)
+        assertEquals(7, jobInfo.extras.getInt(AdbBootStartScheduler.EXTRA_BOOT_COUNT, -1))
+
+        AdbBootStartScheduler.cancel(context)
+        assertNull(scheduler.getPendingJob(AdbBootStartScheduler.JOB_ID_ADB_BOOT_START))
     }
 }

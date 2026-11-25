@@ -16,7 +16,9 @@ import java.net.InetSocketAddress
 import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 @RequiresApi(Build.VERSION_CODES.R)
 class AdbMdns(
@@ -36,8 +38,16 @@ class AdbMdns(
     private val mainHandler = Handler(Looper.getMainLooper())
     private val nsdManager: NsdManager = appContext.getSystemService(NsdManager::class.java)
     private val wifiManager: WifiManager? = appContext.getSystemService(WifiManager::class.java)
-    private val callbackExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
+    private val callbackExecutor: ExecutorService = ThreadPoolExecutor(
+        1,
+        1,
+        30L,
+        TimeUnit.SECONDS,
+        LinkedBlockingQueue()
+    ) { runnable ->
         Thread(runnable, "AdbMdns-Worker").apply { isDaemon = true }
+    }.apply {
+        allowCoreThreadTimeOut(true)
     }
 
     private var state: State = State.IDLE
@@ -239,7 +249,9 @@ class AdbMdns(
             override fun onServiceInfoCallbackRegistrationFailed(errorCode: Int) {
                 Log.w(TAG, "ServiceInfoCallback registration failed for $name: error=$errorCode")
                 runOnMain {
-                    activeServiceCallbacks.remove(name)
+                    if (activeServiceCallbacks[name] === this) {
+                        activeServiceCallbacks.remove(name)
+                    }
                 }
             }
 

@@ -39,10 +39,13 @@ object AdbSettings {
     private const val KEY_WIFI_ADB = "adb_wifi_enabled"
     private const val KEY_ALLOWED_CONNECTION_TIME = "adb_allowed_connection_time"
 
-    /** Keys written as integers; all must end up equal to the mapped value. */
+    /**
+     * Keys written as integers in order: `adb_enabled` is written best-effort before
+     * `adb_wifi_enabled` so ROMs that check USB debugging see it set first.
+     */
     private val INT_KEYS = linkedMapOf(
-        KEY_WIFI_ADB to 1,
-        Settings.Global.ADB_ENABLED to 1
+        Settings.Global.ADB_ENABLED to 1,
+        KEY_WIFI_ADB to 1
     )
 
     /** The system disables the ADB connection timer with 0. */
@@ -104,9 +107,15 @@ object AdbSettings {
             PackageManager.PERMISSION_GRANTED
         ) {
             runCatching {
-                NightClient.execFast(
+                val result = NightClient.execFast(
                     arrayOf("pm", "grant", context.packageName, Manifest.permission.WRITE_SECURE_SETTINGS)
                 )
+                if (!(result.exitCode == 0 && !result.timedOut)) {
+                    Log.w(
+                        TAG,
+                        "Failed to pre-grant WRITE_SECURE_SETTINGS (exitCode=${result.exitCode}, timedOut=${result.timedOut}): ${result.stderr}"
+                    )
+                }
             }.onFailure { t ->
                 Log.w(TAG, "Failed to pre-grant WRITE_SECURE_SETTINGS", t)
             }
@@ -118,8 +127,11 @@ object AdbSettings {
     /**
      * Enables wireless ADB and disables the connection timeout on a best-effort basis.
      *
-     * @return true when all required wireless ADB keys (`adb_wifi_enabled` and `adb_enabled`)
-     * hold their expected values afterwards.
+     * Writes `adb_enabled = 1` best-effort before `adb_wifi_enabled = 1`, but gates the return
+     * value strictly on `adb_wifi_enabled == 1` so devices where USB debugging stays `0`
+     * (such as Android TV 14) still succeed.
+     *
+     * @return true when `adb_wifi_enabled` is set to `1` afterwards.
      */
     fun enableWirelessAdb(context: Context): Boolean {
         val resolver = context.contentResolver
@@ -172,7 +184,7 @@ object AdbSettings {
     }
 
     fun isWirelessAdbEnabled(resolver: ContentResolver): Boolean =
-        INT_KEYS.all { (key, value) -> readInt(resolver, key) == value }
+        readInt(resolver, KEY_WIFI_ADB) == 1
 
     /**
      * Runs `settings put global <key> <value>` through the Nightzuku server.
