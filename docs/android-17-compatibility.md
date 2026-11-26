@@ -5,6 +5,11 @@ permission, and debugging APIs, how that was established, and what
 `Android17Compat` and the boot auto-start pipeline do about it. Every signature
 and annotation below was read out of the platform, not recalled.
 
+The [Android 17 GSI audit](android-17-shizuku-findings.md) adds evidence from 16
+public ARM64 builds, including per-build differences from the Canary snapshot
+listed below. The [discussion #19 review](android-17-discussion-19.md) records
+the SettingsProvider and Direct Boot findings.
+
 ## How this was established
 
 - The compiled Android 17 framework,
@@ -53,12 +58,12 @@ Two details matter, and both are easy to get wrong:
 ```
 PackageInfo     getPackageInfo(String, long, int)         unchanged on 17; see the flag-width note
 ApplicationInfo getApplicationInfo(String, long, int)     unchanged on 17; see the flag-width note
-                getInstalledPackages(long, int)           ParceledListSlice -> PackageInfoList on 17
+                getInstalledPackages(long, int)           ParceledListSlice -> PackageInfoList by 17 Beta 3
                 getInstalledApplications(long, int)       unchanged
 ```
 
-`getInstalledPackages` changed by **return type** (`ParceledListSlice` -> a
-`PackageInfoList`-named class on 17). A JVM method descriptor includes the return
+`getInstalledPackages` changed by **return type** between the sampled Android 17
+Beta 1 (`ParceledListSlice`) and Beta 3 (`PackageInfoList`). A JVM method descriptor includes the return
 type, so an exact descriptor no longer resolves. `InstalledPackagesCompat`
 resolves the method by name and parameter types and normalizes both shapes via
 `getList()` instead of relying on a single hardcoded descriptor.
@@ -105,28 +110,23 @@ API 33 rather than to any 15/16/17 release.
 
 ## Wireless ADB & Boot Auto-Start Changes on Android 17 (API 37)
 
-Three platform changes in Android 17 directly affect rootless wireless ADB
-startup:
-
-1. **Write restriction (`MANAGE_DEBUGGING`):**
-   `SettingsProvider` requires `android.permission.MANAGE_DEBUGGING`
-   (`signature|privileged`, not grantable via `pm grant`) to write `adb_enabled`,
-   `adb_wifi_enabled`, and `adb_allowed_connection_time`. Holding
-   `WRITE_SECURE_SETTINGS` alone is no longer sufficient after a reboot when the
-   Nightzuku server is not running.
-2. **Read redaction (`@Readable(redactedValue = "0")`):**
-   In `framework.jar` (`ZP11.261016.008`, `android/provider/Settings.java`,
-   lines 4497–4501), both `Settings.Global.ADB_ENABLED` and
-   `Settings.Global.ADB_WIFI_ENABLED` are annotated with
-   `@Readable(redactedValue = "0")`. Third-party apps always read `0` even when
-   wireless debugging is active. Gating boot startup on
-   `AdbSettings.isWirelessAdbEnabled()` therefore aborts even when `adbd` is
-   already listening.
-3. **Local network runtime permission (`ACCESS_LOCAL_NETWORK`):**
-   Apps targeting API 37 must hold the runtime permission
-   `android.permission.ACCESS_LOCAL_NETWORK` for `NsdManager` mDNS discovery and
-   local LAN TCP connections; otherwise discovery fails with `EPERM`
-   ([Android Local Network Permission](https://developer.android.com/privacy-and-security/local-network-permission)).
+1. **Settings writes and ADB Binder calls.** In the 16 audited GSIs, the ordinary
+   Global Settings write path enforces `WRITE_SECURE_SETTINGS`. The separate
+   `AdbService` Binder interface enforces `MANAGE_DEBUGGING` on privileged
+   operations. The caller, user restrictions, and timing can also affect the
+   result. [SettingsProvider evidence](android-17-discussion-19.md#image-comparison)
+2. **Version-specific read redaction.** QPR1 stable actively redacts `adb_enabled`
+   for ordinary app reads. The two audited QPR3 betas actively redact both
+   `adb_enabled` and `adb_wifi_enabled`. Earlier samples include disabled
+   redaction gates and, in QPR2 Beta 6.1, annotations for both keys with inactive
+   enforcement. Using a setting read as the sole indication of daemon state can
+   produce a false negative on an affected build. The complete table records
+   the flags and caller behavior. [Per-build evidence](android-17-discussion-19.md#image-comparison)
+3. **Local network runtime permission (`ACCESS_LOCAL_NETWORK`).** Android 17
+   enforces local-network protection for apps targeting API 37 or higher.
+   `NsdManager` discovery and LAN connections can be affected. Android also
+   exposes system-mediated discovery for user-selected services.
+   [Android local network permission](https://developer.android.com/privacy-and-security/local-network-permission)
 
 ### How Nightzuku handles boot auto-start across Android 11–17+
 
@@ -151,7 +151,7 @@ startup:
 - **Native ADB Wi-Fi 2.0 Zero-Touch (Android 17+):**
   Android 17 ADB Wi-Fi 2.0 automatically re-enables wireless debugging when the
   device connects to a trusted Wi-Fi network
-  ([Android Developers Blog](https://android-developers.googleblog.com/2026/09/wireless-debugging-adb-wifi-2.html)).
+  ([Android Developers Blog](https://developer.android.com/blog/posts/introducing-fast-and-reliable-wireless-debugging-with-android-debug-bridge-adb-wi-fi-2-0)).
   `AdbSettings.prepareWirelessAdbForBoot()` returns `REDACTION_DEFER_TO_MDNS` on
   API 37+ so `AdbBootStartJobService` proceeds directly to mDNS discovery without
   reading or writing `Settings.Global`. While the server is active (`UID 2000`),
