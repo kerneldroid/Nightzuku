@@ -8,6 +8,8 @@ package moe.shizuku.manager.home
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.Arrangement
@@ -56,6 +58,8 @@ import moe.shizuku.manager.adb.AdbKeyException
 import moe.shizuku.manager.adb.AdbMdns
 import moe.shizuku.manager.adb.AdbPairingAutoDetect
 import moe.shizuku.manager.adb.AdbPairingClient
+import moe.shizuku.manager.adb.AdbPortHistory
+import moe.shizuku.manager.adb.AdbPortScanner
 import moe.shizuku.manager.adb.AdbSettings
 import moe.shizuku.manager.adb.PreferenceAdbKeyStore
 import androidx.compose.foundation.layout.Box
@@ -435,14 +439,32 @@ fun HomeAdbDiscoveryDialog(
     }
 
     DisposableEffect(Unit) {
+        val mainHandler = Handler(Looper.getMainLooper())
         val adbMdns = AdbMdns(context, AdbMdns.TLS_CONNECT) {
+            if (it.second in 1..65535) {
+                AdbPortHistory.record(context, it.second)
+            }
             serviceState.value = it
         }
+        val scanner = AdbPortScanner(
+            order = AdbPortScanner.buildOrder(AdbPortHistory.load(context)),
+            requireTlsOnly = true
+        ) { port ->
+            AdbPortHistory.record(context, port)
+            mainHandler.post {
+                if (serviceState.value?.second !in 1..65535) {
+                    serviceState.value = AdbPortScanner.LOOPBACK_IP to port
+                }
+            }
+        }
         adbMdns.start()
+        scanner.start()
 
         AdbSettings.enableWirelessAdb(context)
 
         onDispose {
+            mainHandler.removeCallbacksAndMessages(null)
+            scanner.stop()
             adbMdns.stop()
         }
     }

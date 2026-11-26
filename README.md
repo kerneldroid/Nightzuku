@@ -144,3 +144,4 @@ Licensed under **Apache License 2.0** (`LICENSE`).
 - [RikkaApps/Shizuku](https://github.com/RikkaApps/Shizuku) — upstream architecture and protocol.
 - [Razgame](https://github.com/RazGame/Shizuku) — [app list fix](https://github.com/kerneldroid/Nightzuku/commit/6ea7e74984f860398760f5111a15083ea004c842).
 - [Porter (d4rken-org)](https://github.com/d4rken-org/porter) — security hardening concepts (package signing verification, config ownership handoff, anti-spoofing permission prompts, wireless ADB/mDNS edge-case analysis), re-implemented natively for Nightzuku.
+- [Dimlos-jp/Dimzuku](https://github.com/Dimlos-jp/Dimzuku) & [BombPerry/Shizuku](https://github.com/BombPerry/Shizuku) — pre-unlock wireless ADB boot startup (`LOCKED_BOOT_COMPLETED` Wi-Fi wait + `adb_wifi_enabled` trigger), loopback `AdbPortScanner`, and port history prioritization (Apache 2.0).

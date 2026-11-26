@@ -18,6 +18,7 @@ object ShizukuSettings {
     const val LANGUAGE = "language"
     const val KEEP_START_ON_BOOT = "start_on_boot"
     private const val LAST_BOOT_COUNT = "last_boot_count"
+    private const val LAST_BOOT_START_SENT_COUNT = "last_boot_start_sent_count"
     private const val BOOT_DISCOVERY_TIMEOUT_SECONDS = "boot_discovery_timeout_seconds"
     private const val BOOT_MAX_RETRIES = "boot_max_retries"
     private const val BOOT_FALLBACK_NOTIFICATION = "boot_fallback_notification"
@@ -122,6 +123,16 @@ object ShizukuSettings {
     @JvmStatic
     fun setLastHandledBootCount(bootCount: Int) {
         getPreferences().edit().putInt(LAST_BOOT_COUNT, bootCount).apply()
+    }
+
+    @JvmStatic
+    fun getLastBootStartSentCount(): Int {
+        return getPreferences().getInt(LAST_BOOT_START_SENT_COUNT, -1)
+    }
+
+    @JvmStatic
+    fun setLastBootStartSentCount(bootCount: Int) {
+        getPreferences().edit().putInt(LAST_BOOT_START_SENT_COUNT, bootCount).commit()
     }
 
     @JvmStatic

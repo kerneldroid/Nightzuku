@@ -21,9 +21,11 @@ import moe.shizuku.manager.module.AdbModule
 import moe.shizuku.manager.module.AdbModuleManager
 import moe.shizuku.manager.module.ModuleHealthStatus
 import moe.shizuku.manager.module.ModuleSettings
+import moe.shizuku.manager.module.catalog.TokenStore
 import moe.shizuku.manager.module.update.ModuleInstaller
 import moe.shizuku.manager.module.update.ModuleUpdateScheduler
 import moe.shizuku.manager.module.update.UpdateResult
+import moe.shizuku.manager.utils.EnvironmentUtils
 import moe.shizuku.manager.utils.Logger.LOGGER
 import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuApiConstants
@@ -100,6 +102,8 @@ object NightDogClient {
     private val _watchdogStatus = MutableStateFlow<ServerWatchdogStatus?>(null)
     val watchdogStatus: StateFlow<ServerWatchdogStatus?> = _watchdogStatus.asStateFlow()
 
+    private val unlockedBinderTasksCompleted = AtomicBoolean(false)
+
     private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
         syncWithServer()
         refreshWatchdogStatus()
@@ -107,6 +111,45 @@ object NightDogClient {
         ModuleUpdateScheduler.syncSchedule(ctx)
         scope.launch {
             runCatching { AdbSettings.preProvisionForAutostart(ctx) }
+            if (EnvironmentUtils.isUserUnlocked(ctx)) {
+                runUnlockedBinderTasks(ctx)
+            }
+        }
+    }
+
+    private val binderDeadListener = Shizuku.OnBinderDeadListener {
+        unlockedBinderTasksCompleted.set(false)
+        AdbModuleManager.resetServiceRunGuard()
+        _watchdogStatus.value = null
+    }
+
+    @JvmOverloads
+    fun init(context: Context? = null) {
+        if (context != null) {
+            appContext = context.applicationContext
+            ModuleUpdateScheduler.syncSchedule(context.applicationContext)
+        }
+        if (!initialized.compareAndSet(false, true)) return
+        Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
+        Shizuku.addBinderDeadListener(binderDeadListener)
+    }
+
+    @JvmStatic
+    fun onUserUnlocked(context: Context) {
+        val ctx = context.applicationContext ?: context
+        appContext = ctx
+        if (!EnvironmentUtils.isUserUnlocked(ctx)) return
+        runCatching { TokenStore.migrateLegacyToken(ctx) }
+        ModuleUpdateScheduler.syncSchedule(ctx)
+        if (!isServerAvailable()) return
+        scope.launch {
+            runUnlockedBinderTasks(ctx)
+        }
+    }
+
+    private suspend fun runUnlockedBinderTasks(ctx: Context) {
+        if (!unlockedBinderTasksCompleted.compareAndSet(false, true)) return
+        try {
             flushPendingPrivilegeUpdates(ctx)
             if (ModuleSettings.isBackgroundCheckEnabled() || isEnabled()) {
                 runBackgroundCheck(
@@ -124,23 +167,10 @@ object NightDogClient {
                     onServerStart = true
                 )
             }
+        } catch (t: Throwable) {
+            unlockedBinderTasksCompleted.set(false)
+            throw t
         }
-    }
-
-    private val binderDeadListener = Shizuku.OnBinderDeadListener {
-        AdbModuleManager.resetServiceRunGuard()
-        _watchdogStatus.value = null
-    }
-
-    @JvmOverloads
-    fun init(context: Context? = null) {
-        if (context != null) {
-            appContext = context.applicationContext
-            ModuleUpdateScheduler.syncSchedule(context.applicationContext)
-        }
-        if (!initialized.compareAndSet(false, true)) return
-        Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
-        Shizuku.addBinderDeadListener(binderDeadListener)
     }
 
     private fun resolveContext(): Context? {

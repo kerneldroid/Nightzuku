@@ -78,4 +78,80 @@ class BootSettingsTest {
         AdbBootStartScheduler.cancel(context)
         assertNull(scheduler.getPendingJob(AdbBootStartScheduler.JOB_ID_ADB_BOOT_START))
     }
+
+    @Test
+    fun `tracks pre-unlock start-sent boot count independently of handled boot count`() {
+        assertEquals(-1, ShizukuSettings.getLastBootStartSentCount())
+        ShizukuSettings.setLastBootStartSentCount(12)
+        assertEquals(12, ShizukuSettings.getLastBootStartSentCount())
+        assertEquals(-1, ShizukuSettings.getLastHandledBootCount())
+    }
+
+    @Test
+    fun `BootCompleteReceiver starts DirectBootStartService on LOCKED_BOOT_COMPLETED for ADB mode`() {
+        val shadowApp = org.robolectric.Shadows.shadowOf(context)
+        shadowApp.clearStartedServices()
+        ShizukuSettings.setStartOnBootEnabled(true)
+        ShizukuSettings.setLastLaunchMode(LaunchMethod.ADB)
+        android.provider.Settings.Global.putInt(context.contentResolver, android.provider.Settings.Global.BOOT_COUNT, 42)
+
+        val receiver = moe.shizuku.manager.receiver.BootCompleteReceiver()
+        receiver.onReceive(context, android.content.Intent(android.content.Intent.ACTION_LOCKED_BOOT_COMPLETED))
+
+        val started = shadowApp.nextStartedService
+        assertNotNull(started)
+        assertEquals(
+            moe.shizuku.manager.service.DirectBootStartService::class.java.name,
+            started.component?.className
+        )
+        assertEquals(42, started.getIntExtra("boot_count", -1))
+    }
+
+    @Test
+    fun `BootCompleteReceiver confirms via DirectBootStartService on BOOT_COMPLETED if pre-unlock start was sent`() {
+        val shadowApp = org.robolectric.Shadows.shadowOf(context)
+        shadowApp.clearStartedServices()
+        ShizukuSettings.setStartOnBootEnabled(true)
+        ShizukuSettings.setLastLaunchMode(LaunchMethod.ADB)
+        ShizukuSettings.setLastBootStartSentCount(43)
+        android.provider.Settings.Global.putInt(context.contentResolver, android.provider.Settings.Global.BOOT_COUNT, 43)
+
+        val receiver = moe.shizuku.manager.receiver.BootCompleteReceiver()
+        receiver.onReceive(context, android.content.Intent(android.content.Intent.ACTION_BOOT_COMPLETED))
+
+        val started = shadowApp.nextStartedService
+        assertNotNull(started)
+        assertEquals(
+            moe.shizuku.manager.service.DirectBootStartService::class.java.name,
+            started.component?.className
+        )
+        val scheduler = context.getSystemService(JobScheduler::class.java)
+        assertNull(scheduler.getPendingJob(AdbBootStartScheduler.JOB_ID_ADB_BOOT_START))
+    }
+
+    @Test
+    fun `BootCompleteReceiver schedules JobScheduler on BOOT_COMPLETED when no pre-unlock start was sent`() {
+        val shadowApp = org.robolectric.Shadows.shadowOf(context)
+        shadowApp.clearStartedServices()
+        ShizukuSettings.setStartOnBootEnabled(true)
+        ShizukuSettings.setLastLaunchMode(LaunchMethod.ADB)
+        android.provider.Settings.Global.putInt(context.contentResolver, android.provider.Settings.Global.BOOT_COUNT, 44)
+
+        val receiver = moe.shizuku.manager.receiver.BootCompleteReceiver()
+        receiver.onReceive(context, android.content.Intent(android.content.Intent.ACTION_BOOT_COMPLETED))
+
+        assertNull(shadowApp.nextStartedService)
+        val scheduler = context.getSystemService(JobScheduler::class.java)
+        assertNotNull(scheduler.getPendingJob(AdbBootStartScheduler.JOB_ID_ADB_BOOT_START))
+    }
+
+    @Test
+    fun `EnvironmentUtils isUserUnlocked reflects UserManager lock state`() {
+        val um = context.getSystemService(android.os.UserManager::class.java)
+        org.robolectric.Shadows.shadowOf(um).setUserUnlocked(false)
+        assertFalse(moe.shizuku.manager.utils.EnvironmentUtils.isUserUnlocked(context))
+
+        org.robolectric.Shadows.shadowOf(um).setUserUnlocked(true)
+        assertTrue(moe.shizuku.manager.utils.EnvironmentUtils.isUserUnlocked(context))
+    }
 }

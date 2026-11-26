@@ -14,6 +14,8 @@ import kotlinx.coroutines.launch
 import moe.shizuku.manager.AppConstants
 import moe.shizuku.manager.ShizukuSettings
 import moe.shizuku.manager.ShizukuSettings.LaunchMethod
+import moe.shizuku.manager.nightdog.NightDogClient
+import moe.shizuku.manager.service.DirectBootStartService
 import moe.shizuku.manager.starter.Starter
 import moe.shizuku.manager.utils.EnvironmentUtils
 import moe.shizuku.manager.utils.UserHandleCompat
@@ -29,15 +31,28 @@ class BootCompleteReceiver : BroadcastReceiver() {
             return
         }
 
-        if (UserHandleCompat.myUserId() > 0 || Shizuku.pingBinder()) return
+        if (UserHandleCompat.myUserId() > 0) return
         if (!ShizukuSettings.isStartOnBootEnabled()) return
 
         val currentBootCount = runCatching {
             Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, -1)
         }.getOrDefault(-1)
 
+        if (Shizuku.pingBinder()) {
+            if (currentBootCount != -1) {
+                ShizukuSettings.setLastHandledBootCount(currentBootCount)
+            }
+            if (Intent.ACTION_BOOT_COMPLETED == action) {
+                NightDogClient.onUserUnlocked(context)
+            }
+            return
+        }
+
         if (currentBootCount != -1 && ShizukuSettings.getLastHandledBootCount() == currentBootCount) {
             Log.d(AppConstants.TAG, "Boot start already succeeded for boot_count=$currentBootCount")
+            if (Intent.ACTION_BOOT_COMPLETED == action) {
+                NightDogClient.onUserUnlocked(context)
+            }
             return
         }
 
@@ -51,13 +66,25 @@ class BootCompleteReceiver : BroadcastReceiver() {
         } else if ((Build.VERSION.SDK_INT >= Build.VERSION_CODES.R || EnvironmentUtils.getAdbTcpPort() > 0)
             && launchMode == LaunchMethod.ADB
         ) {
-            // Wireless ADB requires credential-encrypted keystores and an associated Wi-Fi
-            // network; wait for ACTION_BOOT_COMPLETED and hand off immediately to JobScheduler
-            // instead of blocking inside goAsync().
-            if (Intent.ACTION_BOOT_COMPLETED != action) {
-                Log.d(AppConstants.TAG, "Deferring ADB boot start until ACTION_BOOT_COMPLETED")
+            if (Intent.ACTION_LOCKED_BOOT_COMPLETED == action) {
+                Log.d(AppConstants.TAG, "Starting DirectBootStartService on LOCKED_BOOT_COMPLETED")
+                DirectBootStartService.start(context, currentBootCount)
                 return
             }
+
+            // On ACTION_BOOT_COMPLETED: if the pre-unlock service is still running or recently sent
+            // the start command for this boot, avoid a parallel restart and let it confirm or hand off.
+            if (DirectBootStartService.isRunning()) {
+                Log.d(AppConstants.TAG, "DirectBootStartService already running on BOOT_COMPLETED")
+                return
+            }
+            if (currentBootCount != -1 && ShizukuSettings.getLastBootStartSentCount() == currentBootCount) {
+                Log.d(AppConstants.TAG, "Start command already sent pre-unlock; confirming via DirectBootStartService")
+                if (DirectBootStartService.start(context, currentBootCount)) {
+                    return
+                }
+            }
+
             AdbBootStartScheduler.schedule(context, currentBootCount)
         } else {
             Log.w(AppConstants.TAG, "No support start on boot")

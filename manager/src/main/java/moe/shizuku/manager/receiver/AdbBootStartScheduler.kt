@@ -1,6 +1,5 @@
 package moe.shizuku.manager.receiver
 
-import android.app.KeyguardManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -8,18 +7,15 @@ import android.app.job.JobInfo
 import android.app.job.JobParameters
 import android.app.job.JobScheduler
 import android.app.job.JobService
-import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.os.Build
 import android.os.PersistableBundle
 import android.provider.Settings
 import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -39,6 +35,8 @@ import moe.shizuku.manager.ShizukuSettings
 import moe.shizuku.manager.adb.AdbClient
 import moe.shizuku.manager.adb.AdbKey
 import moe.shizuku.manager.adb.AdbMdns
+import moe.shizuku.manager.adb.AdbPortHistory
+import moe.shizuku.manager.adb.AdbPortScanner
 import moe.shizuku.manager.adb.AdbSettings
 import moe.shizuku.manager.adb.PreferenceAdbKeyStore
 import moe.shizuku.manager.starter.Starter
@@ -190,41 +188,26 @@ class AdbBootStartJobService : JobService() {
             return Outcome.DONE
         }
 
-        if (!AdbMdns.hasLocalNetworkPermission(this)) {
-            Log.w(AppConstants.TAG, "ACCESS_LOCAL_NETWORK not granted; cannot discover ADB mDNS")
-            showLocalNetworkPermissionNotification()
-            return Outcome.DONE
-        }
-
-        // On Android 11–16 (API 30–36), the system resets `adb_wifi_enabled` to 0 while the
-        // screen is locked. Wait for unlock before enabling wireless ADB and running discovery.
-        if (!AdbSettings.isReadRedactedPlatform() && isKeyguardLocked()) {
-            Log.d(
-                AppConstants.TAG,
-                "Device is locked on API ${Build.VERSION.SDK_INT}; waiting for ACTION_USER_PRESENT"
-            )
-            if (!waitForUserPresent(KEYGUARD_UNLOCK_TIMEOUT_MS)) {
-                Log.d(AppConstants.TAG, "Timed out waiting for device unlock; deferring ADB boot start")
-                return Outcome.RETRY
-            }
-        }
-
+        val hasLocalNetPerm = AdbMdns.hasLocalNetworkPermission(this)
         val discoveryTimeoutMs = ShizukuSettings.getBootDiscoveryTimeoutSeconds() * 1000L
         val prepare = AdbSettings.prepareWirelessAdbForBoot(this)
         if (prepare == AdbSettings.BootPrepareResult.UNAVAILABLE) {
             Log.w(
                 AppConstants.TAG,
-                "Wireless ADB settings could not be enabled automatically; running bounded mDNS probe"
+                "Wireless ADB settings could not be enabled automatically; running bounded discovery probe"
             )
             val probeTimeoutMs = minOf(discoveryTimeoutMs, UNAVAILABLE_MDNS_PROBE_TIMEOUT_MS)
-            val probedEndpoint = discoverLocalAdbEndpoint(probeTimeoutMs)
+            val probedEndpoint = discoverLocalAdbEndpoint(probeTimeoutMs, enableMdns = hasLocalNetPerm)
             if (probedEndpoint == null) {
-                if (ShizukuSettings.isBootFallbackNotificationEnabled()) {
+                if (!hasLocalNetPerm) {
+                    showLocalNetworkPermissionNotification()
+                } else if (ShizukuSettings.isBootFallbackNotificationEnabled()) {
                     showManualWirelessToggleNotification()
                 }
                 return Outcome.DONE
             }
             val (host, port) = probedEndpoint
+            AdbPortHistory.record(this, port)
             val started = connectAndStartServer(host, port, requireTls = true)
             return if (started) {
                 markBootHandled(bootCount)
@@ -236,30 +219,26 @@ class AdbBootStartJobService : JobService() {
             }
         }
 
-        if (prepare == AdbSettings.BootPrepareResult.ENABLED) {
-            delay(ADB_WIFI_SETTLE_DELAY_MS)
-            if (!AdbSettings.isWirelessAdbEnabled(contentResolver)) {
-                return handleAttemptFailure(
-                    bootCount,
-                    "AdbService reset adb_wifi_enabled during early boot"
-                )
-            }
-        }
-
-        val endpoint = discoverLocalAdbEndpoint(discoveryTimeoutMs)
+        val endpoint = discoverLocalAdbEndpoint(discoveryTimeoutMs, enableMdns = hasLocalNetPerm)
         if (endpoint == null) {
+            if (!hasLocalNetPerm) {
+                Log.w(AppConstants.TAG, "ACCESS_LOCAL_NETWORK not granted and loopback scan found no ADB port")
+                showLocalNetworkPermissionNotification()
+                return Outcome.DONE
+            }
             if (prepare == AdbSettings.BootPrepareResult.ENABLED &&
                 !AdbSettings.isWirelessAdbEnabled(contentResolver)
             ) {
                 return handleAttemptFailure(
                     bootCount,
-                    "AdbService reset adb_wifi_enabled during mDNS discovery"
+                    "AdbService reset adb_wifi_enabled during discovery"
                 )
             }
-            return handleAttemptFailure(bootCount, "mDNS discovery timed out")
+            return handleAttemptFailure(bootCount, "Wireless ADB discovery timed out")
         }
 
         val (host, port) = endpoint
+        AdbPortHistory.record(this, port)
         val started = connectAndStartServer(host, port, requireTls = true)
 
         return if (started) {
@@ -302,53 +281,35 @@ class AdbBootStartJobService : JobService() {
         }
     }
 
-    private fun isKeyguardLocked(): Boolean {
-        val km = getSystemService(KeyguardManager::class.java) ?: return false
-        return km.isDeviceLocked || km.isKeyguardLocked
-    }
-
-    private suspend fun waitForUserPresent(timeoutMs: Long): Boolean {
-        if (!isKeyguardLocked()) {
-            return true
+    @RequiresApi(Build.VERSION_CODES.R)
+    private suspend fun discoverLocalAdbEndpoint(
+        timeoutMs: Long,
+        enableMdns: Boolean = true,
+    ): Pair<String, Int>? {
+        val discovered = CompletableDeferred<Pair<String, Int>>()
+        val scanner = AdbPortScanner(
+            log = { Log.d(AppConstants.TAG, it) },
+            order = AdbPortScanner.buildOrder(AdbPortHistory.load(this)),
+            requireTlsOnly = true
+        ) { port ->
+            discovered.complete(AdbPortScanner.LOOPBACK_IP to port)
         }
-        val unlocked = CompletableDeferred<Unit>()
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context, intent: Intent) {
-                if (Intent.ACTION_USER_PRESENT == intent.action && !isKeyguardLocked()) {
-                    unlocked.complete(Unit)
+        val adbMdns = if (enableMdns) {
+            AdbMdns(this, AdbMdns.TLS_CONNECT) { (host, port) ->
+                if (port in 1..65535 && host.isNotEmpty()) {
+                    discovered.complete(host to port)
                 }
             }
+        } else {
+            null
         }
-        ContextCompat.registerReceiver(
-            this,
-            receiver,
-            IntentFilter(Intent.ACTION_USER_PRESENT),
-            ContextCompat.RECEIVER_EXPORTED
-        )
-        return try {
-            // Re-check after registration to avoid racing an unlock that occurred beforehand.
-            if (!isKeyguardLocked()) {
-                return true
-            }
-            withTimeoutOrNull(timeoutMs) { unlocked.await() } != null
-        } finally {
-            runCatching { unregisterReceiver(receiver) }
-        }
-    }
-
-    @RequiresApi(Build.VERSION_CODES.R)
-    private suspend fun discoverLocalAdbEndpoint(timeoutMs: Long): Pair<String, Int>? {
-        val discovered = CompletableDeferred<Pair<String, Int>>()
-        val adbMdns = AdbMdns(this, AdbMdns.TLS_CONNECT) { (host, port) ->
-            if (port in 1..65535 && host.isNotEmpty()) {
-                discovered.complete(host to port)
-            }
-        }
-        adbMdns.start()
+        scanner.start()
+        adbMdns?.start()
         return try {
             withTimeoutOrNull(timeoutMs) { discovered.await() }
         } finally {
-            adbMdns.stop()
+            scanner.stop()
+            adbMdns?.stop()
         }
     }
 
@@ -466,9 +427,7 @@ class AdbBootStartJobService : JobService() {
 
     companion object {
         private const val BINDER_WAIT_TIMEOUT_MS = 5_000L
-        private const val KEYGUARD_UNLOCK_TIMEOUT_MS = 120_000L
         private const val UNAVAILABLE_MDNS_PROBE_TIMEOUT_MS = 8_000L
-        private const val ADB_WIFI_SETTLE_DELAY_MS = 1_500L
         private const val CHANNEL_ID = "adb_boot_start_status"
         private const val NOTIFICATION_ID_BOOT_FALLBACK = 4211
         private const val PREF_RETRY_BOOT_COUNT = "adb_boot_retry_boot_count"

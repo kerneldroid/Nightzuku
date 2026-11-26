@@ -130,18 +130,24 @@ startup:
 
 ### How Nightzuku handles boot auto-start across Android 11–17+
 
-- **`BootCompleteReceiver` + `AdbBootStartScheduler` (`JobScheduler`):**
-  For `LaunchMethod.ADB`, `BootCompleteReceiver` ignores `LOCKED_BOOT_COMPLETED`
-  and immediately schedules a persisted `JobInfo` (`JOB_ID_ADB_BOOT_START = 4210`)
-  with exponential backoff. The Wi-Fi transport constraint is applied when no
-  ADB TCP port is configured; with a TCP port set the job uses no network
-  constraint. This eliminates the Wi-Fi association race and the 10-second
-  `goAsync()` ANR ceiling.
-- **Hardened `AdbMdns`:**
-  Uses `NsdManager.registerServiceInfoCallback()` on API 34+ (avoiding deprecated
-  `resolveService()`), serializes legacy `resolveService()` calls on API 30–33 to
-  prevent `FAILURE_ALREADY_ACTIVE`, acquires `WifiManager.MulticastLock` during
-  discovery, and checks `ACCESS_LOCAL_NETWORK` on API 37+.
+- **`BootCompleteReceiver` + `DirectBootStartService` + `AdbBootStartScheduler` (`JobScheduler`):**
+  For `LaunchMethod.ADB`, `LOCKED_BOOT_COMPLETED` starts the `directBootAware`
+  `DirectBootStartService` (`connectedDevice`), which immediately connects on
+  fixed TCP ports or waits for Wi-Fi IP readiness, pre-warms `AdbKey`, triggers
+  `adb_wifi_enabled` (`0 -> 1` on API 30–36 with `ContentObserver` refusal
+  detection), and starts the server before first unlock when the Wi-Fi network
+  is already trusted ("Always allow"). On `BOOT_COMPLETED`, if the server is
+  already running it avoids restarting it; otherwise `AdbBootStartScheduler`
+  schedules a non-persisted `JobInfo` (`JOB_ID_ADB_BOOT_START = 4210`,
+  `NETWORK_TYPE_UNMETERED` or `NETWORK_TYPE_NONE` for TCP) with exponential
+  backoff.
+- **Parallel `AdbPortScanner` + hardened `AdbMdns`:**
+  `AdbPortScanner` probes `127.0.0.1` ephemeral ports (prioritizing kernel
+  `inet_csk_find_open_port` lower-half odd ports and `AdbPortHistory`) with
+  `A_CNXN` -> `A_STLS` verification concurrently with `AdbMdns` (which uses
+  `NsdManager.registerServiceInfoCallback()` on API 34+, serialized legacy
+  `resolveService()` on API 30–33, `WifiManager.MulticastLock`, and
+  `ACCESS_LOCAL_NETWORK` checks on API 37+), avoiding early-boot `mdnsd` races.
 - **Native ADB Wi-Fi 2.0 Zero-Touch (Android 17+):**
   Android 17 ADB Wi-Fi 2.0 automatically re-enables wireless debugging when the
   device connects to a trusted Wi-Fi network
