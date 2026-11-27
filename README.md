@@ -58,7 +58,7 @@ Nightzuku operates two concurrent Binder wires and routes each client package vi
 | [GitHub Catalog](docs/github-catalog.md) | Decentralized `topic:adb-modules` discovery, PAT encryption, install modes, API quotas |
 | [NightDog Architecture](docs/nightdog.md) | Server watchdog state machine, `NightDogClient` supervision, `JobScheduler` update checks |
 | [Nightzuku Connectors](docs/nightzuku-connectors.md) | Local `ContentProvider` (`content://kerneldroid.nightzuku.connector`) for third-party activators |
-| [Android 17 Compatibility](docs/android-17-compatibility.md) | Verified hidden API signatures (`IPermissionManager`, `IPackageManager`, `IUserManager`) and `Android17Compat` |
+| [Android 17 GSI & Shizuku audit](docs/android17/README.md) | Release history, 16 GSI comparisons, framework and ADB findings, and Discussion #19 review |
 | [Android TV Support](docs/android-tv-support.md) | TV Compose architecture, D-pad focus model, and theming |
 | [Wear OS Compatibility](docs/wearos-compatibility.md) | Runtime watch detection, Wear Material 3 components, and SDK compatibility |
 | [Wear OS Pairing Guide](docs/wearos-pairing.md) | Wireless ADB pairing procedure and troubleshooting matrix for Wear OS 5+ |
@@ -144,4 +144,3 @@ Licensed under **Apache License 2.0** (`LICENSE`).
 - [RikkaApps/Shizuku](https://github.com/RikkaApps/Shizuku) — upstream architecture and protocol.
 - [Razgame](https://github.com/RazGame/Shizuku) — [app list fix](https://github.com/kerneldroid/Nightzuku/commit/6ea7e74984f860398760f5111a15083ea004c842).
 - [Porter (d4rken-org)](https://github.com/d4rken-org/porter) — security hardening concepts (package signing verification, config ownership handoff, anti-spoofing permission prompts, wireless ADB/mDNS edge-case analysis), re-implemented natively for Nightzuku.
-- [Dimlos-jp/Dimzuku](https://github.com/Dimlos-jp/Dimzuku) & [BombPerry/Shizuku](https://github.com/BombPerry/Shizuku) — pre-unlock wireless ADB boot startup (`LOCKED_BOOT_COMPLETED` Wi-Fi wait + `adb_wifi_enabled` trigger), loopback `AdbPortScanner`, and port history prioritization (Apache 2.0).
